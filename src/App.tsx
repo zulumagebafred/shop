@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp } from 'lucide-react';
 import { Footer } from './components/Footer';
@@ -176,6 +176,59 @@ function AppContent() {
     }
   }, [postOfficeTown]);
 
+  const forceScrollTopInstant = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+    forceScrollTopInstant();
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        forceScrollTopInstant();
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+
+    // Preload high-traffic views shortly after mount so mobile route switches never flash fallback height
+    const preloadTimer = window.setTimeout(() => {
+      void import('./pages/ShopPage');
+      void import('./pages/ProductDetailPage');
+    }, 600);
+
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      window.clearTimeout(preloadTimer);
+    };
+  }, [forceScrollTopInstant]);
+
+  useLayoutEffect(() => {
+    forceScrollTopInstant();
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      forceScrollTopInstant();
+      raf2 = window.requestAnimationFrame(() => {
+        forceScrollTopInstant();
+      });
+    });
+    const settleTimer = window.setTimeout(() => {
+      if (window.scrollY > 0) {
+        forceScrollTopInstant();
+      }
+    }, 80);
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+      window.clearTimeout(settleTimer);
+    };
+  }, [currentPage, selectedProductId, selectedCategory, onlySpecials, forceScrollTopInstant]);
+
   useEffect(() => {
     const onScroll = () => {
       setShowScrollTop(window.scrollY > 520);
@@ -231,13 +284,13 @@ function AppContent() {
       window.history.replaceState(null, '', '/');
     }
     setCurrentPage(page);
-    scrollToTop();
+    forceScrollTopInstant();
   };
 
   const handleSelectProduct = (product: FragranceProduct) => {
     setSelectedProductId(product.id);
     setCurrentPage('product');
-    scrollToTop();
+    forceScrollTopInstant();
   };
 
   const handleResetFilters = () => {
@@ -368,20 +421,20 @@ function AppContent() {
         onOpenBasket={() => setBasketOpen(true)}
       />
 
-      <main className="flex-1">
+      <main className="flex-1 [overflow-anchor:none]">
         <motion.div
           key={
             currentPage === 'product' && selectedProduct
               ? `product-${selectedProduct.id}`
               : currentPage
           }
-          initial={{ opacity: 0.92, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0.94 }}
+          animate={{ opacity: 1 }}
           transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
         >
           <Suspense
             fallback={
-              <div className="min-h-[45vh] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
+              <div className="min-h-[85dvh] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
                 Loading...
               </div>
             }
@@ -535,7 +588,7 @@ function AppContent() {
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             onClick={scrollToTop}
             aria-label="Back to top"
-            className="hidden md:flex fixed bottom-6 left-6 z-30 w-11 h-11 rounded-full bg-[#0A0A0A] text-white border border-white/25 hover:bg-[#262626] shadow-lg items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+            className="flex fixed bottom-20 right-4 lg:bottom-6 lg:right-auto lg:left-6 z-30 w-11 h-11 rounded-full bg-[#0A0A0A] text-white border border-white/25 hover:bg-[#262626] shadow-lg items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
           >
             <ArrowUp className="w-4 h-4" />
           </motion.button>

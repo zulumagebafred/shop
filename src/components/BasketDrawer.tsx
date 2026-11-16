@@ -222,7 +222,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-6 space-y-6">
               {items.length === 0 ? (
                 <div className="py-14 text-center space-y-4">
                   <div className="w-12 h-12 mx-auto rounded-full border border-[#E5E5E5] flex items-center justify-center bg-white">

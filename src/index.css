@@ -11,10 +11,16 @@
 
 @layer base {
   html {
-    scroll-behavior: smooth;
     font-family: var(--font-sans);
     background-color: #FFFFFF;
     color: #0A0A0A;
+    overflow-anchor: none;
+    touch-action: manipulation;
+  }
+
+  body {
+    overflow-x: clip;
+    overflow-anchor: none;
   }
 
   h1, h2, h3, h4, .font-display {

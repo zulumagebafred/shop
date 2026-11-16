@@ -140,23 +140,23 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     onlySpecials;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 sm:py-14 space-y-6 sm:space-y-10">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#E5E5E5] pb-8">
-        <div className="space-y-2">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 sm:gap-4 border-b border-[#E5E5E5] pb-5 sm:pb-8">
+        <div className="space-y-1.5 sm:space-y-2">
           <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
             {onlySpecials
               ? campaign.badgeText || 'Special Offers'
               : 'AuraHut Co. Catalogue'}
           </p>
-          <h1 className="text-3xl sm:text-5xl font-bold text-[#0A0A0A]">
+          <h1 className="text-2xl sm:text-5xl font-bold text-[#0A0A0A]">
             {onlySpecials
               ? campaign.title || 'Fragrance Specials'
               : selectedCategory === 'All'
               ? 'All Fragrances'
               : `${selectedCategory}'s Fragrances`}
           </h1>
-          <p className="text-sm text-[#525252] max-w-2xl">
+          <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
             {onlySpecials && campaign.subtitle
               ? campaign.subtitle
               : 'Each listing displays the full-bottle price upfront, with travel decants inside.'}
@@ -169,7 +169,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-5 sm:p-6 space-y-5">
+      <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
           {/* Search Input */}
           <div className="lg:col-span-5 relative">

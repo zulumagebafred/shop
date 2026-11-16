@@ -271,7 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-5 py-5 space-y-1">
+              <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 space-y-1">
                 {navItems.map((item) => {
                   const active = isItemActive(item);
                   return (
