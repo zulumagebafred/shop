@@ -1,9 +1,15 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  EmailAuthProvider,
   User,
+  linkWithCredential,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updatePassword,
 } from 'firebase/auth';
 import {
   collection,
@@ -57,6 +63,11 @@ interface StoreContextValue {
   authReady: boolean;
   isOwner: boolean;
   signInOwnerWithGoogle: () => Promise<void>;
+  signInOwnerWithPassword: (loginInput: string, password: string) => Promise<void>;
+  sendOwnerPasswordReset: (loginInput: string) => Promise<string>;
+  resendOwnerVerificationEmail: () => Promise<void>;
+  refreshAuthUser: () => Promise<boolean>;
+  setOwnerPasswordCredential: (newPassword: string) => Promise<void>;
   signOutOwner: () => Promise<void>;
 
   // Live Catalogue & Specials
@@ -110,11 +121,20 @@ function sanitizeCouponCode(raw: string): string {
     .slice(0, 32);
 }
 
+export function resolveAdminLoginEmail(loginInput: string): string {
+  const cleaned = loginInput.trim().toLowerCase();
+  if (!cleaned) return OWNER_EMAIL;
+  if (cleaned.includes('@')) return cleaned;
+  if (cleaned === 'zulumagebafred') return OWNER_EMAIL;
+  return `${cleaned}@gmail.com`;
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authRevision, setAuthRevision] = useState(0);
 
   const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>([]);
   const [catalogueLoading, setCatalogueLoading] = useState(true);
@@ -124,18 +144,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [couponsLoading, setCouponsLoading] = useState(false);
 
   const isOwner = useMemo(() => {
+    void authRevision;
     return Boolean(
       user &&
         user.emailVerified &&
         user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()
     );
-  }, [user]);
+  }, [user, authRevision]);
 
   // 1. Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       setAuthReady(true);
+      setAuthRevision((r) => r + 1);
     });
     return unsubscribe;
   }, []);
@@ -287,6 +309,56 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const signInOwnerWithGoogle = async () => {
     await signInWithPopup(auth, googleProvider);
+  };
+
+  const signInOwnerWithPassword = async (loginInput: string, password: string) => {
+    const email = resolveAdminLoginEmail(loginInput);
+    if (!password) {
+      throw new Error('Please enter your admin password.');
+    }
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const sendOwnerPasswordReset = async (loginInput: string): Promise<string> => {
+    const email = resolveAdminLoginEmail(loginInput);
+    await sendPasswordResetEmail(auth, email);
+    return email;
+  };
+
+  const resendOwnerVerificationEmail = async () => {
+    if (!auth.currentUser) {
+      throw new Error('Sign in first before sending verification email.');
+    }
+    await sendEmailVerification(auth.currentUser);
+  };
+
+  const refreshAuthUser = async (): Promise<boolean> => {
+    if (!auth.currentUser) return false;
+    await auth.currentUser.reload();
+    await auth.currentUser.getIdToken(true);
+    setUser(auth.currentUser);
+    setAuthRevision((r) => r + 1);
+    return Boolean(auth.currentUser.emailVerified);
+  };
+
+  const setOwnerPasswordCredential = async (newPassword: string) => {
+    const current = auth.currentUser;
+    if (!current || !current.email) {
+      throw new Error('You must be signed in as the store owner.');
+    }
+    if (newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters.');
+    }
+    const hasPasswordProvider = current.providerData.some(
+      (p) => p.providerId === 'password'
+    );
+    if (hasPasswordProvider) {
+      await updatePassword(current, newPassword);
+    } else {
+      const cred = EmailAuthProvider.credential(current.email, newPassword);
+      await linkWithCredential(current, cred);
+    }
+    setAuthRevision((r) => r + 1);
   };
 
   const signOutOwner = async () => {
@@ -640,6 +712,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     authReady,
     isOwner,
     signInOwnerWithGoogle,
+    signInOwnerWithPassword,
+    sendOwnerPasswordReset,
+    resendOwnerVerificationEmail,
+    refreshAuthUser,
+    setOwnerPasswordCredential,
     signOutOwner,
     perfumes,
     livePerfumes,

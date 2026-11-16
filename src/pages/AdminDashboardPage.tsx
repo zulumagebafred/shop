@@ -7,12 +7,17 @@ import {
   Clock,
   Copy,
   Edit3,
+  Eye,
+  EyeOff,
   Flame,
+  KeyRound,
   Lock,
   LogOut,
+  MailCheck,
   Package,
   Percent,
   Plus,
+  RefreshCw,
   Search,
   Share2,
   ShieldAlert,
@@ -24,7 +29,7 @@ import {
 } from 'lucide-react';
 import { ResilientImage } from '../components/ResilientImage';
 import { formatPrice, siteConfig } from '../config/siteConfig';
-import { PerfumeInput, useStore } from '../context/StoreContext';
+import { PerfumeInput, resolveAdminLoginEmail, useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, houseImages } from '../data/catalogue';
 import { OWNER_EMAIL } from '../lib/firebase';
 import {
@@ -148,6 +153,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     authReady,
     isOwner,
     signInOwnerWithGoogle,
+    signInOwnerWithPassword,
+    sendOwnerPasswordReset,
+    resendOwnerVerificationEmail,
+    refreshAuthUser,
+    setOwnerPasswordCredential,
     signOutOwner,
     livePerfumes,
     catalogueLoading,
@@ -167,7 +177,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const [activeTab, setActiveTab] = useState<AdminTab>('perfumes');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const [signingInPassword, setSigningInPassword] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
+  const [loginId, setLoginId] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [refreshingAuth, setRefreshingAuth] = useState(false);
+
+  // Set/Update Owner Password Modal
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [newOwnerPassword, setNewOwnerPassword] = useState('');
+  const [confirmOwnerPassword, setConfirmOwnerPassword] = useState('');
+  const [showNewOwnerPassword, setShowNewOwnerPassword] = useState(false);
+  const [savingOwnerPassword, setSavingOwnerPassword] = useState(false);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
 
   // Live ticker for countdown preview
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -319,17 +345,141 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     return sorted;
   }, [livePerfumes, inventorySearch, inventoryFilter, inventorySort]);
 
+  const mapFirebaseAuthError = (err: unknown, fallback: string): string => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('auth/operation-not-allowed')) {
+      return 'Email/Password sign-in needs to be enabled in Firebase Console (Authentication → Sign-in method → Email/Password). Meanwhile, you can sign in with Google below.';
+    }
+    if (
+      msg.includes('auth/invalid-credential') ||
+      msg.includes('auth/wrong-password') ||
+      msg.includes('auth/user-not-found')
+    ) {
+      return 'Incorrect login or password. If you have not created a password for zulumagebafred yet, sign in with Google below and click "Set Password", or use Reset Password.';
+    }
+    if (msg.includes('auth/too-many-requests')) {
+      return 'Too many sign-in attempts. Please wait a few minutes or sign in with Google below.';
+    }
+    if (msg.includes('auth/requires-recent-login')) {
+      return 'For security, please sign out and sign back in with Google right before updating your password.';
+    }
+    return msg || fallback;
+  };
+
   const handleGoogleSignIn = async () => {
     setAuthError(null);
+    setAuthNotice(null);
     setSigningIn(true);
     try {
       await signInOwnerWithGoogle();
     } catch (err) {
-      setAuthError(
-        err instanceof Error ? err.message : 'Unable to complete Google sign-in.'
-      );
+      setAuthError(mapFirebaseAuthError(err, 'Unable to complete Google sign-in.'));
     } finally {
       setSigningIn(false);
+    }
+  };
+
+  const handlePasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthNotice(null);
+    if (!loginId.trim()) {
+      setAuthError('Enter your admin login (e.g. zulumagebafred).');
+      return;
+    }
+    if (!loginPassword) {
+      setAuthError('Enter your password.');
+      return;
+    }
+    setSigningInPassword(true);
+    try {
+      await signInOwnerWithPassword(loginId, loginPassword);
+      setLoginPassword('');
+    } catch (err) {
+      setAuthError(mapFirebaseAuthError(err, 'Unable to sign in with password.'));
+    } finally {
+      setSigningInPassword(false);
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    setAuthError(null);
+    setAuthNotice(null);
+    const targetLogin = loginId.trim() || 'zulumagebafred';
+    setSendingReset(true);
+    try {
+      const sentEmail = await sendOwnerPasswordReset(targetLogin);
+      setAuthNotice(
+        `Password setup/reset email sent to ${sentEmail}. Check your inbox (and spam folder), then return here to sign in.`
+      );
+    } catch (err) {
+      setAuthError(mapFirebaseAuthError(err, 'Could not send password reset email.'));
+    } finally {
+      setSendingReset(false);
+    }
+  };
+
+  const handleSendVerificationEmail = async () => {
+    setAuthError(null);
+    setAuthNotice(null);
+    setSendingVerification(true);
+    try {
+      await resendOwnerVerificationEmail();
+      setAuthNotice(
+        `Verification link sent to ${user?.email ?? OWNER_EMAIL}. Click the link in your email, then tap "I've Verified — Refresh".`
+      );
+    } catch (err) {
+      setAuthError(mapFirebaseAuthError(err, 'Unable to send verification email.'));
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
+  const handleRefreshVerification = async () => {
+    setAuthError(null);
+    setAuthNotice(null);
+    setRefreshingAuth(true);
+    try {
+      const verified = await refreshAuthUser();
+      if (!verified) {
+        setAuthError('Email is still not marked verified yet. Click the verification link sent to your inbox first.');
+      } else {
+        onNotify('Owner Verified', 'Admin access unlocked.');
+      }
+    } catch (err) {
+      setAuthError(mapFirebaseAuthError(err, 'Could not refresh verification status.'));
+    } finally {
+      setRefreshingAuth(false);
+    }
+  };
+
+  const handleSaveOwnerPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordModalError(null);
+    if (newOwnerPassword.length < 6) {
+      setPasswordModalError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newOwnerPassword !== confirmOwnerPassword) {
+      setPasswordModalError('Passwords do not match.');
+      return;
+    }
+    setSavingOwnerPassword(true);
+    try {
+      await setOwnerPasswordCredential(newOwnerPassword);
+      setPasswordModalOpen(false);
+      setNewOwnerPassword('');
+      setConfirmOwnerPassword('');
+      onNotify(
+        'Admin Password Saved',
+        'You can now log in using "zulumagebafred" and this password.'
+      );
+    } catch (err) {
+      setPasswordModalError(
+        mapFirebaseAuthError(err, 'Could not save password.')
+      );
+    } finally {
+      setSavingOwnerPassword(false);
     }
   };
 
@@ -814,10 +964,25 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
 
           {user && (
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <span className="hidden md:inline text-xs text-white/70 truncate max-w-[220px]">
                 {user.email}
               </span>
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordModalError(null);
+                    setNewOwnerPassword('');
+                    setConfirmOwnerPassword('');
+                    setPasswordModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Password</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={signOutOwner}
@@ -846,7 +1011,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-lg mx-auto bg-white border border-[#E5E5E5] rounded-3xl p-8 sm:p-10 space-y-6 shadow-sm"
+            className="max-w-lg mx-auto bg-white border border-[#E5E5E5] rounded-3xl p-7 sm:p-10 space-y-6 shadow-sm"
           >
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-[#0A0A0A] text-white flex items-center justify-center overflow-hidden">
@@ -863,33 +1028,124 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
 
             <div className="space-y-2">
-              <h1 className="text-3xl font-bold text-[#0A0A0A] tracking-tight">
-                Owner Admin Dashboard
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#0A0A0A] tracking-tight">
+                Owner Admin Login
               </h1>
               <p className="text-sm text-[#525252] leading-relaxed">
-                Sign in with the verified store owner Google account to manage fragrances, bottle prices, seasonal specials countdown timers, and social stream coupon codes.
+                Enter your owner login (<span className="font-semibold text-[#0A0A0A]">zulumagebafred</span>) and password, or sign in with Google.
               </p>
             </div>
 
             {authError && (
-              <div className="p-3.5 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium">
+              <div className="p-3.5 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium leading-relaxed">
                 {authError}
               </div>
             )}
 
-            <div className="space-y-3 pt-2">
+            {authNotice && (
+              <div className="p-3.5 bg-[#F0FDF4] border border-[#16A34A] rounded-xl text-xs text-[#166534] font-medium leading-relaxed">
+                {authNotice}
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordSignIn} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="admin-login-id"
+                  className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
+                >
+                  Login / Username
+                </label>
+                <input
+                  id="admin-login-id"
+                  type="text"
+                  autoComplete="username"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  placeholder="zulumagebafred"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
+                />
+                {loginId.trim().length > 0 && !loginId.includes('@') && (
+                  <p className="text-[11px] text-[#666666]">
+                    Signing in as <span className="font-medium text-[#0A0A0A]">{resolveAdminLoginEmail(loginId)}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="admin-login-password"
+                    className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
+                  >
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    disabled={sendingReset}
+                    onClick={handleSendPasswordReset}
+                    className="text-[11px] font-medium text-[#525252] hover:text-[#0A0A0A] underline underline-offset-4 disabled:opacity-50"
+                  >
+                    {sendingReset ? 'Sending...' : 'Reset / Set Password'}
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    id="admin-login-password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter admin password"
+                    required
+                    className="w-full pl-3.5 pr-11 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#525252] hover:text-[#0A0A0A]"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={signingInPassword || signingIn}
+                className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+              >
+                {signingInPassword ? 'Signing In...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="relative flex items-center py-1">
+              <div className="flex-1 border-t border-[#E5E5E5]" />
+              <span className="px-3 text-[11px] uppercase tracking-wider text-[#737373]">
+                or
+              </span>
+              <div className="flex-1 border-t border-[#E5E5E5]" />
+            </div>
+
+            <div className="space-y-2.5">
               <button
                 type="button"
-                disabled={signingIn}
+                disabled={signingIn || signingInPassword}
                 onClick={handleGoogleSignIn}
-                className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                className="w-full py-3 px-5 border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#F5F5F5] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.12em]"
               >
                 {signingIn ? 'Opening Google Sign-In...' : 'Sign In with Google (Owner)'}
               </button>
               <button
                 type="button"
                 onClick={onBackToStorefront}
-                className="w-full py-3 px-5 border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+                className="w-full py-3 px-5 border border-[#D4D4D4] text-[#525252] hover:border-[#0A0A0A] hover:text-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
               >
                 Return to Customer Storefront
               </button>
@@ -900,43 +1156,104 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </p>
           </motion.div>
         ) : !isOwner ? (
-          /* Gate 2: Authenticated Non-Owner Denied */
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="max-w-lg mx-auto bg-white border border-[#0A0A0A] rounded-3xl p-8 sm:p-10 space-y-6"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-[#0A0A0A] text-[#FACC15] flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#DC2626] font-semibold">
-                Access Denied
-              </p>
-              <h1 className="text-3xl font-bold text-[#0A0A0A] tracking-tight">
-                Owner Authorization Required
-              </h1>
-              <p className="text-sm text-[#525252] leading-relaxed">
-                Signed in as <strong className="text-[#0A0A0A]">{user.email}</strong>. Only the verified AuraHut Co. owner account ({OWNER_EMAIL}) has permission to edit catalogue pricing, coupon codes, or special promotions.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                className="flex-1 py-3 px-4 bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
-              >
-                Switch Account
-              </button>
-              <button
-                type="button"
-                onClick={onBackToStorefront}
-                className="flex-1 py-3 px-4 border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
-              >
-                Back to Storefront
-              </button>
-            </div>
-          </motion.div>
+          /* Gate 2: Email Verification Needed or Non-Owner Denied */
+          user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase() && !user.emailVerified ? (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="max-w-lg mx-auto bg-white border border-[#0A0A0A] rounded-3xl p-8 sm:p-10 space-y-6"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-[#0A0A0A] text-[#FACC15] flex items-center justify-center">
+                <MailCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#DC2626] font-semibold">
+                  Verification Required
+                </p>
+                <h1 className="text-3xl font-bold text-[#0A0A0A] tracking-tight">
+                  Verify Owner Email
+                </h1>
+                <p className="text-sm text-[#525252] leading-relaxed">
+                  Signed in as <strong className="text-[#0A0A0A]">{user.email}</strong>. Firestore security requires email verification before editing products or specials.
+                </p>
+              </div>
+              {authError && (
+                <div className="p-3.5 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium">
+                  {authError}
+                </div>
+              )}
+              {authNotice && (
+                <div className="p-3.5 bg-[#F0FDF4] border border-[#16A34A] rounded-xl text-xs text-[#166534] font-medium">
+                  {authNotice}
+                </div>
+              )}
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  disabled={refreshingAuth}
+                  onClick={handleRefreshVerification}
+                  className="w-full py-3.5 px-4 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingAuth ? 'animate-spin' : ''}`} />
+                  <span>{refreshingAuth ? 'Checking...' : "I've Verified — Refresh Access"}</span>
+                </button>
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    disabled={sendingVerification}
+                    onClick={handleSendVerificationEmail}
+                    className="flex-1 py-3 px-4 border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#F5F5F5] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+                  >
+                    {sendingVerification ? 'Sending...' : 'Send Verification Email'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    className="flex-1 py-3 px-4 border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+                  >
+                    Use Google Sign-In
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="max-w-lg mx-auto bg-white border border-[#0A0A0A] rounded-3xl p-8 sm:p-10 space-y-6"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-[#0A0A0A] text-[#FACC15] flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#DC2626] font-semibold">
+                  Access Denied
+                </p>
+                <h1 className="text-3xl font-bold text-[#0A0A0A] tracking-tight">
+                  Owner Authorization Required
+                </h1>
+                <p className="text-sm text-[#525252] leading-relaxed">
+                  Signed in as <strong className="text-[#0A0A0A]">{user.email}</strong>. Only the verified AuraHut Co. owner account ({OWNER_EMAIL}) has permission to edit catalogue pricing, coupon codes, or special promotions.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={signOutOwner}
+                  className="flex-1 py-3 px-4 bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+                >
+                  Switch Account
+                </button>
+                <button
+                  type="button"
+                  onClick={onBackToStorefront}
+                  className="flex-1 py-3 px-4 border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+                >
+                  Back to Storefront
+                </button>
+              </div>
+            </motion.div>
+          )
         ) : (
           /* Authenticated Owner Workspace */
           <div className="space-y-8">
@@ -2928,6 +3245,129 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         : editingPerfumeId
                         ? 'Update Perfume'
                         : 'Save Perfume'}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Owner Set / Update Password Modal */}
+      <AnimatePresence>
+        {passwordModalOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPasswordModalOpen(false)}
+              className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs"
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.97, y: 8 }}
+                transition={{ duration: 0.18 }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Set Admin Password"
+                className="pointer-events-auto w-full max-w-md bg-white border border-[#E5E5E5] rounded-3xl shadow-2xl overflow-hidden"
+              >
+                <div className="px-6 py-4 bg-[#0A0A0A] text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-[#FACC15]" />
+                    <h2 className="text-base font-bold">Set Admin Login Password</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPasswordModalOpen(false)}
+                    aria-label="Close modal"
+                    className="p-1.5 text-white/70 hover:text-white rounded-full"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveOwnerPassword} className="p-6 space-y-4">
+                  <p className="text-xs text-[#525252] leading-relaxed">
+                    Set or update the password for login <strong className="text-[#0A0A0A]">zulumagebafred</strong> ({OWNER_EMAIL}).
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="new-owner-password"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
+                    >
+                      New Password (min 6 characters)
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="new-owner-password"
+                        type={showNewOwnerPassword ? 'text' : 'password'}
+                        value={newOwnerPassword}
+                        onChange={(e) => setNewOwnerPassword(e.target.value)}
+                        placeholder="Enter password"
+                        minLength={6}
+                        required
+                        className="w-full pl-3.5 pr-11 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewOwnerPassword((v) => !v)}
+                        aria-label={showNewOwnerPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-[#525252] hover:text-[#0A0A0A]"
+                      >
+                        {showNewOwnerPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="confirm-owner-password"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
+                    >
+                      Confirm Password
+                    </label>
+                    <input
+                      id="confirm-owner-password"
+                      type={showNewOwnerPassword ? 'text' : 'password'}
+                      value={confirmOwnerPassword}
+                      onChange={(e) => setConfirmOwnerPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      minLength={6}
+                      required
+                      className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
+                    />
+                  </div>
+
+                  {passwordModalError && (
+                    <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium leading-relaxed">
+                      {passwordModalError}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2.5 pt-2 border-t border-[#E5E5E5]">
+                    <button
+                      type="button"
+                      onClick={() => setPasswordModalOpen(false)}
+                      className="px-4 py-2.5 border border-[#D4D4D4] rounded-full text-xs font-semibold uppercase tracking-wider"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingOwnerPassword}
+                      className="px-5 py-2.5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 rounded-full text-xs font-semibold uppercase tracking-wider"
+                    >
+                      {savingOwnerPassword ? 'Saving...' : 'Save Password'}
                     </button>
                   </div>
                 </form>
