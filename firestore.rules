@@ -1,0 +1,237 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwnerEmail() {
+      return isVerifiedUser() && request.auth.token.email.lower() == 'zulumagebafred@gmail.com';
+    }
+
+    function isAdmin() {
+      return isOwnerEmail() || (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // 3. Entity Validation Helpers
+    function isValidNoteList(notes) {
+      return notes is list && notes.size() <= 10 && (notes.size() == 0 || (notes[0] is string && notes[0].size() <= 60));
+    }
+
+    function isValidSizeList(sizes) {
+      return sizes is list &&
+        sizes.size() >= 1 &&
+        sizes.size() <= 12 &&
+        sizes[0] is map &&
+        sizes[0].keys().hasAll(['size', 'price', 'available']) &&
+        sizes[0].keys().hasOnly(['size', 'price', 'available']) &&
+        sizes[0].size is string &&
+        sizes[0].size.size() >= 1 &&
+        sizes[0].size.size() <= 24 &&
+        (sizes[0].price == null || (sizes[0].price is number && sizes[0].price >= 0 && sizes[0].price <= 100000)) &&
+        sizes[0].available is bool;
+    }
+
+    function isValidPerfume(data) {
+      return data.keys().hasAll([
+        'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
+        'description', 'image', 'notes', 'sizes', 'availability', 'featured',
+        'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
+        'description', 'image', 'notes', 'sizes', 'availability', 'featured',
+        'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 160 &&
+      data.isSampleListing is bool &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
+      data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
+      data.category in ['Men', 'Women', 'Unisex'] &&
+      data.concentration is string && data.concentration.size() >= 1 && data.concentration.size() <= 100 &&
+      data.description is string && data.description.size() <= 2000 &&
+      data.image is string && data.image.size() >= 1 && data.image.size() <= 500 &&
+      data.notes is map &&
+      data.notes.keys().hasAll(['top', 'heart', 'base']) &&
+      data.notes.keys().hasOnly(['top', 'heart', 'base']) &&
+      isValidNoteList(data.notes.top) &&
+      isValidNoteList(data.notes.heart) &&
+      isValidNoteList(data.notes.base) &&
+      isValidSizeList(data.sizes) &&
+      data.availability in ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'] &&
+      data.featured is bool &&
+      data.bestseller is bool &&
+      data.onSpecial is bool &&
+      data.specialLabel is string && data.specialLabel.size() <= 60 &&
+      data.specialDiscountPercent is number && data.specialDiscountPercent >= 0 && data.specialDiscountPercent <= 90 &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCoupon(data) {
+      return data.keys().hasAll([
+        'code', 'description', 'discountType', 'discountValue',
+        'minOrderAmount', 'appliesTo', 'active', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'code', 'description', 'discountType', 'discountValue',
+        'minOrderAmount', 'appliesTo', 'active', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.code is string && data.code.size() >= 2 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9_\\-]+$') &&
+      data.description is string && data.description.size() <= 200 &&
+      data.discountType in ['percentage', 'fixed'] &&
+      data.discountValue is number && data.discountValue > 0 && data.discountValue <= 50000 &&
+      (data.discountType == 'fixed' || data.discountValue <= 95) &&
+      data.minOrderAmount is number && data.minOrderAmount >= 0 && data.minOrderAmount <= 100000 &&
+      data.appliesTo in ['all', 'specials', 'full-bottles'] &&
+      data.active is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasAll([
+        'title', 'badgeText', 'subtitle', 'announcementText',
+        'promoCodeHint', 'endsAt', 'enabled', 'ownerUid', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'title', 'badgeText', 'subtitle', 'announcementText',
+        'promoCodeHint', 'endsAt', 'enabled', 'ownerUid', 'updatedAt'
+      ]) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+      data.badgeText is string && data.badgeText.size() >= 1 && data.badgeText.size() <= 40 &&
+      data.subtitle is string && data.subtitle.size() <= 400 &&
+      data.announcementText is string && data.announcementText.size() <= 240 &&
+      data.promoCodeHint is string && data.promoCodeHint.size() <= 32 &&
+      data.endsAt is string && data.endsAt.size() <= 64 &&
+      data.enabled is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['email', 'role', 'createdAt', 'updatedAt']) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.role in ['owner', 'manager'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // 4. Collection Rules
+    match /test/{docId} {
+      allow get: if docId == 'connection';
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwnerEmail() || (isVerifiedUser() && request.auth.uid == adminId));
+      allow list: if isOwnerEmail();
+      allow create: if isOwnerEmail() &&
+        isValidId(adminId) &&
+        isValidAdmin(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isOwnerEmail() &&
+        isValidId(adminId) &&
+        isValidAdmin(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']);
+      allow delete: if isOwnerEmail() && isValidId(adminId);
+    }
+
+    match /perfumes/{perfumeId} {
+      allow get: if isValidId(perfumeId);
+      allow list: if isOwnerEmail() || existing().availability in ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'];
+      allow create: if isAdmin() &&
+        isValidId(perfumeId) &&
+        isValidPerfume(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(perfumeId) &&
+        isValidPerfume(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
+          'description', 'image', 'notes', 'sizes', 'availability', 'featured',
+          'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(perfumeId);
+    }
+
+    match /coupons/{couponId} {
+      allow get: if isValidId(couponId);
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(couponId) &&
+        isValidCoupon(incoming()) &&
+        incoming().code == couponId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(couponId) &&
+        isValidCoupon(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'description', 'discountType', 'discountValue',
+          'minOrderAmount', 'appliesTo', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(couponId);
+    }
+
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId);
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(campaignId) &&
+        isValidCampaign(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(campaignId) &&
+        isValidCampaign(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'badgeText', 'subtitle', 'announcementText',
+          'promoCodeHint', 'endsAt', 'enabled', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(campaignId);
+    }
+  }
+}

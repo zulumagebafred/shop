@@ -1,0 +1,6 @@
+{
+  "name": "AuraHut Co. — Arabian Fragrances Eswatini",
+  "description": "The Art of Fragrance. Luxury Arabian perfumes and curated fragrance decants in Manzini and Mbabane, Eswatini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

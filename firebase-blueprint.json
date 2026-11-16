@@ -1,0 +1,307 @@
+{
+  "entities": {
+    "Perfume": {
+      "title": "Perfume",
+      "description": "An Arabian fragrance listing managed by the AuraHut Co. owner with decant and full-bottle pricing and optional special promotion status.",
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "URL-friendly product slug"
+        },
+        "isSampleListing": {
+          "type": "boolean",
+          "description": "True if imported sample entry, false for live catalogue products"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Perfume display name"
+        },
+        "brand": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Fragrance house name"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Men", "Women", "Unisex"],
+          "description": "Target fragrance category"
+        },
+        "concentration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Fragrance concentration (e.g. Extrait de Parfum, Eau de Parfum)"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Product description"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Local studio image path or HTTPS product image URL"
+        },
+        "notes": {
+          "type": "object",
+          "description": "Olfactory pyramid with top, heart, and base arrays"
+        },
+        "sizes": {
+          "type": "array",
+          "description": "Available bottle and decant sizes (e.g. 5ml, 10ml, 22ml, 50ml, 70ml, 80ml, 100ml, or custom volumes) with SZL pricing"
+        },
+        "availability": {
+          "type": "string",
+          "enum": ["In Stock", "Low Stock", "Out of Stock", "Pre-Order"],
+          "description": "Current availability status"
+        },
+        "featured": {
+          "type": "boolean",
+          "description": "Whether featured on storefront highlights"
+        },
+        "bestseller": {
+          "type": "boolean",
+          "description": "Whether shown in Best Sellers"
+        },
+        "onSpecial": {
+          "type": "boolean",
+          "description": "Whether included in the active Special / Black Friday promotions list"
+        },
+        "specialLabel": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Optional promotional label such as Black Friday Special"
+        },
+        "specialDiscountPercent": {
+          "type": "number",
+          "description": "Percentage discount (0 to 90) applied while on special"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this document"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "slug",
+        "isSampleListing",
+        "name",
+        "brand",
+        "category",
+        "concentration",
+        "description",
+        "image",
+        "notes",
+        "sizes",
+        "availability",
+        "featured",
+        "bestseller",
+        "onSpecial",
+        "specialLabel",
+        "specialDiscountPercent",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "A promotional discount code created by the store owner for WhatsApp order pricing.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase coupon code (matches document ID)"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Short description of the coupon offer"
+        },
+        "discountType": {
+          "type": "string",
+          "enum": ["percentage", "fixed"],
+          "description": "Whether discount is percentage off or fixed SZL amount off"
+        },
+        "discountValue": {
+          "type": "number",
+          "description": "Discount percentage (1-95) or fixed SZL amount"
+        },
+        "minOrderAmount": {
+          "type": "number",
+          "description": "Minimum SZL subtotal required to apply coupon (0 for no minimum)"
+        },
+        "appliesTo": {
+          "type": "string",
+          "enum": ["all", "specials", "full-bottles"],
+          "description": "Scope of items the coupon applies to"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the coupon is currently active"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this coupon"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "code",
+        "description",
+        "discountType",
+        "discountValue",
+        "minOrderAmount",
+        "appliesTo",
+        "active",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SpecialCampaign": {
+      "title": "SpecialCampaign",
+      "description": "Owner-configured promotional campaign (such as Black Friday Specials) displayed on the storefront.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Campaign headline (e.g. Black Friday Specials)"
+        },
+        "badgeText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Short tag displayed on special items and banner"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Supporting campaign copy"
+        },
+        "announcementText": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Optional announcement bar message while campaign is active"
+        },
+        "promoCodeHint": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Optional coupon code highlighted on the campaign banner"
+        },
+        "endsAt": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Optional ISO-8601 end date/time controlling how long specials remain active"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the campaign showcase is live on the storefront"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who configured this campaign"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "title",
+        "badgeText",
+        "subtitle",
+        "announcementText",
+        "promoCodeHint",
+        "endsAt",
+        "enabled",
+        "ownerUid",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Verified owner or authorized manager account record.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Verified email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "manager"],
+          "description": "Authorization tier"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": ["email", "role", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/perfumes/{perfumeId}": {
+      "schema": { "$ref": "#/entities/Perfume" },
+      "description": "Publicly readable Arabian fragrance catalogue curated exclusively by the owner."
+    },
+    "/coupons/{couponId}": {
+      "schema": { "$ref": "#/entities/Coupon" },
+      "description": "Coupon discount codes. Individual codes can be looked up by exact ID at checkout, while full listing and CRUD are restricted to the owner."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/SpecialCampaign" },
+      "description": "Storefront special event settings such as Black Friday Specials."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized admin records managed strictly by the bootstrapped owner."
+    }
+  }
+}
