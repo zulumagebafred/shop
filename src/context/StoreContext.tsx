@@ -125,7 +125,7 @@ export function resolveAdminLoginEmail(loginInput: string): string {
   const cleaned = loginInput.trim().toLowerCase();
   if (!cleaned) return OWNER_EMAIL;
   if (cleaned.includes('@')) return cleaned;
-  if (cleaned === 'zulumagebafred') return OWNER_EMAIL;
+  if (cleaned === 'zulumageba' || cleaned === 'zulumagebafred') return OWNER_EMAIL;
   return `${cleaned}@gmail.com`;
 }
 

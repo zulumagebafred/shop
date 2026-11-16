@@ -348,20 +348,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const mapFirebaseAuthError = (err: unknown, fallback: string): string => {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('auth/operation-not-allowed')) {
-      return 'Email/Password sign-in needs to be enabled in Firebase Console (Authentication → Sign-in method → Email/Password). Meanwhile, you can sign in with Google below.';
+      return 'Email/Password sign-in is disabled in Firebase Console. Enable it under Authentication → Sign-in method → Email/Password, then click "Reset / Set Password" to choose your password for zulumageba.';
     }
     if (
       msg.includes('auth/invalid-credential') ||
       msg.includes('auth/wrong-password') ||
       msg.includes('auth/user-not-found')
     ) {
-      return 'Incorrect login or password. If you have not created a password for zulumagebafred yet, sign in with Google below and click "Set Password", or use Reset Password.';
+      return 'Incorrect login or password. If you have not set a password for zulumageba yet, click "Reset / Set Password" to create one via email, or sign in with Google and click "Password" at the top.';
+    }
+    if (msg.includes('auth/popup-blocked') || msg.includes('auth/popup-closed-by-user')) {
+      return 'Google popup was blocked or closed. Use the zulumageba + password form above instead (works on any device without popups).';
     }
     if (msg.includes('auth/too-many-requests')) {
       return 'Too many sign-in attempts. Please wait a few minutes or sign in with Google below.';
     }
     if (msg.includes('auth/requires-recent-login')) {
-      return 'For security, please sign out and sign back in with Google right before updating your password.';
+      return 'For security, please sign out and sign back in right before updating your password.';
     }
     return msg || fallback;
   };
@@ -384,7 +387,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setAuthError(null);
     setAuthNotice(null);
     if (!loginId.trim()) {
-      setAuthError('Enter your admin login (e.g. zulumagebafred).');
+      setAuthError('Enter your admin login (zulumageba).');
       return;
     }
     if (!loginPassword) {
@@ -405,12 +408,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleSendPasswordReset = async () => {
     setAuthError(null);
     setAuthNotice(null);
-    const targetLogin = loginId.trim() || 'zulumagebafred';
+    const targetLogin = loginId.trim() || 'zulumageba';
     setSendingReset(true);
     try {
       const sentEmail = await sendOwnerPasswordReset(targetLogin);
       setAuthNotice(
-        `Password setup/reset email sent to ${sentEmail}. Check your inbox (and spam folder), then return here to sign in.`
+        `Password setup/reset email sent to ${sentEmail}. Open the link in your email to set your password, then log in with "zulumageba" on any device.`
       );
     } catch (err) {
       setAuthError(mapFirebaseAuthError(err, 'Could not send password reset email.'));
@@ -472,7 +475,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setConfirmOwnerPassword('');
       onNotify(
         'Admin Password Saved',
-        'You can now log in using "zulumagebafred" and this password.'
+        'You can now log in manually from any device using "zulumageba" and this password.'
       );
     } catch (err) {
       setPasswordModalError(
@@ -1032,7 +1035,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 Owner Admin Login
               </h1>
               <p className="text-sm text-[#525252] leading-relaxed">
-                Enter your owner login (<span className="font-semibold text-[#0A0A0A]">zulumagebafred</span>) and password, or sign in with Google.
+                Enter your owner login (<span className="font-semibold text-[#0A0A0A]">zulumageba</span>) and password to sign in on any device, or continue with Google.
               </p>
             </div>
 
@@ -1062,7 +1065,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   autoComplete="username"
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
-                  placeholder="zulumagebafred"
+                  placeholder="zulumageba"
                   required
                   className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
                 />
@@ -3293,7 +3296,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                 <form onSubmit={handleSaveOwnerPassword} className="p-6 space-y-4">
                   <p className="text-xs text-[#525252] leading-relaxed">
-                    Set or update the password for login <strong className="text-[#0A0A0A]">zulumagebafred</strong> ({OWNER_EMAIL}).
+                    Set or update the manual login password for <strong className="text-[#0A0A0A]">zulumageba</strong> ({OWNER_EMAIL}) so you can sign in on any device.
                   </p>
 
                   <div className="space-y-1.5">
