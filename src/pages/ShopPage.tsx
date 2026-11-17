@@ -4,23 +4,33 @@ import { Filter, Flame, Search, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useStore } from '../context/StoreContext';
 import { getUniqueBrands } from '../data/catalogue';
-import { getProductPriceSummary } from '../utils/pricing';
+import {
+  getProductPriceSummary,
+  matchesPriceRange,
+} from '../utils/pricing';
+import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
 import {
   BottleSize,
   FragranceCategory,
   FragranceProduct,
+  PriceRangeFilter,
+  SeasonFilter,
 } from '../types/fragrance';
 
 interface ShopPageProps {
   selectedCategory: FragranceCategory | 'All';
   selectedBrand: string;
   selectedSize: BottleSize | 'All';
+  selectedPriceRange: PriceRangeFilter;
+  selectedSeason: SeasonFilter;
   searchQuery: string;
   onlyInStock: boolean;
   onlySpecials: boolean;
   onCategoryChange: (cat: FragranceCategory | 'All') => void;
   onBrandChange: (brand: string) => void;
   onSizeChange: (size: BottleSize | 'All') => void;
+  onPriceRangeChange: (range: PriceRangeFilter) => void;
+  onSeasonChange: (season: SeasonFilter) => void;
   onSearchChange: (q: string) => void;
   onOnlyInStockChange: (val: boolean) => void;
   onOnlySpecialsChange: (val: boolean) => void;
@@ -29,16 +39,28 @@ interface ShopPageProps {
   onQuickWhatsApp: (product: FragranceProduct) => void;
 }
 
+const PRICE_RANGE_OPTIONS: { id: PriceRangeFilter; label: string }[] = [
+  { id: 'all', label: 'All Prices' },
+  { id: 'under-300', label: 'Under E300' },
+  { id: 'under-500', label: 'Under E500' },
+  { id: 'under-800', label: 'Under E800' },
+  { id: '800-plus', label: 'E800+' },
+];
+
 export const ShopPage: React.FC<ShopPageProps> = ({
   selectedCategory,
   selectedBrand,
   selectedSize,
+  selectedPriceRange,
+  selectedSeason,
   searchQuery,
   onlyInStock,
   onlySpecials,
   onCategoryChange,
   onBrandChange,
   onSizeChange,
+  onPriceRangeChange,
+  onSeasonChange,
   onSearchChange,
   onOnlyInStockChange,
   onOnlySpecialsChange,
@@ -87,6 +109,15 @@ export const ShopPage: React.FC<ShopPageProps> = ({
         );
         if (!hasSize) return false;
       }
+      if (!matchesPriceRange(product, selectedPriceRange)) {
+        return false;
+      }
+      if (
+        selectedSeason !== 'all' &&
+        !getProductSeasons(product).includes(selectedSeason)
+      ) {
+        return false;
+      }
       if (onlyInStock && product.availability === 'Out of Stock') {
         return false;
       }
@@ -125,19 +156,38 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     selectedCategory,
     selectedBrand,
     selectedSize,
+    selectedPriceRange,
+    selectedSeason,
     searchQuery,
     onlyInStock,
     onlySpecials,
     sortBy,
   ]);
 
+  const activeSeasonMeta = SEASON_OPTIONS.find((s) => s.id === selectedSeason);
+  const activePriceMeta = PRICE_RANGE_OPTIONS.find((p) => p.id === selectedPriceRange);
+
   const hasActiveFilters =
     selectedCategory !== 'All' ||
     selectedBrand !== 'All' ||
     selectedSize !== 'All' ||
+    selectedPriceRange !== 'all' ||
+    selectedSeason !== 'all' ||
     searchQuery.trim() !== '' ||
     onlyInStock ||
     onlySpecials;
+
+  const headingTitle = onlySpecials
+    ? campaign.title || 'Fragrance Specials'
+    : activeSeasonMeta && selectedPriceRange !== 'all' && activePriceMeta
+    ? `${activeSeasonMeta.title} · ${activePriceMeta.label}`
+    : activeSeasonMeta
+    ? activeSeasonMeta.title
+    : selectedPriceRange !== 'all' && activePriceMeta
+    ? `Fragrances ${activePriceMeta.label}`
+    : selectedCategory === 'All'
+    ? 'All Fragrances'
+    : `${selectedCategory}'s Fragrances`;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 sm:py-14 space-y-6 sm:space-y-10">
@@ -147,18 +197,20 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
             {onlySpecials
               ? campaign.badgeText || 'Special Offers'
+              : activeSeasonMeta
+              ? activeSeasonMeta.eyebrow
               : 'AuraHut Co. Catalogue'}
           </p>
           <h1 className="text-2xl sm:text-5xl font-bold text-[#0A0A0A]">
-            {onlySpecials
-              ? campaign.title || 'Fragrance Specials'
-              : selectedCategory === 'All'
-              ? 'All Fragrances'
-              : `${selectedCategory}'s Fragrances`}
+            {headingTitle}
           </h1>
           <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
             {onlySpecials && campaign.subtitle
               ? campaign.subtitle
+              : activeSeasonMeta
+              ? `${activeSeasonMeta.scentCue} — crafted for ${activeSeasonMeta.shortLabel.toLowerCase()} wear.`
+              : selectedPriceRange !== 'all' && activePriceMeta
+              ? `Showing perfumes with an available decant or bottle option ${activePriceMeta.label.toLowerCase()}.`
               : 'Each listing displays the full-bottle price upfront, with travel decants inside.'}
           </p>
         </div>
@@ -242,6 +294,66 @@ export const ShopPage: React.FC<ShopPageProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+
+        {/* Price Range & Season Filter Row */}
+        <div className="pt-4 border-t border-[#E5E5E5] grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#525252] mr-1">
+              Price:
+            </span>
+            {PRICE_RANGE_OPTIONS.map((opt) => {
+              const active = selectedPriceRange === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => onPriceRangeChange(opt.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium tabular-nums border transition-colors whitespace-nowrap ${
+                    active
+                      ? 'bg-[#0A0A0A] text-[#FACC15] border-[#0A0A0A] font-semibold'
+                      : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#525252] mr-1">
+              Season:
+            </span>
+            <button
+              type="button"
+              onClick={() => onSeasonChange('all')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                selectedSeason === 'all'
+                  ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                  : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+              }`}
+            >
+              All Seasons
+            </button>
+            {SEASON_OPTIONS.map((s) => {
+              const active = selectedSeason === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSeasonChange(s.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                    active
+                      ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                      : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                  }`}
+                >
+                  {s.shortLabel}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -369,6 +481,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
                 key={product.id}
                 product={product}
                 index={idx}
+                priceRange={selectedPriceRange}
                 onViewDetails={onSelectProduct}
                 onQuickWhatsApp={onQuickWhatsApp}
               />

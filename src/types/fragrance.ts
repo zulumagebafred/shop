@@ -21,6 +21,15 @@ export type BranchId = 'manzini' | 'mbabane';
 
 export type DeliveryMethod = 'store-pickup' | 'post-office' | 'driver-delivery';
 
+export type PriceRangeFilter =
+  | 'all'
+  | 'under-300'
+  | 'under-500'
+  | 'under-800'
+  | '800-plus';
+
+export type SeasonFilter = 'all' | 'winter' | 'summer' | 'spring' | 'autumn';
+
 export const DRIVER_DELIVERY_FEE = 30;
 
 export interface SizeOption {

@@ -77,6 +77,7 @@ interface StoreContextValue {
   catalogueLoading: boolean;
   catalogueError: string | null;
   campaign: SpecialCampaign;
+  campaignLoading: boolean;
   coupons: Coupon[];
   couponsLoading: boolean;
 
@@ -129,17 +130,60 @@ export function resolveAdminLoginEmail(loginInput: string): string {
   return `${cleaned}@gmail.com`;
 }
 
+const CAMPAIGN_CACHE_KEY = 'aurahut_campaign_cache_v1';
+const PERFUMES_CACHE_KEY = 'aurahut_perfumes_cache_v1';
+
+function readCachedCampaign(): SpecialCampaign | null {
+  try {
+    const raw = localStorage.getItem(CAMPAIGN_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SpecialCampaign>;
+    if (typeof parsed.enabled !== 'boolean') return null;
+    return {
+      title: String(parsed.title ?? DEFAULT_CAMPAIGN.title),
+      badgeText: String(parsed.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
+      subtitle: String(parsed.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
+      announcementText: String(parsed.announcementText ?? ''),
+      promoCodeHint: String(parsed.promoCodeHint ?? ''),
+      endsAt: String(parsed.endsAt ?? ''),
+      enabled: parsed.enabled,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readCachedPerfumes(): FragranceProduct[] {
+  try {
+    const raw = localStorage.getItem(PERFUMES_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed as FragranceProduct[];
+    }
+  } catch {
+    // Ignore cache parse errors
+  }
+  return [];
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const initialCachedPerfumes = useMemo(() => readCachedPerfumes(), []);
+  const initialCachedCampaign = useMemo(() => readCachedCampaign(), []);
+
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
 
-  const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>([]);
-  const [catalogueLoading, setCatalogueLoading] = useState(true);
+  const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>(initialCachedPerfumes);
+  const [catalogueLoading, setCatalogueLoading] = useState(initialCachedPerfumes.length === 0);
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
-  const [campaign, setCampaign] = useState<SpecialCampaign>(DEFAULT_CAMPAIGN);
+  const [campaign, setCampaign] = useState<SpecialCampaign>(
+    initialCachedCampaign ?? DEFAULT_CAMPAIGN
+  );
+  const [campaignLoading, setCampaignLoading] = useState(initialCachedCampaign === null);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [couponsLoading, setCouponsLoading] = useState(false);
 
@@ -210,6 +254,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         setLivePerfumes(items);
         setCatalogueError(null);
         setCatalogueLoading(false);
+        try {
+          if (items.length > 0) {
+            localStorage.setItem(PERFUMES_CACHE_KEY, JSON.stringify(items));
+          } else {
+            localStorage.removeItem(PERFUMES_CACHE_KEY);
+          }
+        } catch {
+          // Ignore storage quota errors
+        }
       },
       (error) => {
         setCatalogueLoading(false);
@@ -223,7 +276,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     );
-    return unsubscribe;
+    const safetyTimer = window.setTimeout(() => {
+      setCatalogueLoading(false);
+    }, 2500);
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
   }, [isOwner]);
 
   // 3. Public Campaign Listener (Black Friday / Seasonal Special)
@@ -232,22 +291,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     const unsubscribe = onSnapshot(
       ref,
       (snap) => {
-        if (snap.exists()) {
-          const d = snap.data();
-          setCampaign({
-            title: String(d.title ?? DEFAULT_CAMPAIGN.title),
-            badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
-            subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
-            announcementText: String(d.announcementText ?? ''),
-            promoCodeHint: String(d.promoCodeHint ?? ''),
-            endsAt: String(d.endsAt ?? ''),
-            enabled: Boolean(d.enabled),
-          });
-        } else {
-          setCampaign(DEFAULT_CAMPAIGN);
+        const nextCampaign: SpecialCampaign = snap.exists()
+          ? (() => {
+              const d = snap.data();
+              return {
+                title: String(d.title ?? DEFAULT_CAMPAIGN.title),
+                badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
+                subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
+                announcementText: String(d.announcementText ?? ''),
+                promoCodeHint: String(d.promoCodeHint ?? ''),
+                endsAt: String(d.endsAt ?? ''),
+                enabled: Boolean(d.enabled),
+              };
+            })()
+          : DEFAULT_CAMPAIGN;
+        setCampaign(nextCampaign);
+        setCampaignLoading(false);
+        try {
+          localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(nextCampaign));
+        } catch {
+          // Ignore storage quota errors
         }
       },
       (error) => {
+        setCampaignLoading(false);
         try {
           handleFirestoreError(error, OperationType.GET, 'campaigns/active-special');
         } catch {
@@ -255,7 +322,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     );
-    return unsubscribe;
+    const safetyTimer = window.setTimeout(() => {
+      setCampaignLoading(false);
+    }, 2500);
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
   }, []);
 
   // 4. Owner-Only Coupons Listener
@@ -724,6 +797,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     catalogueLoading,
     catalogueError,
     campaign,
+    campaignLoading,
     coupons,
     couponsLoading,
     lookupCouponByCode,

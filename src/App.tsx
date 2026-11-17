@@ -51,6 +51,8 @@ import {
   DeliveryMethod,
   FragranceCategory,
   FragranceProduct,
+  PriceRangeFilter,
+  SeasonFilter,
 } from './types/fragrance';
 import { getEffectiveUnitPrice } from './utils/pricing';
 
@@ -85,6 +87,8 @@ function AppContent() {
   const [selectedCategory, setSelectedCategory] = useState<FragranceCategory | 'All'>('All');
   const [selectedBrand, setSelectedBrand] = useState<string>('All');
   const [selectedSize, setSelectedSize] = useState<BottleSize | 'All'>('All');
+  const [selectedPriceRange, setSelectedPriceRange] = useState<PriceRangeFilter>('all');
+  const [selectedSeason, setSelectedSeason] = useState<SeasonFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
@@ -227,7 +231,15 @@ function AppContent() {
       if (raf2) window.cancelAnimationFrame(raf2);
       window.clearTimeout(settleTimer);
     };
-  }, [currentPage, selectedProductId, selectedCategory, onlySpecials, forceScrollTopInstant]);
+  }, [
+    currentPage,
+    selectedProductId,
+    selectedCategory,
+    selectedPriceRange,
+    selectedSeason,
+    onlySpecials,
+    forceScrollTopInstant,
+  ]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -267,6 +279,8 @@ function AppContent() {
       category?: FragranceCategory | 'All';
       brand?: string;
       size?: BottleSize | 'All';
+      priceRange?: PriceRangeFilter;
+      season?: SeasonFilter;
       query?: string;
       onlySpecials?: boolean;
     }
@@ -275,6 +289,8 @@ function AppContent() {
       if (options?.category !== undefined) setSelectedCategory(options.category);
       if (options?.brand !== undefined) setSelectedBrand(options.brand);
       if (options?.size !== undefined) setSelectedSize(options.size);
+      if (options?.priceRange !== undefined) setSelectedPriceRange(options.priceRange);
+      if (options?.season !== undefined) setSelectedSeason(options.season);
       if (options?.query !== undefined) setSearchQuery(options.query);
       if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
     }
@@ -297,6 +313,8 @@ function AppContent() {
     setSelectedCategory('All');
     setSelectedBrand('All');
     setSelectedSize('All');
+    setSelectedPriceRange('all');
+    setSelectedSeason('all');
     setSearchQuery('');
     setOnlyInStock(false);
     setOnlySpecials(false);
@@ -453,12 +471,16 @@ function AppContent() {
                 selectedCategory={selectedCategory}
                 selectedBrand={selectedBrand}
                 selectedSize={selectedSize}
+                selectedPriceRange={selectedPriceRange}
+                selectedSeason={selectedSeason}
                 searchQuery={searchQuery}
                 onlyInStock={onlyInStock}
                 onlySpecials={onlySpecials}
                 onCategoryChange={setSelectedCategory}
                 onBrandChange={setSelectedBrand}
                 onSizeChange={setSelectedSize}
+                onPriceRangeChange={setSelectedPriceRange}
+                onSeasonChange={setSelectedSeason}
                 onSearchChange={setSearchQuery}
                 onOnlyInStockChange={setOnlyInStock}
                 onOnlySpecialsChange={setOnlySpecials}

@@ -7,12 +7,16 @@ import {
   Clock,
   ExternalLink,
   Facebook,
+  Flower2,
   Instagram,
+  Leaf,
   MapPin,
   Phone,
   ShieldCheck,
   ShoppingBag,
+  Snowflake,
   Sparkles,
+  Sun,
 } from 'lucide-react';
 import { HouseLogo } from '../components/HouseLogo';
 import { ProductCard } from '../components/ProductCard';
@@ -22,13 +26,16 @@ import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { getUniqueBrands } from '../data/catalogue';
 import { siteContent } from '../data/siteContent';
-import { getProductPriceSummary } from '../utils/pricing';
+import { getProductPriceSummary, matchesPriceRange } from '../utils/pricing';
+import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
 import {
   AppPage,
   BottleSize,
   BranchId,
   FragranceCategory,
   FragranceProduct,
+  PriceRangeFilter,
+  SeasonFilter,
 } from '../types/fragrance';
 
 interface HomePageProps {
@@ -38,6 +45,8 @@ interface HomePageProps {
       category?: FragranceCategory | 'All';
       brand?: string;
       size?: BottleSize | 'All';
+      priceRange?: PriceRangeFilter;
+      season?: SeasonFilter;
       onlySpecials?: boolean;
     }
   ) => void;
@@ -188,7 +197,8 @@ export const HomePage: React.FC<HomePageProps> = ({
   onQuickWhatsApp,
   onSelectBranchAndBasket,
 }) => {
-  const { perfumes, campaign } = useStore();
+  const { perfumes, campaign, campaignLoading, catalogueLoading } = useStore();
+  const heroBooting = campaignLoading || catalogueLoading;
   const specialPerfumes = perfumes.filter((p) => Boolean(p.onSpecial));
   const catalogueBrands = getUniqueBrands(perfumes);
   const [activeMood, setActiveMood] = useState<ScentMood>('all');
@@ -355,11 +365,79 @@ export const HomePage: React.FC<HomePageProps> = ({
     return () => window.clearInterval(timer);
   }, [moodPaused, canSlideMood, maxMoodSlideIndex]);
 
+  const priceDeals: {
+    id: Exclude<PriceRangeFilter, 'all'>;
+    eyebrow: string;
+    headline: string;
+    description: string;
+    highlight?: boolean;
+  }[] = [
+    {
+      id: 'under-300',
+      eyebrow: 'UNDER',
+      headline: 'E300',
+      description: 'Easy gifts and everyday finds',
+    },
+    {
+      id: 'under-500',
+      eyebrow: 'UNDER',
+      headline: 'E500',
+      description: 'Best sellers and 10ml–22ml sprays',
+    },
+    {
+      id: 'under-800',
+      eyebrow: 'UNDER',
+      headline: 'E800',
+      description: 'Fragrance favourites & mid-sizes',
+    },
+    {
+      id: '800-plus',
+      eyebrow: 'PREMIUM',
+      headline: 'E800+',
+      description: 'Signature houses & full bottles',
+      highlight: true,
+    },
+  ];
+
+  const getSeasonIcon = (seasonId: Exclude<SeasonFilter, 'all'>) => {
+    if (seasonId === 'winter') return Snowflake;
+    if (seasonId === 'summer') return Sun;
+    if (seasonId === 'spring') return Flower2;
+    return Leaf;
+  };
+
   return (
     <div className="bg-white text-[#0A0A0A]">
       {/* HERO SPECIALS SHOWCASE — Animated Responsive Fan Deck */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        {activeSlideProduct ? (
+        {heroBooting ? (
+          <div
+            aria-label="Loading featured collection"
+            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[430px] sm:min-h-[460px] lg:min-h-[480px] flex items-center"
+          >
+            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+              <div className="lg:col-span-6 space-y-5 flex flex-col items-center lg:items-start">
+                <div className="h-3.5 w-32 rounded bg-white/15 animate-pulse" />
+                <div className="space-y-3 w-full max-w-md flex flex-col items-center lg:items-start">
+                  <div className="h-12 sm:h-14 w-3/4 rounded-xl bg-white/15 animate-pulse" />
+                  <div className="h-12 sm:h-14 w-2/3 rounded-xl bg-[#FACC15]/25 animate-pulse" />
+                </div>
+                <div className="flex gap-2 w-full max-w-md justify-center lg:justify-start pt-1">
+                  {[0, 1, 2, 3].map((slot) => (
+                    <div
+                      key={slot}
+                      className="flex-1 min-w-[58px] max-w-[84px] h-[64px] rounded-xl border border-white/10 bg-white/[0.05] animate-pulse"
+                    />
+                  ))}
+                </div>
+                <div className="h-11 w-44 rounded-full bg-[#FACC15]/30 animate-pulse mt-2" />
+              </div>
+              <div className="lg:col-span-6 h-[300px] sm:h-[360px] lg:h-[400px] flex items-center justify-center">
+                <div className="w-[170px] sm:w-[205px] h-[270px] sm:h-[325px] rounded-2xl bg-white/10 border border-white/15 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        ) : activeSlideProduct ? (
           <div
             onMouseEnter={() => setHeroPaused(true)}
             onMouseLeave={() => setHeroPaused(false)}
@@ -444,6 +522,10 @@ export const HomePage: React.FC<HomePageProps> = ({
                         onClick={() =>
                           onNavigate('shop', {
                             category: 'All',
+                            brand: 'All',
+                            size: 'All',
+                            priceRange: 'all',
+                            season: 'all',
                             onlySpecials: specialPerfumes.length > 0,
                           })
                         }
@@ -672,6 +754,154 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
+      {/* SHOP DEALS BY PRICE */}
+      <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 sm:pt-16">
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-6">
+          <h2 className="text-2xl sm:text-4xl font-extrabold italic uppercase tracking-tight text-[#0A0A0A]">
+            Shop Deals by Price
+          </h2>
+          <p className="text-xs sm:text-sm text-[#525252]">
+            {campaign.enabled && campaign.badgeText
+              ? `Every price reflects active ${campaign.badgeText.toLowerCase()} savings`
+              : 'Filter bottles & travel decants by budget'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {priceDeals.map((tier) => {
+            const matchCount = perfumes.filter((p) =>
+              matchesPriceRange(p, tier.id)
+            ).length;
+            return (
+              <motion.button
+                key={tier.id}
+                type="button"
+                whileHover={{ y: -3 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                onClick={() =>
+                  onNavigate('shop', {
+                    category: 'All',
+                    brand: 'All',
+                    size: 'All',
+                    priceRange: tier.id,
+                    season: 'all',
+                    onlySpecials: false,
+                  })
+                }
+                className={`group rounded-2xl p-6 sm:p-7 flex flex-col justify-between min-h-[168px] text-left transition-shadow ${
+                  tier.highlight
+                    ? 'bg-[#FACC15] text-[#0A0A0A] hover:shadow-[0_18px_36px_-14px_rgba(250,204,21,0.55)]'
+                    : 'bg-[#0A0A0A] text-white hover:shadow-[0_18px_36px_-14px_rgba(0,0,0,0.45)]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <span
+                    className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${
+                      tier.highlight ? 'text-[#0A0A0A]/80' : 'text-white/75'
+                    }`}
+                  >
+                    {tier.eyebrow}
+                  </span>
+                  <span
+                    className={`text-[11px] font-medium tabular-nums ${
+                      tier.highlight ? 'text-[#0A0A0A]/75' : 'text-white/60'
+                    }`}
+                  >
+                    {matchCount} {matchCount === 1 ? 'scent' : 'scents'}
+                  </span>
+                </div>
+
+                <p
+                  className={`text-4xl sm:text-[42px] font-extrabold italic tracking-tight tabular-nums leading-none my-4 ${
+                    tier.highlight ? 'text-[#0A0A0A]' : 'text-[#FACC15]'
+                  }`}
+                >
+                  {tier.headline}
+                </p>
+
+                <div className="flex items-end justify-between gap-3 w-full">
+                  <span
+                    className={`text-xs sm:text-sm font-semibold leading-snug ${
+                      tier.highlight ? 'text-[#0A0A0A]' : 'text-white'
+                    }`}
+                  >
+                    {tier.description}
+                  </span>
+                  <ArrowRight
+                    className={`w-4 h-4 shrink-0 transition-transform group-hover:translate-x-1 ${
+                      tier.highlight ? 'text-[#0A0A0A]' : 'text-white'
+                    }`}
+                  />
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      </RevealSection>
+
+      {/* SHOP BY SEASON */}
+      <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-14">
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-6">
+          <h2 className="text-2xl sm:text-4xl font-extrabold italic uppercase tracking-tight text-[#0A0A0A]">
+            Shop by Season
+          </h2>
+          <p className="text-xs sm:text-sm text-[#525252]">
+            Curated by weather — from winter oud &amp; spice to summer citrus
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {SEASON_OPTIONS.map((season) => {
+            const Icon = getSeasonIcon(season.id);
+            const seasonCount = perfumes.filter((p) =>
+              getProductSeasons(p).includes(season.id)
+            ).length;
+            return (
+              <motion.button
+                key={season.id}
+                type="button"
+                whileHover={{ y: -3 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                onClick={() =>
+                  onNavigate('shop', {
+                    category: 'All',
+                    brand: 'All',
+                    size: 'All',
+                    priceRange: 'all',
+                    season: season.id,
+                    onlySpecials: false,
+                  })
+                }
+                className="group bg-[#F6F6F7] border border-[#E5E5E5] hover:border-[#0A0A0A] rounded-2xl p-6 flex flex-col justify-between min-h-[168px] text-left transition-colors hover:shadow-[0_14px_30px_-14px_rgba(0,0,0,0.12)]"
+              >
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#525252]">
+                    {season.eyebrow}
+                  </span>
+                  <Icon className="w-4 h-4 text-[#0A0A0A] shrink-0" aria-hidden="true" />
+                </div>
+
+                <div className="my-3.5 space-y-1">
+                  <h3 className="text-2xl font-extrabold italic uppercase tracking-tight text-[#0A0A0A]">
+                    {season.title}
+                  </h3>
+                  <p className="text-xs text-[#525252]">{season.scentCue}</p>
+                </div>
+
+                <div className="pt-3 border-t border-[#E5E5E5] flex items-center justify-between gap-2 w-full">
+                  <span className="text-xs font-semibold text-[#0A0A0A] tabular-nums">
+                    {seasonCount} {seasonCount === 1 ? 'perfume' : 'perfumes'}
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-[#0A0A0A] shrink-0 transition-transform group-hover:translate-x-1" />
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      </RevealSection>
+
       {/* INSTANT MOOD & SIGNATURE PICKER (Spend Less Time Guessing) */}
       <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
@@ -688,7 +918,16 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => onNavigate('shop', { category: 'All', onlySpecials: false })}
+            onClick={() =>
+              onNavigate('shop', {
+                category: 'All',
+                brand: 'All',
+                size: 'All',
+                priceRange: 'all',
+                season: 'all',
+                onlySpecials: false,
+              })
+            }
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold uppercase tracking-[0.12em] text-[#0A0A0A] transition-colors self-start md:self-auto whitespace-nowrap shrink-0"
           >
             <span>Browse Full Catalogue</span>
@@ -833,7 +1072,14 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => onNavigate('shop', { category: 'All', onlySpecials: false })}
+              onClick={() =>
+                onNavigate('shop', {
+                  category: 'All',
+                  priceRange: 'all',
+                  season: 'all',
+                  onlySpecials: false,
+                })
+              }
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold uppercase tracking-[0.12em] text-[#0A0A0A] transition-colors self-start sm:self-auto"
             >
               <span>View All Fragrances</span>
@@ -848,7 +1094,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                 type="button"
                 whileHover={{ y: -4 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                onClick={() => onNavigate('shop', { category: cat.category, onlySpecials: false })}
+                onClick={() =>
+                  onNavigate('shop', {
+                    category: cat.category,
+                    priceRange: 'all',
+                    season: 'all',
+                    onlySpecials: false,
+                  })
+                }
                 className="group relative aspect-[3/4] w-full rounded-3xl overflow-hidden bg-[#0A0A0A] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
               >
                 <ResilientImage
@@ -1020,7 +1273,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                     delay: Math.min(idx * 0.025, 0.12),
                     ease: [0.16, 1, 0.3, 1],
                   }}
-                  onClick={() => onNavigate('shop', { brand, onlySpecials: false })}
+                  onClick={() =>
+                    onNavigate('shop', {
+                      brand,
+                      priceRange: 'all',
+                      season: 'all',
+                      onlySpecials: false,
+                    })
+                  }
                   aria-label={`Browse ${brand} fragrances`}
                   className="bg-white border border-[#E5E5E5] hover:border-[#0A0A0A] rounded-2xl p-3.5 text-left transition-all duration-200 hover:shadow-[0_14px_30px_-12px_rgba(0,0,0,0.1)] group flex flex-col justify-between"
                 >
@@ -1057,7 +1317,14 @@ export const HomePage: React.FC<HomePageProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => onNavigate('shop', { category: 'All', onlySpecials: false })}
+              onClick={() =>
+                onNavigate('shop', {
+                  category: 'All',
+                  priceRange: 'all',
+                  season: 'all',
+                  onlySpecials: false,
+                })
+              }
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] text-xs font-semibold uppercase tracking-[0.12em] transition-colors self-start sm:self-auto"
             >
               <span>{siteContent.featuredCollectionBanner.ctaLabel}</span>

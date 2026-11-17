@@ -1,4 +1,10 @@
-import { BasketItem, Coupon, FragranceProduct, SizeOption } from '../types/fragrance';
+import {
+  BasketItem,
+  Coupon,
+  FragranceProduct,
+  PriceRangeFilter,
+  SizeOption,
+} from '../types/fragrance';
 
 export function getEffectiveUnitPrice(
   rawPrice: number | null,
@@ -100,6 +106,65 @@ export function getProductPriceSummary(product: FragranceProduct): {
     hasDiscount,
     pricedCount: availableSizes.length,
   };
+}
+
+export function getBestPriceOptionForRange(
+  product: FragranceProduct,
+  priceRange: PriceRangeFilter
+): {
+  size: string;
+  originalPrice: number;
+  effectivePrice: number;
+  hasDiscount: boolean;
+} | null {
+  if (priceRange === 'all') return null;
+
+  const candidates = product.sizes
+    .filter((s) => s.available && s.price !== null)
+    .map((s) => {
+      const originalPrice = s.price as number;
+      const effectivePrice = getEffectiveUnitPrice(
+        originalPrice,
+        product.onSpecial,
+        product.specialDiscountPercent
+      ) as number;
+      return {
+        size: s.size,
+        originalPrice,
+        effectivePrice,
+        hasDiscount: effectivePrice < originalPrice,
+        ml: parseVolumeMl(s.size),
+      };
+    })
+    .filter((entry) => {
+      if (priceRange === 'under-300') return entry.effectivePrice <= 300;
+      if (priceRange === 'under-500') return entry.effectivePrice <= 500;
+      if (priceRange === 'under-800') return entry.effectivePrice <= 800;
+      return entry.effectivePrice > 800;
+    });
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (b.ml !== a.ml) return b.ml - a.ml;
+    return b.effectivePrice - a.effectivePrice;
+  });
+
+  const best = candidates[0];
+  return {
+    size: best.size,
+    originalPrice: best.originalPrice,
+    effectivePrice: best.effectivePrice,
+    hasDiscount: best.hasDiscount,
+  };
+}
+
+export function matchesPriceRange(
+  product: FragranceProduct,
+  priceRange: PriceRangeFilter
+): boolean {
+  if (priceRange === 'all') return true;
+  return getBestPriceOptionForRange(product, priceRange) !== null;
 }
 
 export function getSizeEffectivePrice(

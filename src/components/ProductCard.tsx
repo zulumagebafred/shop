@@ -2,8 +2,8 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { ShoppingBag } from 'lucide-react';
 import { formatPrice } from '../config/siteConfig';
-import { FragranceProduct } from '../types/fragrance';
-import { getProductPriceSummary } from '../utils/pricing';
+import { FragranceProduct, PriceRangeFilter } from '../types/fragrance';
+import { getBestPriceOptionForRange, getProductPriceSummary } from '../utils/pricing';
 import { ResilientImage } from './ResilientImage';
 
 interface ProductCardProps {
@@ -13,6 +13,7 @@ interface ProductCardProps {
   index?: number;
   disableEntranceAnimation?: boolean;
   imageLoading?: 'eager' | 'lazy';
+  priceRange?: PriceRangeFilter;
 }
 
 function getScentPreview(product: FragranceProduct): string {
@@ -35,21 +36,32 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   index = 0,
   disableEntranceAnimation = false,
   imageLoading = 'lazy',
+  priceRange = 'all',
 }) => {
   const availableSizes = product.sizes.filter((s) => s.available);
-  const { highestOriginal, highestEffective, highestSize, hasDiscount } =
-    getProductPriceSummary(product);
+  const summary = getProductPriceSummary(product);
+  const rangedMatch =
+    priceRange !== 'all' ? getBestPriceOptionForRange(product, priceRange) : null;
+
+  const displayOriginal = rangedMatch
+    ? rangedMatch.originalPrice
+    : summary.highestOriginal;
+  const displayEffective = rangedMatch
+    ? rangedMatch.effectivePrice
+    : summary.highestEffective;
+  const displaySize = rangedMatch ? rangedMatch.size : summary.highestSize;
+  const hasDiscount = rangedMatch ? rangedMatch.hasDiscount : summary.hasDiscount;
 
   const priceDisplay =
-    highestEffective !== null ? formatPrice(highestEffective) : 'Price on Request';
+    displayEffective !== null ? formatPrice(displayEffective) : 'Price on Request';
   const originalDisplay =
-    highestOriginal !== null ? formatPrice(highestOriginal) : 'Price on Request';
+    displayOriginal !== null ? formatPrice(displayOriginal) : 'Price on Request';
   const savedAmount =
     hasDiscount &&
-    highestOriginal !== null &&
-    highestEffective !== null &&
-    highestOriginal > highestEffective
-      ? highestOriginal - highestEffective
+    displayOriginal !== null &&
+    displayEffective !== null &&
+    displayOriginal > displayEffective
+      ? displayOriginal - displayEffective
       : 0;
 
   const scentPreview = getScentPreview(product);
@@ -132,10 +144,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[11px] uppercase tracking-wider text-[#737373]">
               {hasDiscount
-                ? highestSize
-                  ? `${highestSize} · Special`
+                ? displaySize
+                  ? `${displaySize} · Special`
                   : 'Special'
-                : highestSize ?? 'Price'}
+                : displaySize ?? 'Price'}
             </span>
             <div className="text-right">
               <span

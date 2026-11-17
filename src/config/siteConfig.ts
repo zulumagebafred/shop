@@ -28,12 +28,12 @@ export const siteConfig = {
   },
 
   social: {
-    tiktokHandle: '@aurahut.co',
-    tiktokUrl: 'https://tiktok.com/',
+    tiktokHandle: '@aurahut_co',
+    tiktokUrl: 'https://www.tiktok.com/@aurahut_co?_r=1&_t=ZS-9BTQXyIoora',
     instagramHandle: '@aurahut.co',
     instagramUrl: 'https://instagram.com/',
     facebookHandle: 'AuraHut Co.',
-    facebookUrl: 'https://facebook.com/',
+    facebookUrl: 'https://www.facebook.com/share/1XoxFJYsNh/',
   },
 
   defaultBranch: 'manzini' as BranchId,

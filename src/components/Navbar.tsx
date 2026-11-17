@@ -4,7 +4,7 @@ import { Menu, Search, ShoppingCart, X } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { siteContent } from '../data/siteContent';
-import { AppPage, FragranceCategory } from '../types/fragrance';
+import { AppPage, FragranceCategory, PriceRangeFilter, SeasonFilter } from '../types/fragrance';
 
 interface NavbarProps {
   currentPage: AppPage;
@@ -15,6 +15,8 @@ interface NavbarProps {
     page: AppPage,
     options?: {
       category?: FragranceCategory | 'All';
+      priceRange?: PriceRangeFilter;
+      season?: SeasonFilter;
       onlySpecials?: boolean;
     }
   ) => void;
@@ -93,6 +95,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const handleNavClick = (item: (typeof navItems)[number]) => {
     onNavigate(item.page, {
       category: item.category,
+      priceRange: 'all',
+      season: 'all',
       onlySpecials: item.onlySpecials ?? false,
     });
     setMobileMenuOpen(false);
