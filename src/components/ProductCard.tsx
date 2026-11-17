@@ -13,6 +13,7 @@ interface ProductCardProps {
   index?: number;
   disableEntranceAnimation?: boolean;
   imageLoading?: 'eager' | 'lazy';
+  fetchPriority?: 'high' | 'low' | 'auto';
   priceRange?: PriceRangeFilter;
 }
 
@@ -36,6 +37,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   index = 0,
   disableEntranceAnimation = false,
   imageLoading = 'lazy',
+  fetchPriority = 'auto',
   priceRange = 'all',
 }) => {
   const availableSizes = product.sizes.filter((s) => s.available);
@@ -89,6 +91,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           alt={`${product.name} by ${product.brand}`}
           fallbackTitle={product.name}
           loading={imageLoading}
+          fetchPriority={fetchPriority}
           className="w-full h-full object-cover saturate-[1.12] contrast-[1.03] transition-transform duration-400 ease-out group-hover:scale-[1.03]"
         />
         {(hasDiscount || product.onSpecial || product.availability !== 'In Stock') && (

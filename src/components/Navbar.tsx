@@ -73,6 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           },
         ]
       : []),
+    { label: 'Combo / Layering', page: 'combos' },
     { label: 'Discover Decants', page: 'decants' },
     { label: 'Our Stores', page: 'stores' },
     { label: 'About Us', page: 'about' },
@@ -165,7 +166,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <nav
             aria-label="Primary Navigation"
-            className="hidden lg:flex items-center justify-center gap-4 xl:gap-6"
+            className="hidden lg:flex items-center justify-center gap-3.5 xl:gap-5"
           >
             {navItems.map((item) => {
               const active = isItemActive(item);
@@ -174,7 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   key={item.label}
                   type="button"
                   onClick={() => handleNavClick(item)}
-                  className={`relative py-1 text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                  className={`relative py-1 text-[12.5px] xl:text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
                     active
                       ? 'text-[#0A0A0A] font-semibold'
                       : 'text-[#525252] hover:text-[#0A0A0A] font-medium'

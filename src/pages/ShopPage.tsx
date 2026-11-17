@@ -1,9 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Filter, Flame, Search, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useStore } from '../context/StoreContext';
-import { getUniqueBrands } from '../data/catalogue';
+import {
+  featuredPerfumeHouses,
+  getExtraCatalogueBrands,
+  matchesHouseBrand,
+} from '../data/catalogue';
 import {
   getProductPriceSummary,
   matchesPriceRange,
@@ -47,6 +51,8 @@ const PRICE_RANGE_OPTIONS: { id: PriceRangeFilter; label: string }[] = [
   { id: '800-plus', label: 'E800+' },
 ];
 
+const SHOP_PAGE_SIZE = 24;
+
 export const ShopPage: React.FC<ShopPageProps> = ({
   selectedCategory,
   selectedBrand,
@@ -70,7 +76,9 @@ export const ShopPage: React.FC<ShopPageProps> = ({
 }) => {
   const { perfumes, campaign } = useStore();
   const [sortBy, setSortBy] = useState<'featured' | 'price-asc' | 'price-desc'>('featured');
-  const brands = useMemo(() => getUniqueBrands(perfumes), [perfumes]);
+  const [visibleCount, setVisibleCount] = useState<number>(SHOP_PAGE_SIZE);
+  const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
+  const extraBrands = useMemo(() => getExtraCatalogueBrands(perfumes), [perfumes]);
   const categories: (FragranceCategory | 'All')[] = ['All', 'Men', 'Women', 'Unisex'];
   const sizes: (BottleSize | 'All')[] = useMemo(() => {
     const sizeSet = new Set<string>();
@@ -100,7 +108,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       if (selectedCategory !== 'All' && product.category !== selectedCategory) {
         return false;
       }
-      if (selectedBrand !== 'All' && product.brand !== selectedBrand) {
+      if (selectedBrand !== 'All' && !matchesHouseBrand(product, selectedBrand)) {
         return false;
       }
       if (selectedSize !== 'All') {
@@ -163,6 +171,45 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     onlySpecials,
     sortBy,
   ]);
+
+  useEffect(() => {
+    setVisibleCount(SHOP_PAGE_SIZE);
+  }, [
+    selectedCategory,
+    selectedBrand,
+    selectedSize,
+    selectedPriceRange,
+    selectedSeason,
+    searchQuery,
+    onlyInStock,
+    onlySpecials,
+    sortBy,
+  ]);
+
+  const visibleProducts = useMemo(
+    () => filteredProducts.slice(0, visibleCount),
+    [filteredProducts, visibleCount]
+  );
+
+  const hasMoreProducts = visibleCount < filteredProducts.length;
+
+  useEffect(() => {
+    if (!hasMoreProducts) return;
+    const node = loadMoreTriggerRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisibleCount((prev) => Math.min(prev + SHOP_PAGE_SIZE, filteredProducts.length));
+        }
+      },
+      { rootMargin: '400px 0px' }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreProducts, filteredProducts.length]);
 
   const activeSeasonMeta = SEASON_OPTIONS.find((s) => s.id === selectedSeason);
   const activePriceMeta = PRICE_RANGE_OPTIONS.find((p) => p.id === selectedPriceRange);
@@ -288,11 +335,22 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               className="w-full py-2.5 px-3.5 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
             >
               <option value="All">All Perfume Houses</option>
-              {brands.map((brand) => (
-                <option key={brand} value={brand}>
-                  {brand}
-                </option>
-              ))}
+              <optgroup label="Featured 12 Perfume Houses">
+                {featuredPerfumeHouses.map((brand) => (
+                  <option key={brand} value={brand}>
+                    {brand}
+                  </option>
+                ))}
+              </optgroup>
+              {extraBrands.length > 0 && (
+                <optgroup label="Individual Lines & Labels">
+                  {extraBrands.map((brand) => (
+                    <option key={brand} value={brand}>
+                      {brand}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
         </div>
@@ -472,20 +530,44 @@ export const ShopPage: React.FC<ShopPageProps> = ({
             </button>
           </motion.div>
         ) : (
-          <motion.div
-            key="results-grid"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-7"
-          >
-            {filteredProducts.map((product, idx) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                index={idx}
-                priceRange={selectedPriceRange}
-                onViewDetails={onSelectProduct}
-                onQuickWhatsApp={onQuickWhatsApp}
-              />
-            ))}
+          <motion.div key="results-grid" className="space-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-7">
+              {visibleProducts.map((product, idx) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  index={idx}
+                  disableEntranceAnimation={idx >= 8}
+                  imageLoading={idx < 6 ? 'eager' : 'lazy'}
+                  fetchPriority={idx < 3 ? 'high' : 'auto'}
+                  priceRange={selectedPriceRange}
+                  onViewDetails={onSelectProduct}
+                  onQuickWhatsApp={onQuickWhatsApp}
+                />
+              ))}
+            </div>
+
+            {hasMoreProducts && (
+              <div
+                ref={loadMoreTriggerRef}
+                className="flex flex-col items-center justify-center gap-3 pt-2"
+              >
+                <p className="text-xs text-[#525252] tabular-nums">
+                  Showing {visibleProducts.length} of {filteredProducts.length} fragrances
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleCount((prev) =>
+                      Math.min(prev + SHOP_PAGE_SIZE, filteredProducts.length)
+                    )
+                  }
+                  className="px-6 py-2.5 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider"
+                >
+                  Load More Fragrances
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

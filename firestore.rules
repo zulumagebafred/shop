@@ -145,6 +145,58 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidCombo(data) {
+      return data.keys().hasAll([
+        'title', 'subtitle', 'perfumeNames', 'sizeLabel',
+        'regularPrice', 'comboPrice', 'tag', 'featured', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'title', 'subtitle', 'perfumeNames', 'sizeLabel',
+        'regularPrice', 'comboPrice', 'tag', 'featured', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+      data.subtitle is string && data.subtitle.size() <= 300 &&
+      data.perfumeNames is list && data.perfumeNames.size() >= 2 && data.perfumeNames.size() <= 6 &&
+      data.perfumeNames[0] is string && data.perfumeNames[0].size() >= 1 && data.perfumeNames[0].size() <= 140 &&
+      data.perfumeNames[1] is string && data.perfumeNames[1].size() >= 1 && data.perfumeNames[1].size() <= 140 &&
+      data.sizeLabel is string && data.sizeLabel.size() >= 1 && data.sizeLabel.size() <= 60 &&
+      data.regularPrice is number && data.regularPrice >= 0 && data.regularPrice <= 100000 &&
+      data.comboPrice is number && data.comboPrice >= 0 && data.comboPrice <= 100000 &&
+      data.comboPrice <= data.regularPrice &&
+      data.tag is string && data.tag.size() <= 40 &&
+      data.featured is bool &&
+      data.active is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidLayeringIdea(data) {
+      return data.keys().hasAll([
+        'title', 'vibe', 'basePerfumeName', 'topPerfumeName',
+        'sprayRatio', 'occasion', 'whyItWorks', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'title', 'vibe', 'basePerfumeName', 'topPerfumeName',
+        'sprayRatio', 'occasion', 'whyItWorks', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+      data.vibe is string && data.vibe.size() >= 1 && data.vibe.size() <= 60 &&
+      data.basePerfumeName is string && data.basePerfumeName.size() >= 1 && data.basePerfumeName.size() <= 140 &&
+      data.topPerfumeName is string && data.topPerfumeName.size() >= 1 && data.topPerfumeName.size() <= 140 &&
+      data.sprayRatio is string && data.sprayRatio.size() >= 1 && data.sprayRatio.size() <= 80 &&
+      data.occasion is string && data.occasion.size() <= 120 &&
+      data.whyItWorks is string && data.whyItWorks.size() >= 1 && data.whyItWorks.size() <= 500 &&
+      data.active is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules
     match /test/{docId} {
       allow get: if docId == 'connection';
@@ -232,6 +284,50 @@ service cloud.firestore {
           'promoCodeHint', 'endsAt', 'enabled', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(campaignId);
+    }
+
+    match /combos/{comboId} {
+      allow get: if isValidId(comboId) && (isOwnerEmail() || existing().active == true);
+      allow list: if isOwnerEmail() || existing().active == true;
+      allow create: if isAdmin() &&
+        isValidId(comboId) &&
+        isValidCombo(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(comboId) &&
+        isValidCombo(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'subtitle', 'perfumeNames', 'sizeLabel',
+          'regularPrice', 'comboPrice', 'tag', 'featured', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(comboId);
+    }
+
+    match /layeringIdeas/{ideaId} {
+      allow get: if isValidId(ideaId) && (isOwnerEmail() || existing().active == true);
+      allow list: if isOwnerEmail() || existing().active == true;
+      allow create: if isAdmin() &&
+        isValidId(ideaId) &&
+        isValidLayeringIdea(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(ideaId) &&
+        isValidLayeringIdea(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'vibe', 'basePerfumeName', 'topPerfumeName',
+          'sprayRatio', 'occasion', 'whyItWorks', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(ideaId);
     }
   }
 }

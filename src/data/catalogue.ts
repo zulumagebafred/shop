@@ -12,7 +12,161 @@ export const featuredPerfumeHouses: string[] = [
   'Afnan',
   'Paris Corner',
   'Fragrance World',
+  'Emper',
+  'French Avenue',
+  'Ard Al Zaafaran',
+  'Khadlaj',
 ];
+
+export const HOUSE_MATCH_ALIASES: Record<string, string[]> = {
+  'Al Haramain Perfumes': [
+    'al haramain',
+    'haramain',
+    'amber oud',
+    'detour',
+    "l'aventure",
+    'laventure',
+    'junoon',
+  ],
+  Rasasi: [
+    'rasasi',
+    'hawas',
+    'la yuqawam',
+    'shuhrah',
+    'fattan',
+    'daarej',
+    'sotoor',
+    'qasamat',
+    'chastity',
+  ],
+  'Reef Perfumes': ['reef'],
+  'Lattafa Perfumes': [
+    'lattafa',
+    'asad',
+    'khamrah',
+    "bade'e",
+    'badee',
+    'yara',
+    'fakhar',
+    'oud mood',
+    'ramz',
+    'maahir',
+    'qaed',
+    'haya',
+    "ra'ed",
+    'raed',
+    'raghba',
+    'ejazzi',
+    'najdia',
+    'ana abiyedh',
+    'ameer al oud',
+    'nebras',
+    'eclaire',
+    'suqraat',
+    'ajwad',
+    'sheikh al shuyukh',
+    'mayar',
+    'velvet oud',
+    'andaleeb',
+    'musamam',
+    'confession',
+    'the kingdom',
+  ],
+  Armaf: [
+    'armaf',
+    'club de nuit',
+    'cdnim',
+    'cdn ',
+    'odyssey',
+    'tres nuit',
+    'ventana',
+    'tag-him',
+    'tag him',
+    'tag-her',
+    'tag her',
+    'craze',
+    'hunter',
+    'sillage',
+    'milestone',
+    'untold',
+  ],
+  Afnan: [
+    'afnan',
+    '9pm',
+    '9am',
+    'supremacy',
+    'turathi',
+    'modest',
+    'rare carbon',
+    'zimaya',
+  ],
+  'Paris Corner': [
+    'paris corner',
+    'pendora',
+    'north stag',
+    'khair',
+    'rifaaqat',
+    'taskeen',
+    'charuto',
+    'farah',
+    'embrace',
+    'qissa',
+    'voux',
+    'ministry of gourmand',
+    'emirati',
+  ],
+  'Fragrance World': [
+    'fragrance world',
+    'barakkat',
+    'after effect',
+    'kayaan',
+    'liquid brun',
+    'mojah',
+    'intro',
+    'pisa',
+    'fierte',
+    'french coffee',
+    'jack of clubs',
+  ],
+  Emper: [
+    'emper',
+    'chifon',
+    'al fakhir',
+    'presidente',
+    'memories',
+    'saga',
+  ],
+  'French Avenue': [
+    'french avenue',
+    'spectre',
+    'aether',
+    'vulcan',
+    'azam',
+    'diwani',
+  ],
+  'Ard Al Zaafaran': [
+    'ard al zaafaran',
+    'zaafaran',
+    'jazzab',
+    'dirham',
+    'al dirgham',
+    'bint hooran',
+    'mithqal',
+    'mousuf',
+    'mouseuf',
+    'i am the king',
+  ],
+  Khadlaj: [
+    'khadlaj',
+    'shiyaaka',
+    'hareem al sultan',
+    'hareem',
+    'lafede',
+    'karus',
+    'caffe latte',
+    'nuha',
+  ],
+};
 
 export const houseImages: Record<string, string> = {
   'Al Haramain Perfumes': '/assets/images/house_al_haramain_1794685068564.jpg',
@@ -23,6 +177,10 @@ export const houseImages: Record<string, string> = {
   Afnan: '/assets/images/house_afnan_1794685070293.jpg',
   'Paris Corner': '/assets/images/house_paris_corner_1794685071664.jpg',
   'Fragrance World': '/assets/images/house_fragrance_world_1794685071433.jpg',
+  Emper: '/assets/images/house_armaf_1794685069505.jpg',
+  'French Avenue': '/assets/images/house_paris_corner_1794685071664.jpg',
+  'Ard Al Zaafaran': '/assets/images/house_lattafa_1794685069142.jpg',
+  Khadlaj: '/assets/images/house_al_haramain_1794685068564.jpg',
 };
 
 /**
@@ -244,13 +402,41 @@ export const fragranceCatalogue: FragranceProduct[] = [
   },
 ];
 
+export function matchesHouseBrand(
+  product: FragranceProduct,
+  selectedBrand: string
+): boolean {
+  if (!selectedBrand || selectedBrand === 'All') return true;
+  const target = selectedBrand.trim().toLowerCase();
+  const productBrand = product.brand.trim().toLowerCase();
+  if (productBrand === target) return true;
+
+  const aliases = HOUSE_MATCH_ALIASES[selectedBrand];
+  if (!aliases) return false;
+
+  const haystack = `${product.brand} ${product.name} ${product.slug}`.toLowerCase();
+  return aliases.some((alias) => haystack.includes(alias));
+}
+
 export function getUniqueBrands(products: FragranceProduct[]): string[] {
-  const fromCatalogue = Array.from(new Set(products.map((p) => p.brand)));
-  const ordered = featuredPerfumeHouses.filter((house) =>
-    fromCatalogue.includes(house)
-  );
-  const extras = fromCatalogue
-    .filter((house) => !ordered.includes(house))
-    .sort();
-  return [...ordered, ...extras];
+  const canonicalSet = new Set(featuredPerfumeHouses.map((h) => h.toLowerCase()));
+  const extras = Array.from(
+    new Set(
+      products
+        .map((p) => p.brand.trim())
+        .filter((b) => b.length > 0 && !canonicalSet.has(b.toLowerCase()))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+  return [...featuredPerfumeHouses, ...extras];
+}
+
+export function getExtraCatalogueBrands(products: FragranceProduct[]): string[] {
+  const canonicalSet = new Set(featuredPerfumeHouses.map((h) => h.toLowerCase()));
+  return Array.from(
+    new Set(
+      products
+        .map((p) => p.brand.trim())
+        .filter((b) => b.length > 0 && !canonicalSet.has(b.toLowerCase()))
+    )
+  ).sort((a, b) => a.localeCompare(b));
 }

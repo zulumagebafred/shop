@@ -25,6 +25,10 @@ import {
 } from 'firebase/firestore';
 import { fragranceCatalogue } from '../data/catalogue';
 import {
+  starterCombos,
+  starterLayeringIdeas,
+} from '../data/combosAndLayering';
+import {
   OWNER_EMAIL,
   OperationType,
   auth,
@@ -33,8 +37,10 @@ import {
   handleFirestoreError,
 } from '../lib/firebase';
 import {
+  ComboDeal,
   Coupon,
   FragranceProduct,
+  LayeringIdea,
   SpecialCampaign,
 } from '../types/fragrance';
 
@@ -56,6 +62,8 @@ export type PerfumeInput = Omit<FragranceProduct, 'id' | 'slug'> & {
 };
 
 export type CouponInput = Omit<Coupon, 'id'>;
+export type ComboInput = Omit<ComboDeal, 'id'>;
+export type LayeringIdeaInput = Omit<LayeringIdea, 'id'>;
 
 interface StoreContextValue {
   // Auth
@@ -81,6 +89,16 @@ interface StoreContextValue {
   coupons: Coupon[];
   couponsLoading: boolean;
 
+  // Combos & Layering
+  combos: ComboDeal[];
+  liveCombos: ComboDeal[];
+  usingSampleCombos: boolean;
+  combosLoading: boolean;
+  layeringIdeas: LayeringIdea[];
+  liveLayeringIdeas: LayeringIdea[];
+  usingSampleLayering: boolean;
+  layeringLoading: boolean;
+
   // Storefront Coupon Validation
   lookupCouponByCode: (
     rawCode: string
@@ -100,6 +118,11 @@ interface StoreContextValue {
   toggleCouponActive: (coupon: Coupon) => Promise<void>;
   deleteCoupon: (code: string) => Promise<void>;
   saveCampaign: (campaign: SpecialCampaign) => Promise<void>;
+  saveComboDeal: (input: ComboInput, existingId?: string) => Promise<string>;
+  deleteComboDeal: (comboId: string) => Promise<void>;
+  saveLayeringIdea: (input: LayeringIdeaInput, existingId?: string) => Promise<string>;
+  deleteLayeringIdea: (ideaId: string) => Promise<void>;
+  importStarterCombosAndLayering: () => Promise<number>;
 }
 
 const StoreContext = createContext<StoreContextValue | undefined>(undefined);
@@ -132,6 +155,8 @@ export function resolveAdminLoginEmail(loginInput: string): string {
 
 const CAMPAIGN_CACHE_KEY = 'aurahut_campaign_cache_v1';
 const PERFUMES_CACHE_KEY = 'aurahut_perfumes_cache_v1';
+const COMBOS_CACHE_KEY = 'aurahut_combos_cache_v1';
+const LAYERING_CACHE_KEY = 'aurahut_layering_cache_v1';
 
 function readCachedCampaign(): SpecialCampaign | null {
   try {
@@ -153,14 +178,85 @@ function readCachedCampaign(): SpecialCampaign | null {
   }
 }
 
+function normalizeAndDedupeSizes(
+  rawSizes: unknown
+): { size: string; price: number | null; available: boolean }[] {
+  if (!Array.isArray(rawSizes)) return [];
+  const byKey = new Map<
+    string,
+    { size: string; price: number | null; available: boolean }
+  >();
+
+  for (const entry of rawSizes) {
+    if (!entry || typeof entry !== 'object') continue;
+    const s = entry as { size?: unknown; price?: unknown; available?: unknown };
+    const cleanSize = String(s.size ?? '').trim().slice(0, 24);
+    if (!cleanSize) continue;
+    const parsedPrice =
+      s.price !== null &&
+      s.price !== undefined &&
+      Number.isFinite(Number(s.price)) &&
+      Number(s.price) >= 0
+        ? Math.min(100000, Number(s.price))
+        : null;
+    const available = Boolean(s.available);
+    const dedupeKey = cleanSize.toLowerCase();
+    const existing = byKey.get(dedupeKey);
+
+    if (!existing) {
+      byKey.set(dedupeKey, { size: cleanSize, price: parsedPrice, available });
+    } else {
+      const nextAvailable = existing.available || available;
+      const nextPrice =
+        parsedPrice !== null && (available || existing.price === null)
+          ? parsedPrice
+          : existing.price;
+      byKey.set(dedupeKey, {
+        size: existing.size,
+        price: nextPrice,
+        available: nextAvailable,
+      });
+    }
+  }
+
+  return Array.from(byKey.values());
+}
+
 function readCachedPerfumes(): FragranceProduct[] {
   try {
     const raw = localStorage.getItem(PERFUMES_CACHE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed as FragranceProduct[];
+      return (parsed as FragranceProduct[]).map((item) => ({
+        ...item,
+        sizes: normalizeAndDedupeSizes(item.sizes),
+      }));
     }
+  } catch {
+    // Ignore cache parse errors
+  }
+  return [];
+}
+
+function readCachedCombos(): ComboDeal[] {
+  try {
+    const raw = localStorage.getItem(COMBOS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as ComboDeal[];
+  } catch {
+    // Ignore cache parse errors
+  }
+  return [];
+}
+
+function readCachedLayering(): LayeringIdea[] {
+  try {
+    const raw = localStorage.getItem(LAYERING_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as LayeringIdea[];
   } catch {
     // Ignore cache parse errors
   }
@@ -172,6 +268,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const initialCachedPerfumes = useMemo(() => readCachedPerfumes(), []);
   const initialCachedCampaign = useMemo(() => readCachedCampaign(), []);
+  const initialCachedCombos = useMemo(() => readCachedCombos(), []);
+  const initialCachedLayering = useMemo(() => readCachedLayering(), []);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -186,6 +284,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [campaignLoading, setCampaignLoading] = useState(initialCachedCampaign === null);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [couponsLoading, setCouponsLoading] = useState(false);
+
+  const [liveCombos, setLiveCombos] = useState<ComboDeal[]>(initialCachedCombos);
+  const [combosLoading, setCombosLoading] = useState(initialCachedCombos.length === 0);
+  const [liveLayeringIdeas, setLiveLayeringIdeas] = useState<LayeringIdea[]>(initialCachedLayering);
+  const [layeringLoading, setLayeringLoading] = useState(initialCachedLayering.length === 0);
 
   const isOwner = useMemo(() => {
     void authRevision;
@@ -232,13 +335,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               heart: Array.isArray(d.notes?.heart) ? d.notes.heart.map(String) : [],
               base: Array.isArray(d.notes?.base) ? d.notes.base.map(String) : [],
             },
-            sizes: Array.isArray(d.sizes)
-              ? d.sizes.map((s) => ({
-                  size: s.size,
-                  price: typeof s.price === 'number' ? s.price : null,
-                  available: Boolean(s.available),
-                }))
-              : [],
+            sizes: normalizeAndDedupeSizes(d.sizes),
             availability: d.availability ?? 'In Stock',
             featured: Boolean(d.featured),
             bestseller: Boolean(d.bestseller),
@@ -377,8 +474,128 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     return unsubscribe;
   }, [authReady, isOwner]);
 
+  // 5. Public Combos Listener
+  useEffect(() => {
+    const combosQuery = isOwner
+      ? query(collection(db, 'combos'))
+      : query(collection(db, 'combos'), where('active', '==', true));
+
+    const unsubscribe = onSnapshot(
+      combosQuery,
+      (snapshot) => {
+        const items: ComboDeal[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            title: String(d.title ?? ''),
+            subtitle: String(d.subtitle ?? ''),
+            perfumeNames: Array.isArray(d.perfumeNames)
+              ? d.perfumeNames.map(String)
+              : [],
+            sizeLabel: String(d.sizeLabel ?? ''),
+            regularPrice: Number(d.regularPrice ?? 0),
+            comboPrice: Number(d.comboPrice ?? 0),
+            tag: String(d.tag ?? ''),
+            featured: Boolean(d.featured),
+            active: Boolean(d.active),
+          };
+        });
+        items.sort((a, b) => Number(b.featured) - Number(a.featured));
+        setLiveCombos(items);
+        setCombosLoading(false);
+        try {
+          if (items.length > 0) {
+            localStorage.setItem(COMBOS_CACHE_KEY, JSON.stringify(items));
+          } else {
+            localStorage.removeItem(COMBOS_CACHE_KEY);
+          }
+        } catch {
+          // Ignore storage quota errors
+        }
+      },
+      (error) => {
+        setCombosLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'combos');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+
+    const safetyTimer = window.setTimeout(() => {
+      setCombosLoading(false);
+    }, 2500);
+
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
+  }, [isOwner]);
+
+  // 6. Public Layering Ideas Listener
+  useEffect(() => {
+    const layeringQuery = isOwner
+      ? query(collection(db, 'layeringIdeas'))
+      : query(collection(db, 'layeringIdeas'), where('active', '==', true));
+
+    const unsubscribe = onSnapshot(
+      layeringQuery,
+      (snapshot) => {
+        const items: LayeringIdea[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            title: String(d.title ?? ''),
+            vibe: String(d.vibe ?? ''),
+            basePerfumeName: String(d.basePerfumeName ?? ''),
+            topPerfumeName: String(d.topPerfumeName ?? ''),
+            sprayRatio: String(d.sprayRatio ?? ''),
+            occasion: String(d.occasion ?? ''),
+            whyItWorks: String(d.whyItWorks ?? ''),
+            active: Boolean(d.active),
+          };
+        });
+        items.sort((a, b) => a.title.localeCompare(b.title));
+        setLiveLayeringIdeas(items);
+        setLayeringLoading(false);
+        try {
+          if (items.length > 0) {
+            localStorage.setItem(LAYERING_CACHE_KEY, JSON.stringify(items));
+          } else {
+            localStorage.removeItem(LAYERING_CACHE_KEY);
+          }
+        } catch {
+          // Ignore storage quota errors
+        }
+      },
+      (error) => {
+        setLayeringLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'layeringIdeas');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+
+    const safetyTimer = window.setTimeout(() => {
+      setLayeringLoading(false);
+    }, 2500);
+
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
+  }, [isOwner]);
+
   const usingSampleFallback = !catalogueLoading && livePerfumes.length === 0;
   const perfumes = livePerfumes.length > 0 ? livePerfumes : fragranceCatalogue;
+  const usingSampleCombos = !combosLoading && liveCombos.length === 0;
+  const combos = liveCombos.length > 0 ? liveCombos : starterCombos;
+  const usingSampleLayering = !layeringLoading && liveLayeringIdeas.length === 0;
+  const layeringIdeas =
+    liveLayeringIdeas.length > 0 ? liveLayeringIdeas : starterLayeringIdeas;
 
   const signInOwnerWithGoogle = async () => {
     await signInWithPopup(auth, googleProvider);
@@ -499,20 +716,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       throw new Error('Perfume house / brand is required.');
     }
 
-    const sanitizedSizes = input.sizes
-      .slice(0, 12)
-      .map((s) => ({
-        size: String(s.size ?? '').trim().slice(0, 24),
-        price:
-          s.price !== null &&
-          s.price !== undefined &&
-          Number.isFinite(Number(s.price)) &&
-          Number(s.price) >= 0
-            ? Math.min(100000, Number(s.price))
-            : null,
-        available: Boolean(s.available),
-      }))
-      .filter((s) => s.size.length > 0);
+    const sanitizedSizes = normalizeAndDedupeSizes(input.sizes.slice(0, 12));
 
     if (sanitizedSizes.length === 0) {
       throw new Error('At least one bottle size must be configured.');
@@ -780,6 +984,176 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const saveComboDeal = async (
+    input: ComboInput,
+    existingId?: string
+  ): Promise<string> => {
+    const ownerUid = requireOwnerUid();
+    const cleanTitle = input.title.trim().slice(0, 140);
+    if (!cleanTitle) {
+      throw new Error('Combo title is required.');
+    }
+    const cleanNames = input.perfumeNames
+      .map((n) => n.trim().slice(0, 140))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (cleanNames.length < 2) {
+      throw new Error('Include at least 2 perfume names in a combo bundle.');
+    }
+    const cleanSize = (input.sizeLabel.trim() || '2 × Bottles').slice(0, 60);
+    const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
+    const comboPrice = Math.min(regularPrice, Math.max(0, Number(input.comboPrice || 0)));
+
+    const id = existingId || `combo-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+    const ref = doc(db, 'combos', id);
+    const path = `combos/${id}`;
+
+    const mutablePayload = {
+      title: cleanTitle,
+      subtitle: input.subtitle.trim().slice(0, 300),
+      perfumeNames: cleanNames,
+      sizeLabel: cleanSize,
+      regularPrice,
+      comboPrice,
+      tag: input.tag.trim().slice(0, 40),
+      featured: Boolean(input.featured),
+      active: Boolean(input.active),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (existingId) {
+        await setDoc(ref, mutablePayload, { merge: true });
+      } else {
+        await setDoc(ref, {
+          ...mutablePayload,
+          ownerUid,
+          createdAt: serverTimestamp(),
+        });
+      }
+      return id;
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        existingId ? OperationType.UPDATE : OperationType.CREATE,
+        path
+      );
+    }
+  };
+
+  const deleteComboDeal = async (comboId: string): Promise<void> => {
+    requireOwnerUid();
+    const path = `combos/${comboId}`;
+    try {
+      await deleteDoc(doc(db, 'combos', comboId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const saveLayeringIdea = async (
+    input: LayeringIdeaInput,
+    existingId?: string
+  ): Promise<string> => {
+    const ownerUid = requireOwnerUid();
+    const cleanTitle = input.title.trim().slice(0, 140);
+    const cleanBase = input.basePerfumeName.trim().slice(0, 140);
+    const cleanTop = input.topPerfumeName.trim().slice(0, 140);
+    if (!cleanTitle || !cleanBase || !cleanTop) {
+      throw new Error('Title, Base Perfume, and Topper Perfume are required.');
+    }
+
+    const id = existingId || `layer-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+    const ref = doc(db, 'layeringIdeas', id);
+    const path = `layeringIdeas/${id}`;
+
+    const mutablePayload = {
+      title: cleanTitle,
+      vibe: (input.vibe.trim() || 'Signature Blend').slice(0, 60),
+      basePerfumeName: cleanBase,
+      topPerfumeName: cleanTop,
+      sprayRatio: (input.sprayRatio.trim() || '2 sprays base · 2 sprays top').slice(0, 80),
+      occasion: input.occasion.trim().slice(0, 120),
+      whyItWorks: (
+        input.whyItWorks.trim() ||
+        `${cleanBase} anchors the skin while ${cleanTop} adds luminous projection.`
+      ).slice(0, 500),
+      active: Boolean(input.active),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (existingId) {
+        await setDoc(ref, mutablePayload, { merge: true });
+      } else {
+        await setDoc(ref, {
+          ...mutablePayload,
+          ownerUid,
+          createdAt: serverTimestamp(),
+        });
+      }
+      return id;
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        existingId ? OperationType.UPDATE : OperationType.CREATE,
+        path
+      );
+    }
+  };
+
+  const deleteLayeringIdea = async (ideaId: string): Promise<void> => {
+    requireOwnerUid();
+    const path = `layeringIdeas/${ideaId}`;
+    try {
+      await deleteDoc(doc(db, 'layeringIdeas', ideaId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const importStarterCombosAndLayering = async (): Promise<number> => {
+    const ownerUid = requireOwnerUid();
+    const batch = writeBatch(db);
+    try {
+      for (const item of starterCombos) {
+        batch.set(doc(db, 'combos', item.id), {
+          title: item.title.slice(0, 140),
+          subtitle: item.subtitle.slice(0, 300),
+          perfumeNames: item.perfumeNames.slice(0, 6),
+          sizeLabel: item.sizeLabel.slice(0, 60),
+          regularPrice: item.regularPrice,
+          comboPrice: item.comboPrice,
+          tag: item.tag.slice(0, 40),
+          featured: item.featured,
+          active: item.active,
+          ownerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      for (const idea of starterLayeringIdeas) {
+        batch.set(doc(db, 'layeringIdeas', idea.id), {
+          title: idea.title.slice(0, 140),
+          vibe: idea.vibe.slice(0, 60),
+          basePerfumeName: idea.basePerfumeName.slice(0, 140),
+          topPerfumeName: idea.topPerfumeName.slice(0, 140),
+          sprayRatio: idea.sprayRatio.slice(0, 80),
+          occasion: idea.occasion.slice(0, 120),
+          whyItWorks: idea.whyItWorks.slice(0, 500),
+          active: idea.active,
+          ownerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      return starterCombos.length + starterLayeringIdeas.length;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'combos');
+    }
+  };
+
   const value: StoreContextValue = {
     user,
     authReady,
@@ -800,6 +1174,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     campaignLoading,
     coupons,
     couponsLoading,
+    combos,
+    liveCombos,
+    usingSampleCombos,
+    combosLoading,
+    layeringIdeas,
+    liveLayeringIdeas,
+    usingSampleLayering,
+    layeringLoading,
     lookupCouponByCode,
     savePerfume,
     deletePerfume,
@@ -809,6 +1191,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     toggleCouponActive,
     deleteCoupon,
     saveCampaign,
+    saveComboDeal,
+    deleteComboDeal,
+    saveLayeringIdea,
+    deleteLayeringIdea,
+    importStarterCombosAndLayering,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

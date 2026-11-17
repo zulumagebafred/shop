@@ -24,7 +24,7 @@ import { ResilientImage } from '../components/ResilientImage';
 import { RevealSection } from '../components/RevealSection';
 import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
-import { getUniqueBrands } from '../data/catalogue';
+import { featuredPerfumeHouses, matchesHouseBrand } from '../data/catalogue';
 import { siteContent } from '../data/siteContent';
 import { getProductPriceSummary, matchesPriceRange } from '../utils/pricing';
 import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
@@ -199,8 +199,10 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const { perfumes, campaign, campaignLoading, catalogueLoading } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
-  const specialPerfumes = perfumes.filter((p) => Boolean(p.onSpecial));
-  const catalogueBrands = getUniqueBrands(perfumes);
+  const specialPerfumes = useMemo(
+    () => perfumes.filter((p) => Boolean(p.onSpecial)),
+    [perfumes]
+  );
   const [activeMood, setActiveMood] = useState<ScentMood>('all');
   const [activeDecantIndex, setActiveDecantIndex] = useState(1);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
@@ -295,6 +297,18 @@ export const HomePage: React.FC<HomePageProps> = ({
     ];
   }, [slideshowPerfumes, safeSlideIndex]);
 
+  // Preload only the immediate next hero slide so slide transitions stay instant
+  useEffect(() => {
+    if (slideshowPerfumes.length <= 1) return;
+    const nextIdx = (safeSlideIndex + 1) % slideshowPerfumes.length;
+    const nextImg = slideshowPerfumes[nextIdx]?.image?.trim();
+    if (!nextImg) return;
+    const preloader = new Image();
+    preloader.decoding = 'async';
+    preloader.referrerPolicy = 'no-referrer';
+    preloader.src = nextImg;
+  }, [slideshowPerfumes, safeSlideIndex]);
+
   const activeDecant = siteContent.decantsSection.tiers[activeDecantIndex];
   const activeMoodObj = MOOD_OPTIONS.find((m) => m.id === activeMood) ?? MOOD_OPTIONS[0];
 
@@ -302,7 +316,7 @@ export const HomePage: React.FC<HomePageProps> = ({
     if (activeMood === 'all') {
       const preferred = perfumes.filter((p) => p.bestseller);
       const rest = perfumes.filter((p) => !p.bestseller);
-      return [...preferred, ...rest];
+      return [...preferred, ...rest].slice(0, 12);
     }
     const keywords = activeMoodObj.keywords;
     const scored = perfumes
@@ -326,7 +340,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.product);
 
-    return scored.length > 0 ? scored : perfumes;
+    return (scored.length > 0 ? scored : perfumes).slice(0, 12);
   }, [perfumes, activeMood, activeMoodObj]);
 
   const [moodSlideIndex, setMoodSlideIndex] = useState(0);
@@ -398,6 +412,45 @@ export const HomePage: React.FC<HomePageProps> = ({
       highlight: true,
     },
   ];
+
+  const priceDealCounts = useMemo(() => {
+    const map: Record<Exclude<PriceRangeFilter, 'all'>, number> = {
+      'under-300': 0,
+      'under-500': 0,
+      'under-800': 0,
+      '800-plus': 0,
+    };
+    for (const p of perfumes) {
+      if (matchesPriceRange(p, 'under-300')) map['under-300'] += 1;
+      if (matchesPriceRange(p, 'under-500')) map['under-500'] += 1;
+      if (matchesPriceRange(p, 'under-800')) map['under-800'] += 1;
+      if (matchesPriceRange(p, '800-plus')) map['800-plus'] += 1;
+    }
+    return map;
+  }, [perfumes]);
+
+  const seasonCounts = useMemo(() => {
+    const map: Record<Exclude<SeasonFilter, 'all'>, number> = {
+      winter: 0,
+      summer: 0,
+      spring: 0,
+      autumn: 0,
+    };
+    for (const p of perfumes) {
+      for (const s of getProductSeasons(p)) {
+        map[s] += 1;
+      }
+    }
+    return map;
+  }, [perfumes]);
+
+  const houseCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const brand of featuredPerfumeHouses) {
+      map[brand] = perfumes.filter((p) => matchesHouseBrand(p, brand)).length;
+    }
+    return map;
+  }, [perfumes]);
 
   const getSeasonIcon = (seasonId: Exclude<SeasonFilter, 'all'>) => {
     if (seasonId === 'winter') return Snowflake;
@@ -652,14 +705,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                                 }`}
                               >
                                 <div className="relative flex-1 w-full bg-white overflow-hidden">
-                                  <ResilientImage
-                                    src={product.image}
-                                    alt={`${product.name} by ${product.brand}`}
-                                    fallbackTitle={product.name}
-                                    loading="eager"
-                                    fetchPriority={isCenter ? 'high' : 'auto'}
-                                    className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
-                                  />
+                                    <ResilientImage
+                                      src={product.image}
+                                      alt={`${product.name} by ${product.brand}`}
+                                      fallbackTitle={product.name}
+                                      loading="eager"
+                                      fetchPriority={isCenter ? 'high' : 'low'}
+                                      className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
+                                    />
                                   {product.onSpecial && product.specialDiscountPercent ? (
                                     <span className="absolute top-2.5 right-2.5 bg-[#FACC15] text-[#0A0A0A] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tabular-nums shadow-xs">
                                       -{product.specialDiscountPercent}%
@@ -769,9 +822,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {priceDeals.map((tier) => {
-            const matchCount = perfumes.filter((p) =>
-              matchesPriceRange(p, tier.id)
-            ).length;
+            const matchCount = priceDealCounts[tier.id] ?? 0;
             return (
               <motion.button
                 key={tier.id}
@@ -854,9 +905,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {SEASON_OPTIONS.map((season) => {
             const Icon = getSeasonIcon(season.id);
-            const seasonCount = perfumes.filter((p) =>
-              getProductSeasons(p).includes(season.id)
-            ).length;
+            const seasonCount = seasonCounts[season.id] ?? 0;
             return (
               <motion.button
                 key={season.id}
@@ -1020,7 +1069,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                     product={product}
                     index={idx}
                     disableEntranceAnimation
-                    imageLoading="eager"
+                    imageLoading={idx < moodCardsPerView ? 'eager' : 'lazy'}
+                    fetchPriority={idx < moodCardsPerView ? 'auto' : 'low'}
                     onViewDetails={onSelectProduct}
                     onQuickWhatsApp={onQuickWhatsApp}
                   />
@@ -1256,9 +1306,9 @@ export const HomePage: React.FC<HomePageProps> = ({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-5">
-            {catalogueBrands.map((brand, idx) => {
-              const count = perfumes.filter((p) => p.brand === brand).length;
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
+            {featuredPerfumeHouses.map((brand, idx) => {
+              const count = houseCounts[brand] ?? 0;
               return (
                 <motion.button
                   key={brand}
@@ -1275,7 +1325,9 @@ export const HomePage: React.FC<HomePageProps> = ({
                   }}
                   onClick={() =>
                     onNavigate('shop', {
+                      category: 'All',
                       brand,
+                      size: 'All',
                       priceRange: 'all',
                       season: 'all',
                       onlySpecials: false,

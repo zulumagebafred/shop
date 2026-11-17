@@ -284,6 +284,166 @@
         }
       },
       "required": ["email", "role", "createdAt", "updatedAt"]
+    },
+    "ComboDeal": {
+      "title": "ComboDeal",
+      "description": "A multi-perfume bundle deal with discounted bundle pricing managed by the store owner.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Combo headline (e.g. Signature Duo Bundle)"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Short offer explanation"
+        },
+        "perfumeNames": {
+          "type": "array",
+          "description": "List of 2 to 6 included fragrance names"
+        },
+        "sizeLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Bottle or decant sizes included (e.g. 2 × 30ml Bottles)"
+        },
+        "regularPrice": {
+          "type": "number",
+          "description": "Original combined price in SZL before bundle discount"
+        },
+        "comboPrice": {
+          "type": "number",
+          "description": "Bundle offer price in SZL"
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Optional callout label (e.g. Save E50)"
+        },
+        "featured": {
+          "type": "boolean",
+          "description": "Whether highlighted at the top of Combo Deals"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether visible to storefront visitors"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this combo deal"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "title",
+        "subtitle",
+        "perfumeNames",
+        "sizeLabel",
+        "regularPrice",
+        "comboPrice",
+        "tag",
+        "featured",
+        "active",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LayeringIdea": {
+      "title": "LayeringIdea",
+      "description": "A curated scent pairing guide recommending base and top fragrances with spray ratios.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Layering pairing title"
+        },
+        "vibe": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Olfactory mood (e.g. Sweet Smoked Oud)"
+        },
+        "basePerfumeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Heavier base perfume sprayed first"
+        },
+        "topPerfumeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Lighter topper perfume sprayed second"
+        },
+        "sprayRatio": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Recommended spray count per layer"
+        },
+        "occasion": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Best time or setting for the pairing"
+        },
+        "whyItWorks": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Notes synergy explanation"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether visible on the storefront Layering Ideas guide"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this layering idea"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "title",
+        "vibe",
+        "basePerfumeName",
+        "topPerfumeName",
+        "sprayRatio",
+        "occasion",
+        "whyItWorks",
+        "active",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -302,6 +462,14 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Authorized admin records managed strictly by the bootstrapped owner."
+    },
+    "/combos/{comboId}": {
+      "schema": { "$ref": "#/entities/ComboDeal" },
+      "description": "Multi-perfume bundle deals readable publicly when active and managed by the store owner."
+    },
+    "/layeringIdeas/{ideaId}": {
+      "schema": { "$ref": "#/entities/LayeringIdea" },
+      "description": "Curated perfume layering pairings readable publicly when active and managed by the store owner."
     }
   }
 }

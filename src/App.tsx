@@ -13,10 +13,11 @@ import { siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { HomePage } from './pages/HomePage';
 
-const MigrateDataButton = lazy(() => import('./pages/Migrate'));
-
 const ShopPage = lazy(() =>
   import('./pages/ShopPage').then((m) => ({ default: m.ShopPage }))
+);
+const ComboLayeringPage = lazy(() =>
+  import('./pages/ComboLayeringPage').then((m) => ({ default: m.ComboLayeringPage }))
 );
 const ProductDetailPage = lazy(() =>
   import('./pages/ProductDetailPage').then((m) => ({ default: m.ProductDetailPage }))
@@ -49,6 +50,7 @@ import {
   BasketItem,
   BottleSize,
   BranchId,
+  ComboDeal,
   Coupon,
   DeliveryMethod,
   FragranceCategory,
@@ -375,6 +377,47 @@ function AppContent() {
     );
   };
 
+  const handleAddComboToBasket = (combo: ComboDeal, fallbackImage: string) => {
+    const comboProductId = `combo-${combo.id}`;
+    const comboSizeLabel = `${combo.sizeLabel} · ${combo.perfumeNames.join(' + ')}`.slice(0, 64);
+
+    setBasketItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.productId === comboProductId && item.size === comboSizeLabel
+      );
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          unitPrice: combo.comboPrice,
+          originalUnitPrice: combo.regularPrice,
+          quantity: next[existingIndex].quantity + 1,
+        };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          productId: comboProductId,
+          productName: combo.title,
+          brand: 'Combo Deal',
+          image: fallbackImage,
+          size: comboSizeLabel,
+          unitPrice: combo.comboPrice,
+          originalUnitPrice: combo.regularPrice,
+          onSpecial: combo.regularPrice > combo.comboPrice,
+          quantity: 1,
+          isSampleListing: false,
+        },
+      ];
+    });
+
+    showToast(
+      `Added ${combo.title}`,
+      `Bundle added for E${combo.comboPrice.toFixed(0)} (was E${combo.regularPrice.toFixed(0)})`
+    );
+  };
+
   const handleUpdateQuantity = (
     productId: string,
     size: BottleSize,
@@ -415,7 +458,6 @@ function AppContent() {
             </div>
           }
         >
-          <MigrateDataButton />
           <AdminDashboardPage
             onBackToStorefront={() => handleNavigate('home')}
             onNotify={showToast}
@@ -510,6 +552,16 @@ function AppContent() {
                 onBackToShop={() => handleNavigate('shop')}
                 onSelectProduct={handleSelectProduct}
                 onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
+              />
+            )}
+
+            {currentPage === 'combos' && (
+              <ComboLayeringPage
+                onSelectProduct={handleSelectProduct}
+                onAddToBasket={handleAddToBasket}
+                onAddComboToBasket={handleAddComboToBasket}
+                onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
+                onNavigate={(p, opts) => handleNavigate(p, opts)}
               />
             )}
 

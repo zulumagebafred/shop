@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 
 interface ResilientImageProps {
@@ -57,13 +57,24 @@ export const ResilientImage: React.FC<ResilientImageProps> = React.memo(({
   fetchPriority = 'auto',
 }) => {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const hasError = failedSrc === src;
+  const isLoaded = loadedSrc === src;
 
   useEffect(() => {
     if (failedSrc && failedSrc !== src) {
       setFailedSrc(null);
     }
   }, [src, failedSrc]);
+
+  const handleImgRef = useCallback(
+    (node: HTMLImageElement | null) => {
+      if (node && node.complete && node.naturalWidth > 0) {
+        setLoadedSrc(src);
+      }
+    },
+    [src]
+  );
 
   const { webpSrc, fallbackSrc } = resolveOptimizedPaths(src);
 
@@ -87,25 +98,37 @@ export const ResilientImage: React.FC<ResilientImageProps> = React.memo(({
 
   const imgElement = (
     <img
+      ref={handleImgRef}
       src={fallbackSrc}
       alt={alt}
       loading={loading}
       decoding="async"
       fetchPriority={fetchPriority}
       referrerPolicy="no-referrer"
+      onLoad={() => setLoadedSrc(src)}
       onError={() => setFailedSrc(src)}
-      className={className}
+      className={`${className} transition-opacity duration-200 ${
+        isLoaded ? 'opacity-100' : 'opacity-0'
+      }`}
     />
   );
 
-  if (!webpSrc) {
-    return imgElement;
-  }
-
   return (
-    <picture className="block w-full h-full">
-      <source srcSet={webpSrc} type="image/webp" />
-      {imgElement}
-    </picture>
+    <div className="relative w-full h-full overflow-hidden">
+      {!isLoaded && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[#EFEFF1] animate-pulse"
+        />
+      )}
+      {webpSrc ? (
+        <picture className="block w-full h-full">
+          <source srcSet={webpSrc} type="image/webp" />
+          {imgElement}
+        </picture>
+      ) : (
+        imgElement
+      )}
+    </div>
   );
 });

@@ -315,7 +315,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                         : 'grid-cols-2 sm:grid-cols-4'
                     }`}
                   >
-                    {product.sizes.map((opt) => {
+                    {product.sizes.map((opt, idx) => {
                       const active = opt.size === effectiveSize;
                       const effPrice = getEffectiveUnitPrice(
                         opt.price,
@@ -324,7 +324,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                       );
                       return (
                         <button
-                          key={opt.size}
+                          key={`${opt.size}-${idx}`}
                           type="button"
                           disabled={!opt.available}
                           onClick={() => setChosenSize(opt.size)}

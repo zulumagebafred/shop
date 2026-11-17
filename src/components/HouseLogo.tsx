@@ -479,6 +479,205 @@ export const HouseLogo: React.FC<HouseLogoProps> = React.memo(({ brand, classNam
     );
   }
 
+  if (normalized.includes('emper')) {
+    return (
+      <div className={`flex flex-col items-center justify-center text-center select-none ${className}`}>
+        <svg
+          viewBox="0 0 180 78"
+          className="w-full max-w-[168px] h-[68px] text-[#0A0A0A]"
+          fill="none"
+          aria-hidden="true"
+        >
+          {/* Imperial Crown Crest */}
+          <path
+            d="M74 28L78 13L85 21L90 10L95 21L102 13L106 28H74Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <line x1="74" y1="32" x2="106" y2="32" stroke="currentColor" strokeWidth="1.4" />
+          <text
+            x="90"
+            y="53"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="18.5"
+            fontWeight="700"
+            letterSpacing="5.5"
+            fontFamily="Poppins, sans-serif"
+          >
+            EMPER
+          </text>
+          <text
+            x="90"
+            y="66"
+            textAnchor="middle"
+            fill="currentColor"
+            opacity="0.6"
+            fontSize="7.5"
+            fontWeight="500"
+            letterSpacing="2.8"
+            fontFamily="Poppins, sans-serif"
+          >
+            PERFUMES · DUBAI
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
+  if (normalized.includes('french avenue')) {
+    return (
+      <div className={`flex flex-col items-center justify-center text-center select-none ${className}`}>
+        <svg
+          viewBox="0 0 180 78"
+          className="w-full max-w-[168px] h-[68px] text-[#0A0A0A]"
+          fill="none"
+          aria-hidden="true"
+        >
+          {/* Architectural Monogram Box */}
+          <rect x="75" y="7" width="30" height="24" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <text
+            x="90"
+            y="22.8"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="10.5"
+            fontWeight="700"
+            letterSpacing="1.8"
+            fontFamily="Poppins, sans-serif"
+          >
+            FA
+          </text>
+          <text
+            x="90"
+            y="52"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="14.5"
+            fontWeight="700"
+            letterSpacing="2.6"
+            fontFamily="Poppins, sans-serif"
+          >
+            FRENCH AVENUE
+          </text>
+          <text
+            x="90"
+            y="66"
+            textAnchor="middle"
+            fill="currentColor"
+            opacity="0.6"
+            fontSize="7.5"
+            fontWeight="500"
+            letterSpacing="2.8"
+            fontFamily="Poppins, sans-serif"
+          >
+            BY FRAGRANCE WORLD
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
+  if (normalized.includes('zaafaran')) {
+    return (
+      <div className={`flex flex-col items-center justify-center text-center select-none ${className}`}>
+        <svg
+          viewBox="0 0 180 78"
+          className="w-full max-w-[168px] h-[68px] text-[#0A0A0A]"
+          fill="none"
+          aria-hidden="true"
+        >
+          {/* Saffron Star & Seal Emblem */}
+          <polygon
+            points="90,6 94.5,15 104,19 94.5,23 90,32 85.5,23 76,19 85.5,15"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+          <circle cx="90" cy="19" r="2.2" fill="currentColor" />
+          <text
+            x="90"
+            y="52"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="13.5"
+            fontWeight="700"
+            letterSpacing="2"
+            fontFamily="Poppins, sans-serif"
+          >
+            ARD AL ZAAFARAN
+          </text>
+          <text
+            x="90"
+            y="66"
+            textAnchor="middle"
+            fill="currentColor"
+            opacity="0.6"
+            fontSize="7.5"
+            fontWeight="500"
+            letterSpacing="2.8"
+            fontFamily="Poppins, sans-serif"
+          >
+            TRADING · DUBAI
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
+  if (normalized.includes('khadlaj')) {
+    return (
+      <div className={`flex flex-col items-center justify-center text-center select-none ${className}`}>
+        <svg
+          viewBox="0 0 180 78"
+          className="w-full max-w-[168px] h-[68px] text-[#0A0A0A]"
+          fill="none"
+          aria-hidden="true"
+        >
+          {/* Double Crest Oval & K Monogram */}
+          <ellipse cx="90" cy="19" rx="14" ry="12" stroke="currentColor" strokeWidth="1.5" />
+          <text
+            x="90"
+            y="22.8"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="10.5"
+            fontWeight="700"
+            fontFamily="Poppins, sans-serif"
+          >
+            K
+          </text>
+          <text
+            x="90"
+            y="52"
+            textAnchor="middle"
+            fill="currentColor"
+            fontSize="17"
+            fontWeight="700"
+            letterSpacing="4.2"
+            fontFamily="Poppins, sans-serif"
+          >
+            KHADLAJ
+          </text>
+          <text
+            x="90"
+            y="66"
+            textAnchor="middle"
+            fill="currentColor"
+            opacity="0.6"
+            fontSize="7.5"
+            fontWeight="500"
+            letterSpacing="2.8"
+            fontFamily="Poppins, sans-serif"
+          >
+            PERFUMES · EST. 1997
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
   // Fallback Clean House Monogram for Custom Brands Added in Admin
   const initials = brand
     .split(/\s+/)

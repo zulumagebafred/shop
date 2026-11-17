@@ -128,7 +128,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
-                    {matches.map((item) => {
+                    {matches.slice(0, 24).map((item) => {
                       const { highestEffective, highestSize } = getProductPriceSummary(item);
 
                       return (
@@ -146,6 +146,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                               src={item.image}
                               alt={item.name}
                               fallbackTitle={item.name}
+                              loading="eager"
                               className="w-full h-full object-cover"
                             />
                           </div>
@@ -168,6 +169,18 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                         </button>
                       );
                     })}
+                    {matches.length > 24 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onViewAllResults(query);
+                          onClose();
+                        }}
+                        className="sm:col-span-2 py-3 px-4 rounded-2xl border border-[#0A0A0A] text-xs font-semibold uppercase tracking-wider text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors"
+                      >
+                        View all {matches.length} matching fragrances in Shop →
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

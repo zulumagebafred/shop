@@ -122,10 +122,36 @@ export interface BasketItem {
   isSampleListing: boolean;
 }
 
+export interface ComboDeal {
+  id: string;
+  title: string;
+  subtitle: string;
+  perfumeNames: string[];
+  sizeLabel: string;
+  regularPrice: number;
+  comboPrice: number;
+  tag: string;
+  featured: boolean;
+  active: boolean;
+}
+
+export interface LayeringIdea {
+  id: string;
+  title: string;
+  vibe: string;
+  basePerfumeName: string;
+  topPerfumeName: string;
+  sprayRatio: string;
+  occasion: string;
+  whyItWorks: string;
+  active: boolean;
+}
+
 export type AppPage =
   | 'home'
   | 'shop'
   | 'product'
+  | 'combos'
   | 'decants'
   | 'stores'
   | 'about'

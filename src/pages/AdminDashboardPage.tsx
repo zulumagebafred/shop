@@ -11,6 +11,7 @@ import {
   EyeOff,
   Flame,
   KeyRound,
+  Layers,
   Lock,
   LogOut,
   MailCheck,
@@ -35,11 +36,13 @@ import { OWNER_EMAIL } from '../lib/firebase';
 import {
   AvailabilityStatus,
   BottleSize,
+  ComboDeal,
   Coupon,
   CouponDiscountType,
   CouponScope,
   FragranceCategory,
   FragranceProduct,
+  LayeringIdea,
   STANDARD_BOTTLE_SIZES,
   SizeOption,
   SpecialCampaign,
@@ -51,7 +54,7 @@ interface AdminDashboardPageProps {
   onNotify: (title: string, subtitle: string) => void;
 }
 
-type AdminTab = 'perfumes' | 'specials' | 'coupons';
+type AdminTab = 'perfumes' | 'specials' | 'combos' | 'coupons';
 type InventoryFilter = 'all' | 'Men' | 'Women' | 'Unisex' | 'specials' | 'low-stock';
 type InventorySort = 'name-asc' | 'brand-asc' | 'price-desc' | 'price-asc';
 
@@ -159,12 +162,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     refreshAuthUser,
     setOwnerPasswordCredential,
     signOutOwner,
+    perfumes,
     livePerfumes,
     catalogueLoading,
     catalogueError,
     campaign,
     coupons,
     couponsLoading,
+    liveCombos,
+    combosLoading,
+    liveLayeringIdeas,
+    layeringLoading,
     savePerfume,
     deletePerfume,
     togglePerfumeSpecial,
@@ -173,6 +181,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     toggleCouponActive,
     deleteCoupon,
     saveCampaign,
+    saveComboDeal,
+    deleteComboDeal,
+    saveLayeringIdea,
+    deleteLayeringIdea,
+    importStarterCombosAndLayering,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('perfumes');
@@ -206,6 +219,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>('all');
   const [inventorySort, setInventorySort] = useState<InventorySort>('name-asc');
+  const [inventoryVisibleCount, setInventoryVisibleCount] = useState(40);
   const [confirmDeletePerfumeId, setConfirmDeletePerfumeId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [importingStarter, setImportingStarter] = useState(false);
@@ -281,6 +295,57 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [copiedCouponCode, setCopiedCouponCode] = useState<string | null>(null);
   const [copiedCaptionCode, setCopiedCaptionCode] = useState<string | null>(null);
 
+  // Combo Deal & Layering Idea Editor state
+  const [editingComboId, setEditingComboId] = useState<string | null>(null);
+  const [comboTitle, setComboTitle] = useState('');
+  const [comboSubtitle, setComboSubtitle] = useState('');
+  const [comboPerfumesText, setComboPerfumesText] = useState('');
+  const [comboSizeLabel, setComboSizeLabel] = useState('2 × 30ml / Duo Pack');
+  const [comboRegularPrice, setComboRegularPrice] = useState('600');
+  const [comboPrice, setComboPrice] = useState('550');
+  const [comboTag, setComboTag] = useState('Save E50');
+  const [comboFeatured, setComboFeatured] = useState(true);
+  const [comboActive, setComboActive] = useState(true);
+  const [savingCombo, setSavingCombo] = useState(false);
+  const [comboError, setComboError] = useState<string | null>(null);
+  const [confirmDeleteComboId, setConfirmDeleteComboId] = useState<string | null>(null);
+
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [layerTitle, setLayerTitle] = useState('');
+  const [layerVibe, setLayerVibe] = useState('');
+  const [layerBasePerfume, setLayerBasePerfume] = useState('');
+  const [layerTopPerfume, setLayerTopPerfume] = useState('');
+  const [layerSprayRatio, setLayerSprayRatio] = useState('2 sprays base · 2 sprays top');
+  const [layerOccasion, setLayerOccasion] = useState('Evening & Date Night');
+  const [layerWhyItWorks, setLayerWhyItWorks] = useState('');
+  const [layerActive, setLayerActive] = useState(true);
+  const [savingLayer, setSavingLayer] = useState(false);
+  const [layerError, setLayerError] = useState<string | null>(null);
+  const [confirmDeleteLayerId, setConfirmDeleteLayerId] = useState<string | null>(null);
+  const [importingCombosStarter, setImportingCombosStarter] = useState(false);
+
+  // Combo Catalogue Picker state
+  const [comboPickerSearch, setComboPickerSearch] = useState('');
+  const [selectedComboPicks, setSelectedComboPicks] = useState<
+    { key: string; name: string; size: string; price: number | null }[]
+  >([]);
+
+  const catalogForBuilders = livePerfumes.length > 0 ? livePerfumes : perfumes;
+
+  const comboPickerMatches = useMemo(() => {
+    const q = comboPickerSearch.trim().toLowerCase();
+    return catalogForBuilders
+      .filter((p) => p.availability !== 'Out of Stock')
+      .filter(
+        (p) =>
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          p.brand.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q)
+      )
+      .slice(0, 18);
+  }, [catalogForBuilders, comboPickerSearch]);
+
   const specialPerfumes = useMemo(
     () => livePerfumes.filter((p) => Boolean(p.onSpecial)),
     [livePerfumes]
@@ -344,6 +409,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     });
     return sorted;
   }, [livePerfumes, inventorySearch, inventoryFilter, inventorySort]);
+
+  useEffect(() => {
+    setInventoryVisibleCount(40);
+  }, [inventorySearch, inventoryFilter, inventorySort]);
+
+  const visibleLivePerfumes = useMemo(
+    () => filteredLivePerfumes.slice(0, inventoryVisibleCount),
+    [filteredLivePerfumes, inventoryVisibleCount]
+  );
 
   const mapFirebaseAuthError = (err: unknown, fallback: string): string => {
     const msg = err instanceof Error ? err.message : String(err);
@@ -885,6 +959,235 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
+  const syncComboPicksToForm = (
+    nextPicks: { key: string; name: string; size: string; price: number | null }[],
+    currentComboPriceStr: string
+  ) => {
+    setSelectedComboPicks(nextPicks);
+    setComboPerfumesText(nextPicks.map((p) => p.name).join(', '));
+    if (nextPicks.length === 0) return;
+
+    const sizes = nextPicks.map((p) => p.size).filter(Boolean);
+    const allSameSize = sizes.length > 0 && sizes.every((s) => s === sizes[0]);
+    if (allSameSize) {
+      setComboSizeLabel(
+        `${nextPicks.length} × ${sizes[0]}${nextPicks.length === 2 ? ' Duo' : ' Bundle'}`
+      );
+    } else if (sizes.length > 0) {
+      setComboSizeLabel(sizes.join(' + '));
+    }
+
+    const pricedItems = nextPicks.filter((p) => p.price !== null && p.price > 0);
+    if (pricedItems.length > 0) {
+      const regSum = pricedItems.reduce((sum, p) => sum + Number(p.price ?? 0), 0);
+      setComboRegularPrice(String(regSum));
+      const bundleNum = Number(currentComboPriceStr);
+      if (Number.isFinite(bundleNum) && bundleNum > 0 && regSum > bundleNum) {
+        setComboTag(`Save ${formatPrice(regSum - bundleNum)}`);
+      }
+    }
+
+    if (!comboTitle.trim() && nextPicks.length >= 2) {
+      setComboTitle(`${nextPicks[0].name} + ${nextPicks[1].name} Combo`);
+    }
+  };
+
+  const handleAddPerfumePickToCombo = (
+    product: FragranceProduct,
+    sizeOpt: SizeOption
+  ) => {
+    const effPrice =
+      sizeOpt.price !== null
+        ? getEffectiveUnitPrice(
+            sizeOpt.price,
+            product.onSpecial,
+            product.specialDiscountPercent
+          )
+        : null;
+    const nextPicks = [
+      ...selectedComboPicks,
+      {
+        key: `${product.id}-${sizeOpt.size}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: product.name,
+        size: sizeOpt.size,
+        price: effPrice,
+      },
+    ].slice(0, 6);
+    syncComboPicksToForm(nextPicks, comboPrice);
+  };
+
+  const handleRemoveComboPick = (pickKey: string) => {
+    const nextPicks = selectedComboPicks.filter((p) => p.key !== pickKey);
+    syncComboPicksToForm(nextPicks, comboPrice);
+  };
+
+  const resetComboForm = () => {
+    setEditingComboId(null);
+    setComboTitle('');
+    setComboSubtitle('');
+    setComboPerfumesText('');
+    setSelectedComboPicks([]);
+    setComboPickerSearch('');
+    setComboSizeLabel('2 × 30ml / Duo Pack');
+    setComboRegularPrice('600');
+    setComboPrice('550');
+    setComboTag('Save E50');
+    setComboFeatured(true);
+    setComboActive(true);
+    setComboError(null);
+  };
+
+  const handleEditCombo = (combo: ComboDeal) => {
+    setEditingComboId(combo.id);
+    setComboTitle(combo.title);
+    setComboSubtitle(combo.subtitle);
+    setComboPerfumesText(combo.perfumeNames.join(', '));
+    setSelectedComboPicks([]);
+    setComboSizeLabel(combo.sizeLabel);
+    setComboRegularPrice(String(combo.regularPrice));
+    setComboPrice(String(combo.comboPrice));
+    setComboTag(combo.tag);
+    setComboFeatured(combo.featured);
+    setComboActive(combo.active);
+    setComboError(null);
+  };
+
+  const handleSaveComboSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setComboError(null);
+    const perfumeNames = comboPerfumesText
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (!comboTitle.trim()) {
+      setComboError('Please enter a combo bundle title.');
+      return;
+    }
+    if (perfumeNames.length < 2) {
+      setComboError('Pick or enter at least 2 perfumes for this combo bundle.');
+      return;
+    }
+    const regNum = Number(comboRegularPrice);
+    const bundleNum = Number(comboPrice);
+    if (!Number.isFinite(regNum) || !Number.isFinite(bundleNum) || bundleNum <= 0) {
+      setComboError('Enter valid Regular and Combo prices in Emalangeni.');
+      return;
+    }
+    if (bundleNum > regNum) {
+      setComboError('Combo bundle price cannot be higher than the regular combined price.');
+      return;
+    }
+
+    setSavingCombo(true);
+    try {
+      await saveComboDeal(
+        {
+          title: comboTitle,
+          subtitle: comboSubtitle,
+          perfumeNames,
+          sizeLabel: comboSizeLabel,
+          regularPrice: regNum,
+          comboPrice: bundleNum,
+          tag: comboTag,
+          featured: comboFeatured,
+          active: comboActive,
+        },
+        editingComboId ?? undefined
+      );
+      onNotify(
+        editingComboId ? 'Combo Updated' : 'Combo Published',
+        `${comboTitle.trim()} is live on Combo / Layering.`
+      );
+      resetComboForm();
+    } catch (err) {
+      setComboError(extractReadableError(err, 'Could not save combo deal.'));
+    } finally {
+      setSavingCombo(false);
+    }
+  };
+
+  const resetLayerForm = () => {
+    setEditingLayerId(null);
+    setLayerTitle('');
+    setLayerVibe('');
+    setLayerBasePerfume('');
+    setLayerTopPerfume('');
+    setLayerSprayRatio('2 sprays base · 2 sprays top');
+    setLayerOccasion('Evening & Date Night');
+    setLayerWhyItWorks('');
+    setLayerActive(true);
+    setLayerError(null);
+  };
+
+  const handleEditLayer = (idea: LayeringIdea) => {
+    setEditingLayerId(idea.id);
+    setLayerTitle(idea.title);
+    setLayerVibe(idea.vibe);
+    setLayerBasePerfume(idea.basePerfumeName);
+    setLayerTopPerfume(idea.topPerfumeName);
+    setLayerSprayRatio(idea.sprayRatio);
+    setLayerOccasion(idea.occasion);
+    setLayerWhyItWorks(idea.whyItWorks);
+    setLayerActive(idea.active);
+    setLayerError(null);
+  };
+
+  const handleSaveLayerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLayerError(null);
+    if (!layerTitle.trim() || !layerBasePerfume.trim() || !layerTopPerfume.trim()) {
+      setLayerError('Title, Base Perfume, and Top Layer Perfume are required.');
+      return;
+    }
+
+    setSavingLayer(true);
+    try {
+      await saveLayeringIdea(
+        {
+          title: layerTitle,
+          vibe: layerVibe || 'Signature Pairing',
+          basePerfumeName: layerBasePerfume,
+          topPerfumeName: layerTopPerfume,
+          sprayRatio: layerSprayRatio || '2 sprays base · 2 sprays top',
+          occasion: layerOccasion,
+          whyItWorks:
+            layerWhyItWorks ||
+            `${layerBasePerfume.trim()} anchors the skin while ${layerTopPerfume.trim()} lifts the top notes.`,
+          active: layerActive,
+        },
+        editingLayerId ?? undefined
+      );
+      onNotify(
+        editingLayerId ? 'Layering Idea Updated' : 'Layering Idea Published',
+        `${layerTitle.trim()} added to the Combo / Layering guide.`
+      );
+      resetLayerForm();
+    } catch (err) {
+      setLayerError(extractReadableError(err, 'Could not save layering idea.'));
+    } finally {
+      setSavingLayer(false);
+    }
+  };
+
+  const handleImportStarterCombos = async () => {
+    setImportingCombosStarter(true);
+    try {
+      const count = await importStarterCombosAndLayering();
+      onNotify(
+        'Starter Combos Imported',
+        `Imported ${count} starter items into Firestore for editing.`
+      );
+    } catch (err) {
+      onNotify(
+        'Import Failed',
+        extractReadableError(err, 'Could not import starter combos.')
+      );
+    } finally {
+      setImportingCombosStarter(false);
+    }
+  };
+
   const handleCopyCoupon = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code);
@@ -1403,6 +1706,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 [
                   { id: 'perfumes', label: 'Perfumes & Pricing', icon: Package },
                   { id: 'specials', label: 'Specials & Countdown', icon: Flame },
+                  { id: 'combos', label: 'Combos & Layering', icon: Layers },
                   { id: 'coupons', label: 'Social Coupon Codes', icon: Tag },
                 ] as const
               ).map((tab) => {
@@ -1591,7 +1895,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {filteredLivePerfumes.map((product) => (
+                    {visibleLivePerfumes.map((product, idx) => (
                       <div
                         key={product.id}
                         className="bg-white border border-[#E5E5E5] hover:border-[#0A0A0A]/40 rounded-2xl p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 transition-colors"
@@ -1602,6 +1906,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               src={product.image}
                               alt={product.name}
                               fallbackTitle={product.name}
+                              loading={idx < 8 ? 'eager' : 'lazy'}
                               className="w-full h-full object-cover saturate-[1.12] contrast-[1.03]"
                             />
                           </div>
@@ -1632,7 +1937,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             </h3>
 
                             <div className="flex flex-wrap gap-1.5 pt-0.5">
-                              {product.sizes.map((s) => {
+                              {product.sizes.map((s, sizeIdx) => {
                                 const eff = getEffectiveUnitPrice(
                                   s.price,
                                   product.onSpecial,
@@ -1647,7 +1952,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   eff < s.price;
                                 return (
                                   <span
-                                    key={s.size}
+                                    key={`${product.id}-${s.size}-${sizeIdx}`}
                                     className={`px-2.5 py-1 text-[11px] border rounded-lg tabular-nums ${
                                       s.available
                                         ? 'bg-[#F8F8F9] border-[#E5E5E5] text-[#0A0A0A]'
@@ -1789,6 +2094,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </div>
                       </div>
                     ))}
+
+                    {visibleLivePerfumes.length < filteredLivePerfumes.length && (
+                      <div className="pt-3 flex flex-wrap items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInventoryVisibleCount((prev) =>
+                              Math.min(prev + 40, filteredLivePerfumes.length)
+                            )
+                          }
+                          className="px-5 py-2.5 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider tabular-nums"
+                        >
+                          Show 40 More Perfumes ({visibleLivePerfumes.length} / {filteredLivePerfumes.length} shown)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInventoryVisibleCount(filteredLivePerfumes.length)}
+                          className="px-4 py-2.5 rounded-full border border-[#D4D4D4] text-[#525252] hover:border-[#0A0A0A] hover:text-[#0A0A0A] transition-colors text-xs font-medium"
+                        >
+                          Show All
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2733,6 +3061,743 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: COMBOS & LAYERING IDEAS */}
+            {activeTab === 'combos' && (
+              <div className="space-y-8">
+                <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-[#0A0A0A]">
+                      Combo Deals &amp; Layering Ideas
+                    </h2>
+                    <p className="text-xs sm:text-sm text-[#525252] mt-1">
+                      Set store-priced Combo Deals (e.g. buy 2 perfumes for E550 instead of E600) and manually curate layering suggestions from your live catalogue.
+                    </p>
+                  </div>
+                  {(liveCombos.length === 0 || liveLayeringIdeas.length === 0) && (
+                    <button
+                      type="button"
+                      disabled={importingCombosStarter}
+                      onClick={handleImportStarterCombos}
+                      className="px-5 py-2.5 rounded-full border border-[#0A0A0A] bg-white hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2 shrink-0"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>
+                        {importingCombosStarter
+                          ? 'Importing...'
+                          : 'Import Starter Deals & Ideas'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {/* SECTION A: COMBO DEALS CRUD */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  <form
+                    onSubmit={handleSaveComboSubmit}
+                    className="lg:col-span-5 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-[#0A0A0A]">
+                          {editingComboId ? 'Edit Combo Deal' : 'Set Combo Deal'}
+                        </h3>
+                        <p className="text-xs text-[#666666]">
+                          Pick perfumes from store stock &amp; set combo bundle price
+                        </p>
+                      </div>
+                      {editingComboId && (
+                        <button
+                          type="button"
+                          onClick={resetComboForm}
+                          className="text-xs underline text-[#525252] hover:text-[#0A0A0A]"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
+
+                    {comboError && (
+                      <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B]">
+                        {comboError}
+                      </div>
+                    )}
+
+                    {/* Catalogue Quick Picker for Combos */}
+                    <div className="p-3.5 bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A0A0A]">
+                          Pick Perfumes From Store ({catalogForBuilders.length})
+                        </span>
+                        {selectedComboPicks.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => syncComboPicksToForm([], comboPrice)}
+                            className="text-[11px] underline text-[#525252] hover:text-[#0A0A0A]"
+                          >
+                            Clear picks
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-[#737373] absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={comboPickerSearch}
+                          onChange={(e) => setComboPickerSearch(e.target.value)}
+                          placeholder="Search Yara, Asad, Khamrah, Lattafa..."
+                          className="w-full pl-8 pr-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+
+                      {selectedComboPicks.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {selectedComboPicks.map((pick) => (
+                            <span
+                              key={pick.key}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#0A0A0A] text-white rounded-full text-[11px] font-medium"
+                            >
+                              <span>
+                                {pick.name} ({pick.size}
+                                {pick.price !== null ? ` · ${formatPrice(pick.price)}` : ''})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveComboPick(pick.key)}
+                                aria-label={`Remove ${pick.name}`}
+                                className="hover:text-[#FACC15]"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                        {comboPickerMatches.map((item) => {
+                          const pricedSizes = item.sizes.filter(
+                            (s) => s.available && s.price !== null
+                          );
+                          const shownSizes =
+                            pricedSizes.length > 0
+                              ? pricedSizes.slice(0, 3)
+                              : item.sizes.slice(0, 2);
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="p-2 bg-white border border-[#E5E5E5] rounded-xl flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-[#0A0A0A] truncate">
+                                  {item.name}
+                                </p>
+                                <p className="text-[10px] text-[#737373] truncate">
+                                  {item.brand} · {item.category}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-1 shrink-0">
+                                {shownSizes.map((sz, szIdx) => {
+                                  const eff =
+                                    sz.price !== null
+                                      ? getEffectiveUnitPrice(
+                                          sz.price,
+                                          item.onSpecial,
+                                          item.specialDiscountPercent
+                                        )
+                                      : null;
+                                  return (
+                                    <button
+                                      key={`${item.id}-${sz.size}-${szIdx}`}
+                                      type="button"
+                                      onClick={() => handleAddPerfumePickToCombo(item, sz)}
+                                      className="px-2 py-1 rounded-lg bg-[#F6F6F7] hover:bg-[#0A0A0A] hover:text-white border border-[#D4D4D4] text-[10px] font-semibold tabular-nums transition-colors"
+                                    >
+                                      + {sz.size}
+                                      {eff !== null ? ` · ${formatPrice(eff)}` : ''}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Bundle Title *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={140}
+                        value={comboTitle}
+                        onChange={(e) => setComboTitle(e.target.value)}
+                        placeholder="e.g. Signature Two-Bottle Duo"
+                        required
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Included Perfumes (comma-separated) *
+                      </label>
+                      <input
+                        type="text"
+                        value={comboPerfumesText}
+                        onChange={(e) => setComboPerfumesText(e.target.value)}
+                        placeholder="e.g. Yara, Bade'e Al Oud"
+                        required
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Size Label
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={60}
+                          value={comboSizeLabel}
+                          onChange={(e) => setComboSizeLabel(e.target.value)}
+                          placeholder="2 × 30ml / Duo Pack"
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Badge Tag
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={40}
+                          value={comboTag}
+                          onChange={(e) => setComboTag(e.target.value)}
+                          placeholder="Save E50"
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Regular Price (E) *
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100000}
+                          step="any"
+                          value={comboRegularPrice}
+                          onChange={(e) => setComboRegularPrice(e.target.value)}
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Combo Price (E) *
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100000}
+                          step="any"
+                          value={comboPrice}
+                          onChange={(e) => setComboPrice(e.target.value)}
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Description
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={300}
+                        value={comboSubtitle}
+                        onChange={(e) => setComboSubtitle(e.target.value)}
+                        placeholder="Buy these 2 perfumes together for E550 instead of E600."
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-5 pt-1 text-xs font-medium">
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={comboFeatured}
+                          onChange={(e) => setComboFeatured(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Highlight Card (Dark Featured)</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={comboActive}
+                          onChange={(e) => setComboActive(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Active on Storefront</span>
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingCombo}
+                      className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                    >
+                      {savingCombo
+                        ? 'Saving Combo...'
+                        : editingComboId
+                        ? 'Update Combo Deal'
+                        : 'Publish Combo Deal'}
+                    </button>
+                  </form>
+
+                  {/* Live Combo Deals List */}
+                  <div className="lg:col-span-7 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                    <div className="border-b border-[#E5E5E5] pb-4">
+                      <h3 className="text-xl font-bold text-[#0A0A0A]">
+                        Live Combo Deals ({liveCombos.length})
+                      </h3>
+                      <p className="text-xs text-[#666666]">
+                        Combos published here appear immediately in the Combo Deals section on /combos.
+                      </p>
+                    </div>
+
+                    {combosLoading ? (
+                      <p className="text-sm text-[#666666] py-6">Loading combos...</p>
+                    ) : liveCombos.length === 0 ? (
+                      <div className="py-10 text-center border border-dashed border-[#D4D4D4] rounded-2xl space-y-2">
+                        <Package className="w-6 h-6 mx-auto text-[#737373]" />
+                        <p className="text-base font-bold text-[#0A0A0A]">
+                          No Live Combos in Database Yet
+                        </p>
+                        <p className="text-xs text-[#666666]">
+                          Pick 2+ perfumes on the left or click &ldquo;Import Example Combos&rdquo; above.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {liveCombos.map((combo) => (
+                          <div
+                            key={combo.id}
+                            className="p-4 border border-[#E5E5E5] bg-[#F7F7F8] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                          >
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-bold text-[#0A0A0A]">
+                                  {combo.title}
+                                </span>
+                                <span
+                                  className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full ${
+                                    combo.active
+                                      ? 'bg-[#FACC15] text-[#0A0A0A]'
+                                      : 'bg-[#E5E5E5] text-[#737373]'
+                                  }`}
+                                >
+                                  {combo.active ? 'Active' : 'Paused'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-[#404040]">
+                                {combo.perfumeNames.join(' + ')} · {combo.sizeLabel}
+                              </p>
+                              <p className="text-xs font-semibold tabular-nums text-[#0A0A0A]">
+                                {formatPrice(combo.comboPrice)}{' '}
+                                <span className="text-[#737373] line-through font-normal">
+                                  {formatPrice(combo.regularPrice)}
+                                </span>
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await saveComboDeal(
+                                      { ...combo, active: !combo.active },
+                                      combo.id
+                                    );
+                                    onNotify(
+                                      combo.active ? 'Combo Paused' : 'Combo Activated',
+                                      `${combo.title} updated.`
+                                    );
+                                  } catch (err) {
+                                    onNotify(
+                                      'Update Failed',
+                                      extractReadableError(err, 'Could not toggle combo.')
+                                    );
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                {combo.active ? 'Pause' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditCombo(combo)}
+                                className="px-3.5 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                Edit
+                              </button>
+                              {confirmDeleteComboId === combo.id ? (
+                                <div className="inline-flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await deleteComboDeal(combo.id);
+                                        setConfirmDeleteComboId(null);
+                                        onNotify('Combo Deleted', `${combo.title} removed.`);
+                                      } catch (err) {
+                                        onNotify(
+                                          'Delete Failed',
+                                          extractReadableError(err, 'Could not delete combo.')
+                                        );
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-[#DC2626] text-white rounded-full text-xs font-semibold"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteComboId(null)}
+                                    className="px-2.5 py-1.5 border border-[#D4D4D4] bg-white rounded-full text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteComboId(combo.id)}
+                                  aria-label={`Delete combo ${combo.title}`}
+                                  className="p-2 bg-white border border-[#D4D4D4] rounded-full text-[#525252] hover:text-[#DC2626] hover:border-[#DC2626]"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* SECTION B: LAYERING IDEAS CRUD */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  <form
+                    onSubmit={handleSaveLayerSubmit}
+                    className="lg:col-span-5 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-4"
+                  >
+                    <datalist id="layering-catalog-names">
+                      {catalogForBuilders.map((item) => (
+                        <option key={item.id} value={item.name}>
+                          {item.brand}
+                        </option>
+                      ))}
+                    </datalist>
+
+                    <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-[#0A0A0A]">
+                          {editingLayerId ? 'Edit Layering Idea' : 'New Layering Idea'}
+                        </h3>
+                        <p className="text-xs text-[#666666]">
+                          Suggest a base + topper perfume combination
+                        </p>
+                      </div>
+                      {editingLayerId && (
+                        <button
+                          type="button"
+                          onClick={resetLayerForm}
+                          className="text-xs underline text-[#525252] hover:text-[#0A0A0A]"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
+
+                    {layerError && (
+                      <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B]">
+                        {layerError}
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Pairing Title *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={140}
+                        value={layerTitle}
+                        onChange={(e) => setLayerTitle(e.target.value)}
+                        placeholder="e.g. Velvet Oud & Whipped Vanilla"
+                        required
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          1. Base Perfume *
+                        </label>
+                        <input
+                          type="text"
+                          list="layering-catalog-names"
+                          maxLength={140}
+                          value={layerBasePerfume}
+                          onChange={(e) => setLayerBasePerfume(e.target.value)}
+                          placeholder="e.g. Bade'e Al Oud"
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          2. Top Layer *
+                        </label>
+                        <input
+                          type="text"
+                          list="layering-catalog-names"
+                          maxLength={140}
+                          value={layerTopPerfume}
+                          onChange={(e) => setLayerTopPerfume(e.target.value)}
+                          placeholder="e.g. Yara"
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Vibe / Profile
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={60}
+                          value={layerVibe}
+                          onChange={(e) => setLayerVibe(e.target.value)}
+                          placeholder="Sweet Smoked Oud"
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Spray Ratio
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={80}
+                          value={layerSprayRatio}
+                          onChange={(e) => setLayerSprayRatio(e.target.value)}
+                          placeholder="2 sprays base · 2 sprays top"
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Best Occasion
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        value={layerOccasion}
+                        onChange={(e) => setLayerOccasion(e.target.value)}
+                        placeholder="Evening & Date Night"
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Why This Pairing Works
+                      </label>
+                      <textarea
+                        rows={3}
+                        maxLength={500}
+                        value={layerWhyItWorks}
+                        onChange={(e) => setLayerWhyItWorks(e.target.value)}
+                        placeholder="Explain how the base and top notes complement each other..."
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 text-xs font-medium cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={layerActive}
+                        onChange={(e) => setLayerActive(e.target.checked)}
+                        className="accent-[#0A0A0A] w-4 h-4"
+                      />
+                      <span>Active on Storefront</span>
+                    </label>
+
+                    <button
+                      type="submit"
+                      disabled={savingLayer}
+                      className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                    >
+                      {savingLayer
+                        ? 'Saving Idea...'
+                        : editingLayerId
+                        ? 'Update Layering Idea'
+                        : 'Publish Layering Idea'}
+                    </button>
+                  </form>
+
+                  {/* Live Layering Ideas List */}
+                  <div className="lg:col-span-7 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                    <div className="border-b border-[#E5E5E5] pb-4">
+                      <h3 className="text-xl font-bold text-[#0A0A0A]">
+                        Live Layering Ideas ({liveLayeringIdeas.length})
+                      </h3>
+                      <p className="text-xs text-[#666666]">
+                        Curated pairings help customers buy two scents together with confidence.
+                      </p>
+                    </div>
+
+                    {layeringLoading ? (
+                      <p className="text-sm text-[#666666] py-6">Loading layering ideas...</p>
+                    ) : liveLayeringIdeas.length === 0 ? (
+                      <div className="py-10 text-center border border-dashed border-[#D4D4D4] rounded-2xl space-y-2">
+                        <Layers className="w-6 h-6 mx-auto text-[#737373]" />
+                        <p className="text-base font-bold text-[#0A0A0A]">
+                          No Live Layering Ideas Saved Yet
+                        </p>
+                        <p className="text-xs text-[#666666]">
+                          Add a pairing on the left or import starter ideas above.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {liveLayeringIdeas.map((idea) => (
+                          <div
+                            key={idea.id}
+                            className="p-4 border border-[#E5E5E5] bg-[#F7F7F8] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                          >
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-bold text-[#0A0A0A]">
+                                  {idea.title}
+                                </span>
+                                <span
+                                  className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full ${
+                                    idea.active
+                                      ? 'bg-[#FACC15] text-[#0A0A0A]'
+                                      : 'bg-[#E5E5E5] text-[#737373]'
+                                  }`}
+                                >
+                                  {idea.active ? 'Active' : 'Paused'}
+                                </span>
+                              </div>
+                              <p className="text-xs font-medium text-[#0A0A0A]">
+                                {idea.basePerfumeName} + {idea.topPerfumeName}
+                              </p>
+                              <p className="text-xs text-[#525252]">
+                                {idea.vibe} · {idea.sprayRatio}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await saveLayeringIdea(
+                                      { ...idea, active: !idea.active },
+                                      idea.id
+                                    );
+                                    onNotify(
+                                      idea.active ? 'Idea Paused' : 'Idea Activated',
+                                      `${idea.title} updated.`
+                                    );
+                                  } catch (err) {
+                                    onNotify(
+                                      'Update Failed',
+                                      extractReadableError(err, 'Could not toggle layering idea.')
+                                    );
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                {idea.active ? 'Pause' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditLayer(idea)}
+                                className="px-3.5 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                Edit
+                              </button>
+                              {confirmDeleteLayerId === idea.id ? (
+                                <div className="inline-flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await deleteLayeringIdea(idea.id);
+                                        setConfirmDeleteLayerId(null);
+                                        onNotify('Idea Deleted', `${idea.title} removed.`);
+                                      } catch (err) {
+                                        onNotify(
+                                          'Delete Failed',
+                                          extractReadableError(err, 'Could not delete idea.')
+                                        );
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-[#DC2626] text-white rounded-full text-xs font-semibold"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteLayerId(null)}
+                                    className="px-2.5 py-1.5 border border-[#D4D4D4] bg-white rounded-full text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteLayerId(idea.id)}
+                                  aria-label={`Delete idea ${idea.title}`}
+                                  className="p-2 bg-white border border-[#D4D4D4] rounded-full text-[#525252] hover:text-[#DC2626] hover:border-[#DC2626]"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

@@ -334,7 +334,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   : 'grid-cols-2 sm:grid-cols-4'
               }`}
             >
-              {product.sizes.map((opt) => {
+              {product.sizes.map((opt, idx) => {
                 const active = opt.size === currentSizeObj?.size;
                 const eff = getEffectiveUnitPrice(
                   opt.price,
@@ -343,7 +343,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 );
                 return (
                   <button
-                    key={opt.size}
+                    key={`${opt.size}-${idx}`}
                     type="button"
                     disabled={!opt.available}
                     onClick={() => setSelectedSize(opt.size)}

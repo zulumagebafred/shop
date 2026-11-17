@@ -89,6 +89,8 @@ export const siteConfig = {
     Afnan: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYS_Knxrx9mD2OkQ3MD02VynHUkLMBYRuBOIYMnXCD0w&s=10',
     'Paris Corner': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYeUvOE1je3JByJbMijd9RvAC2QdkQBjmRYHJ1Esakxw&s=10',
     'Fragrance World': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTG0y5xL7mXIL7k5iIPMwm7w4qcY1Ce8IR2NKrgKbZLYQ&s=10',
+    'French Avenue': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQL0uu-7wfmGIhd7D9TTyWZBqeaDGu26GWy0qIacF76_w&s=10',
+    'Khadlaj': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR19Z5ZJerFY6y8yZe-OtsQgRR64L2X8xkxeM3TGQVLTw&s',
   } as Record<string, string>,
 };
 
