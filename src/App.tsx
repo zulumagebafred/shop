@@ -12,7 +12,8 @@ import { ToastData, ToastNotification } from './components/ToastNotification';
 import { siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { HomePage } from './pages/HomePage';
-import MigrateDataButton from './pages/Migrate'; 
+
+const MigrateDataButton = lazy(() => import('./pages/Migrate'));
 
 const ShopPage = lazy(() =>
   import('./pages/ShopPage').then((m) => ({ default: m.ShopPage }))
@@ -414,11 +415,13 @@ function AppContent() {
             </div>
           }
         >
+          <MigrateDataButton />
           <AdminDashboardPage
             onBackToStorefront={() => handleNavigate('home')}
             onNotify={showToast}
           />
         </Suspense>
+
         <ToastNotification
           toast={toast}
           onOpenBasket={() => handleNavigate('home')}
@@ -431,7 +434,6 @@ function AppContent() {
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#0A0A0A]">
 
-    <MigrateDataButton />
       <Navbar
         currentPage={currentPage}
         activeCategory={selectedCategory}
