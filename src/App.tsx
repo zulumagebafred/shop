@@ -73,7 +73,6 @@ function detectInitialPage(): AppPage {
 }
 
 function AppContent() {
-  <MigrateDataButton/>
   const { perfumes } = useStore();
 
   const [currentPage, setCurrentPage] = useState<AppPage>(detectInitialPage);
@@ -431,6 +430,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#0A0A0A]">
+
+    <MigrateDataButton />
       <Navbar
         currentPage={currentPage}
         activeCategory={selectedCategory}
