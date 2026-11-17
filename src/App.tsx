@@ -12,6 +12,7 @@ import { ToastData, ToastNotification } from './components/ToastNotification';
 import { siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { HomePage } from './pages/HomePage';
+import MigrateDataButton from './pages/Migrate'; 
 
 const ShopPage = lazy(() =>
   import('./pages/ShopPage').then((m) => ({ default: m.ShopPage }))
@@ -72,6 +73,7 @@ function detectInitialPage(): AppPage {
 }
 
 function AppContent() {
+  <MigrateDataButton/>
   const { perfumes } = useStore();
 
   const [currentPage, setCurrentPage] = useState<AppPage>(detectInitialPage);
