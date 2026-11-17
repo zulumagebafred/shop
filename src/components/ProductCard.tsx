@@ -94,9 +94,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           fetchPriority={fetchPriority}
           className="w-full h-full object-cover saturate-[1.12] contrast-[1.03] transition-transform duration-400 ease-out group-hover:scale-[1.03]"
         />
-        {(hasDiscount || product.onSpecial || product.availability !== 'In Stock') && (
+        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial) && (
           <div className="absolute top-2.5 left-2.5">
-            {hasDiscount && savedAmount > 0 ? (
+            {product.availability === 'Out of Stock' ? (
+              <span className="bg-white/95 text-[#991B1B] border border-[#FCA5A5] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
+                Out of Stock
+              </span>
+            ) : hasDiscount && savedAmount > 0 ? (
               <span className="inline-block bg-[#FACC15] text-[#0A0A0A] px-3 py-1 rounded-full text-[11px] font-bold tracking-tight shadow-xs tabular-nums">
                 Save {formatPrice(savedAmount)}
               </span>

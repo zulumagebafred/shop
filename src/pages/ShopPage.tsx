@@ -97,14 +97,28 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     });
     return ['All', ...sorted];
   }, [perfumes]);
-  const specialsCount = useMemo(
-    () => perfumes.filter((p) => Boolean(p.onSpecial)).length,
+  const availableCatalogCount = useMemo(
+    () => perfumes.filter((p) => p.availability !== 'Out of Stock').length,
     [perfumes]
   );
+
+  const specialsCount = useMemo(
+    () =>
+      perfumes.filter(
+        (p) => Boolean(p.onSpecial) && p.availability !== 'Out of Stock'
+      ).length,
+    [perfumes]
+  );
+
+  const isSearching = searchQuery.trim().length > 0;
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = perfumes.filter((product) => {
+      // Hide out-of-stock perfumes during normal browsing; only reveal them when actively searched
+      if (product.availability === 'Out of Stock' && (!q || onlyInStock)) {
+        return false;
+      }
       if (selectedCategory !== 'All' && product.category !== selectedCategory) {
         return false;
       }
@@ -126,10 +140,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       ) {
         return false;
       }
-      if (onlyInStock && product.availability === 'Out of Stock') {
-        return false;
-      }
-      if (onlySpecials && !product.onSpecial) {
+      if (onlySpecials && (!product.onSpecial || product.availability === 'Out of Stock')) {
         return false;
       }
       if (q) {
@@ -263,7 +274,8 @@ export const ShopPage: React.FC<ShopPageProps> = ({
         </div>
 
         <span className="text-xs font-medium text-[#525252] tabular-nums whitespace-nowrap shrink-0">
-          Showing {filteredProducts.length} of {perfumes.length} listings
+          Showing {filteredProducts.length} of{' '}
+          {isSearching ? perfumes.length : availableCatalogCount} listings
         </span>
       </div>
 
@@ -481,15 +493,17 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               <option value="price-desc">Price: High to Low</option>
             </select>
 
-            <label className="inline-flex items-center gap-2 text-xs text-[#404040] cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={onlyInStock}
-                onChange={(e) => onOnlyInStockChange(e.target.checked)}
-                className="accent-[#0A0A0A] w-3.5 h-3.5"
-              />
-              <span>Available Only</span>
-            </label>
+            {isSearching && (
+              <label className="inline-flex items-center gap-2 text-xs text-[#404040] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={onlyInStock}
+                  onChange={(e) => onOnlyInStockChange(e.target.checked)}
+                  className="accent-[#0A0A0A] w-3.5 h-3.5"
+                />
+                <span>Available Only</span>
+              </label>
+            )}
 
             {hasActiveFilters && (
               <button

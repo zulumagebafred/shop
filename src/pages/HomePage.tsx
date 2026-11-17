@@ -199,9 +199,13 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const { perfumes, campaign, campaignLoading, catalogueLoading } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
-  const specialPerfumes = useMemo(
-    () => perfumes.filter((p) => Boolean(p.onSpecial)),
+  const availablePerfumes = useMemo(
+    () => perfumes.filter((p) => p.availability !== 'Out of Stock'),
     [perfumes]
+  );
+  const specialPerfumes = useMemo(
+    () => availablePerfumes.filter((p) => Boolean(p.onSpecial)),
+    [availablePerfumes]
   );
   const [activeMood, setActiveMood] = useState<ScentMood>('all');
   const [activeDecantIndex, setActiveDecantIndex] = useState(1);
@@ -231,19 +235,7 @@ export const HomePage: React.FC<HomePageProps> = ({
     return () => window.removeEventListener('resize', updateDeckSpacing);
   }, []);
 
-  const slideshowPerfumes = useMemo(() => {
-    if (specialPerfumes.length > 0) {
-      if (specialPerfumes.length >= 4) return specialPerfumes;
-      const specialIds = new Set(specialPerfumes.map((p) => p.id));
-      const fillers = perfumes
-        .filter((p) => !specialIds.has(p.id))
-        .sort((a, b) => Number(Boolean(b.bestseller)) - Number(Boolean(a.bestseller)))
-        .slice(0, 5 - specialPerfumes.length);
-      return [...specialPerfumes, ...fillers];
-    }
-    const best = perfumes.filter((p) => p.bestseller);
-    return (best.length > 0 ? best : perfumes).slice(0, 5);
-  }, [specialPerfumes, perfumes]);
+  const slideshowPerfumes = specialPerfumes;
 
   const safeSlideIndex =
     slideshowPerfumes.length > 0 ? heroSlideIndex % slideshowPerfumes.length : 0;
@@ -314,12 +306,12 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   const curatedProducts = useMemo(() => {
     if (activeMood === 'all') {
-      const preferred = perfumes.filter((p) => p.bestseller);
-      const rest = perfumes.filter((p) => !p.bestseller);
+      const preferred = availablePerfumes.filter((p) => p.bestseller);
+      const rest = availablePerfumes.filter((p) => !p.bestseller);
       return [...preferred, ...rest].slice(0, 12);
     }
     const keywords = activeMoodObj.keywords;
-    const scored = perfumes
+    const scored = availablePerfumes
       .map((product) => {
         const haystack = [
           product.name,
@@ -340,8 +332,8 @@ export const HomePage: React.FC<HomePageProps> = ({
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.product);
 
-    return (scored.length > 0 ? scored : perfumes).slice(0, 12);
-  }, [perfumes, activeMood, activeMoodObj]);
+    return (scored.length > 0 ? scored : availablePerfumes).slice(0, 12);
+  }, [availablePerfumes, activeMood, activeMoodObj]);
 
   const [moodSlideIndex, setMoodSlideIndex] = useState(0);
   const [moodPaused, setMoodPaused] = useState(false);
@@ -420,14 +412,14 @@ export const HomePage: React.FC<HomePageProps> = ({
       'under-800': 0,
       '800-plus': 0,
     };
-    for (const p of perfumes) {
+    for (const p of availablePerfumes) {
       if (matchesPriceRange(p, 'under-300')) map['under-300'] += 1;
       if (matchesPriceRange(p, 'under-500')) map['under-500'] += 1;
       if (matchesPriceRange(p, 'under-800')) map['under-800'] += 1;
       if (matchesPriceRange(p, '800-plus')) map['800-plus'] += 1;
     }
     return map;
-  }, [perfumes]);
+  }, [availablePerfumes]);
 
   const seasonCounts = useMemo(() => {
     const map: Record<Exclude<SeasonFilter, 'all'>, number> = {
@@ -436,21 +428,21 @@ export const HomePage: React.FC<HomePageProps> = ({
       spring: 0,
       autumn: 0,
     };
-    for (const p of perfumes) {
+    for (const p of availablePerfumes) {
       for (const s of getProductSeasons(p)) {
         map[s] += 1;
       }
     }
     return map;
-  }, [perfumes]);
+  }, [availablePerfumes]);
 
   const houseCounts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const brand of featuredPerfumeHouses) {
-      map[brand] = perfumes.filter((p) => matchesHouseBrand(p, brand)).length;
+      map[brand] = availablePerfumes.filter((p) => matchesHouseBrand(p, brand)).length;
     }
     return map;
-  }, [perfumes]);
+  }, [availablePerfumes]);
 
   const getSeasonIcon = (seasonId: Exclude<SeasonFilter, 'all'>) => {
     if (seasonId === 'winter') return Snowflake;
@@ -555,7 +547,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
                       {campaign.enabled && campaign.badgeText
                         ? campaign.badgeText
-                        : 'Curated Collection'}
+                        : 'Featured Specials'}
                     </p>
 
                     <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
@@ -579,7 +571,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                             size: 'All',
                             priceRange: 'all',
                             season: 'all',
-                            onlySpecials: specialPerfumes.length > 0,
+                            onlySpecials: true,
                           })
                         }
                         className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
@@ -791,7 +783,47 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
             )}
           </div>
-        ) : null}
+        ) : (
+          <div className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 py-12 lg:py-16">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_40%,rgba(250,204,21,0.14)_0%,rgba(10,10,10,0)_62%)]"
+            />
+            <div className="relative z-10 max-w-2xl space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
+                AuraHut Co. Eswatini
+              </p>
+              <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
+                <span className="block text-white">Signature</span>
+                <span className="block text-[#FACC15]">Extraits</span>
+              </h1>
+              <p className="text-sm sm:text-base text-white/75 max-w-lg">
+                New seasonal special offers are updating soon. Explore our in-stock Arabian bottles and travel decants across Manzini and Mbabane.
+              </p>
+              <div className="pt-2">
+                <motion.button
+                  type="button"
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() =>
+                    onNavigate('shop', {
+                      category: 'All',
+                      brand: 'All',
+                      size: 'All',
+                      priceRange: 'all',
+                      season: 'all',
+                      onlySpecials: false,
+                    })
+                  }
+                  className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+                >
+                  <span>Browse Available Catalogue</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </motion.button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Immediate Trust Strip — Zero Guesswork */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4 border border-[#E5E5E5] rounded-2xl bg-[#F6F6F7] p-5 sm:px-7 sm:py-5">

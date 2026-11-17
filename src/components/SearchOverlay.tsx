@@ -42,7 +42,11 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return perfumes.slice(0, 4);
+    if (!q) {
+      return perfumes
+        .filter((item) => item.availability !== 'Out of Stock')
+        .slice(0, 4);
+    }
     return perfumes.filter((item) => {
       const notesText = [...item.notes.top, ...item.notes.heart, ...item.notes.base]
         .join(' ')
@@ -153,7 +157,11 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] uppercase tracking-wider text-[#525252]">
                               {item.brand} · {item.category}
-                              {item.onSpecial ? ' · Special' : ''}
+                              {item.availability === 'Out of Stock'
+                                ? ' · Out of Stock'
+                                : item.onSpecial
+                                ? ' · Special'
+                                : ''}
                             </p>
                             <p className="text-sm font-semibold text-[#0A0A0A] truncate">
                               {item.name}
