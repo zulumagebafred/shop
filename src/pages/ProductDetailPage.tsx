@@ -29,7 +29,12 @@ import {
   getSizeEffectivePrice,
   parseVolumeMl,
 } from '../utils/pricing';
-import { buildSingleWhatsAppMessage, createWhatsAppUrl, getDeliveryFee } from '../utils/whatsapp';
+import {
+  buildSingleWhatsAppMessage,
+  createWhatsAppUrl,
+  getDeliveryFee,
+  openExternalUrl,
+} from '../utils/whatsapp';
 
 interface ProductDetailPageProps {
   product: FragranceProduct;
@@ -51,11 +56,14 @@ interface ProductDetailPageProps {
   onQuickWhatsApp: (product: FragranceProduct) => void;
 }
 
-function describeBottleWearLife(sizeLabel: string): string {
+function describeBottleWearLife(sizeLabel: string, isUnboxed = false): string {
   const ml = parseVolumeMl(sizeLabel);
   if (ml <= 5) return `${sizeLabel} · ~65 sprays (1–2 weeks of daily wear)`;
   if (ml <= 12) return `${sizeLabel} · ~130 sprays (~1 month of daily carry)`;
   if (ml <= 30) return `${sizeLabel} · ~280 sprays (2–3 months of steady wear)`;
+  if (isUnboxed) {
+    return `${sizeLabel} · Original authentic unboxed house bottle (no outer box, full volume)`;
+  }
   return `${sizeLabel} · Original sealed house bottle (6+ months on your dresser)`;
 }
 
@@ -150,7 +158,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   );
 
   const relatedProducts = useMemo(
-    () => perfumes.filter((p) => p.id !== product.id).slice(0, 3),
+    () =>
+      perfumes
+        .filter((p) => p.id !== product.id && p.availability !== 'Out of Stock')
+        .slice(0, 3),
     [perfumes, product.id]
   );
 
@@ -175,7 +186,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       return;
     }
     if (whatsappUrl) {
-      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      openExternalUrl(whatsappUrl);
     } else {
       setShowNumberNotice(true);
     }
@@ -280,6 +291,12 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               <span>{product.category}</span>
               <span aria-hidden="true">·</span>
               <span>{product.availability}</span>
+              {product.isUnboxed && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-[#0A0A0A] font-semibold">Unboxed (No Box)</span>
+                </>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-bold text-[#0A0A0A] leading-tight">
@@ -317,6 +334,15 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           <p className="text-sm sm:text-base text-[#404040] leading-relaxed">
             {product.description}
           </p>
+
+          {product.isUnboxed && (
+            <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-4 text-xs text-[#404040] leading-relaxed">
+              <strong className="text-[#0A0A0A] font-semibold uppercase tracking-wider text-[11px] block mb-1">
+                Unboxed Authentic Bottle
+              </strong>
+              100% genuine house fragrance bottle supplied without the outer cardboard retail box — offering better everyday value per millilitre with full juice volume.
+            </div>
+          )}
 
           {/* Bottle Size Picker + Real-Life Wear Duration */}
           <div className="space-y-2.5">
@@ -371,7 +397,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             </div>
             {currentSizeObj && (
               <p className="text-xs text-[#525252]">
-                {describeBottleWearLife(currentSizeObj.size)}
+                {describeBottleWearLife(currentSizeObj.size, Boolean(product.isUnboxed))}
               </p>
             )}
           </div>
@@ -503,32 +529,34 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         </div>
       </div>
 
-      <section className="pt-8 border-t border-[#E5E5E5] space-y-8">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#0A0A0A]">
-            More From the Catalogue
-          </h2>
-          <button
-            type="button"
-            onClick={onBackToShop}
-            className="text-xs font-semibold uppercase tracking-wider text-[#0A0A0A] hover:opacity-65"
-          >
-            View All
-          </button>
-        </div>
+      {relatedProducts.length > 0 && (
+        <section className="pt-8 border-t border-[#E5E5E5] space-y-8">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#0A0A0A]">
+              More From the Catalogue
+            </h2>
+            <button
+              type="button"
+              onClick={onBackToShop}
+              className="text-xs font-semibold uppercase tracking-wider text-[#0A0A0A] hover:opacity-65"
+            >
+              View All
+            </button>
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {relatedProducts.map((rel, idx) => (
-            <ProductCard
-              key={rel.id}
-              product={rel}
-              index={idx}
-              onViewDetails={onSelectProduct}
-              onQuickWhatsApp={onQuickWhatsApp}
-            />
-          ))}
-        </div>
-      </section>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {relatedProducts.map((rel, idx) => (
+              <ProductCard
+                key={rel.id}
+                product={rel}
+                index={idx}
+                onViewDetails={onSelectProduct}
+                onQuickWhatsApp={onQuickWhatsApp}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Mobile Sticky Quick Purchase Bar (Compact, within mobile sticky height cap) */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E5E5E5] px-4 py-2.5 flex items-center justify-between gap-3">

@@ -61,6 +61,7 @@ export interface FragranceProduct {
   featured: boolean;
   bestseller: boolean;
   concentration: string;
+  isUnboxed?: boolean;
   onSpecial?: boolean;
   specialLabel?: string;
   specialDiscountPercent?: number;
@@ -118,8 +119,24 @@ export interface BasketItem {
   originalUnitPrice?: number | null;
   onSpecial?: boolean;
   specialDiscountPercent?: number;
+  isUnboxed?: boolean;
   quantity: number;
   isSampleListing: boolean;
+}
+
+export interface GiftHamper {
+  id: string;
+  title: string;
+  occasion: string;
+  subtitle: string;
+  itemsIncluded: string[];
+  regularPrice: number;
+  hamperPrice: number;
+  image: string;
+  giftWrapNote: string;
+  availability: AvailabilityStatus;
+  featured: boolean;
+  active: boolean;
 }
 
 export interface ComboDeal {
@@ -147,12 +164,32 @@ export interface LayeringIdea {
   active: boolean;
 }
 
+export type WeeklyFiveMlAudience = 'Women' | 'Men';
+
+export interface WeeklyFiveMlSpecial {
+  enabled: boolean;
+  autoRotateWeekly: boolean;
+  weekKey: string;
+  seedOffset: number;
+  under500Ids: string[];
+  under800Ids: string[];
+  womenUnder500Ids: string[];
+  womenUnder800Ids: string[];
+  menUnder500Ids: string[];
+  menUnder800Ids: string[];
+  fourPackPrice: number;
+  twoPackPrice: number;
+}
+
+export type WeeklyFiveMlPackMode = '4-for-100' | '2-for-50';
+
 export type AppPage =
   | 'home'
   | 'shop'
   | 'product'
   | 'combos'
   | 'decants'
+  | 'gifts'
   | 'stores'
   | 'about'
   | 'admin';

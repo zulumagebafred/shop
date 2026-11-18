@@ -1,10 +1,13 @@
 import React from 'react';
-import { Facebook, Instagram, Lock, MapPin, ShoppingCart } from 'lucide-react';
+import { Facebook, Instagram, MapPin, ShoppingCart } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
 import { AppPage, FragranceCategory } from '../types/fragrance';
 
 interface FooterProps {
-  onNavigate: (page: AppPage, options?: { category?: FragranceCategory | 'All' }) => void;
+  onNavigate: (
+    page: AppPage,
+    options?: { category?: FragranceCategory | 'All'; onlyUnboxed?: boolean }
+  ) => void;
   onOpenBasket: () => void;
 }
 
@@ -124,6 +127,26 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
               <li>
                 <button
                   type="button"
+                  onClick={() => onNavigate('gifts')}
+                  className="hover:text-white transition-colors"
+                >
+                  Gift Hampers &amp; Sets
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onNavigate('shop', { category: 'All', onlyUnboxed: true })
+                  }
+                  className="hover:text-white transition-colors"
+                >
+                  Unboxed Bottles
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
                   onClick={() => onNavigate('combos')}
                   className="hover:text-white transition-colors"
                 >
@@ -183,16 +206,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
                   Shopping Cart
                 </button>
               </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('admin')}
-                  className="inline-flex items-center gap-1.5 text-white/55 hover:text-white transition-colors text-xs pt-1"
-                >
-                  <Lock className="w-3 h-3" />
-                  <span>Owner Portal</span>
-                </button>
-              </li>
             </ul>
           </div>
 
@@ -215,8 +228,16 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
           </div>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/55">
-          <p>© {new Date().getFullYear()} {siteConfig.brandName} — Eswatini. All rights reserved.</p>
+        <div className="mt-12 pt-8 border-t border-white/10 flex flex-col items-center justify-center text-center gap-1.5 text-xs text-white/60">
+          <p>
+            © {new Date().getFullYear()} {siteConfig.brandName} — Eswatini. All rights reserved.{' '}
+            <span className="hidden sm:inline text-white/35 mx-1.5" aria-hidden="true">
+              ·
+            </span>
+            <span className="block sm:inline text-white/85 font-medium mt-1 sm:mt-0">
+              Designed by Yandzile
+            </span>
+          </p>
         </div>
       </div>
     </footer>

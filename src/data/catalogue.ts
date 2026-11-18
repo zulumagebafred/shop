@@ -400,6 +400,54 @@ export const fragranceCatalogue: FragranceProduct[] = [
     featured: false,
     bestseller: false,
   },
+  {
+    id: 'sample-09',
+    slug: 'sample-lattafa-unboxed-amber-musk',
+    isSampleListing: true,
+    isUnboxed: true,
+    name: 'Sample Listing 09 — Amber Musk (Unboxed)',
+    brand: 'Lattafa Perfumes',
+    category: 'Women',
+    concentration: 'Eau de Parfum (Unboxed Bottle)',
+    description:
+      'Authentic unboxed original bottle (no outer retail box) — full 100ml juice with protective cap, offered at a reduced everyday price.',
+    image: '/assets/images/unboxed_perfume_flacon_1795005243926.jpg',
+    notes: {
+      top: ['Sample Note: White Peach', 'Sample Note: Bergamot'],
+      heart: ['Sample Note: Jasmine', 'Sample Note: Creamy Musk'],
+      base: ['Sample Note: Warm Amber', 'Sample Note: Vanilla'],
+    },
+    sizes: [
+      { size: '100ml', price: 1180, available: true },
+    ],
+    availability: 'In Stock',
+    featured: false,
+    bestseller: false,
+  },
+  {
+    id: 'sample-10',
+    slug: 'sample-armaf-unboxed-spiced-woods',
+    isSampleListing: true,
+    isUnboxed: true,
+    name: 'Sample Listing 10 — Nocturne Woods (Unboxed)',
+    brand: 'Armaf',
+    category: 'Men',
+    concentration: 'Extrait de Parfum (Unboxed Bottle)',
+    description:
+      'Authentic tester / unboxed bottle without outer cardboard packaging — ideal for personal wear and everyday value.',
+    image: '/assets/images/unboxed_perfume_flacon_1795005243926.jpg',
+    notes: {
+      top: ['Sample Note: Lemon', 'Sample Note: Black Pepper'],
+      heart: ['Sample Note: Birch', 'Sample Note: Violet Leaf'],
+      base: ['Sample Note: Ambergris', 'Sample Note: Cedarwood'],
+    },
+    sizes: [
+      { size: '100ml', price: 1290, available: true },
+    ],
+    availability: 'In Stock',
+    featured: false,
+    bestseller: false,
+  },
 ];
 
 export function matchesHouseBrand(

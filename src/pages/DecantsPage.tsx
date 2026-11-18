@@ -1,22 +1,39 @@
 import React from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import { ResilientImage } from '../components/ResilientImage';
+import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { siteContent } from '../data/siteContent';
-import { BottleSize } from '../types/fragrance';
+import {
+  BottleSize,
+  FragranceProduct,
+  WeeklyFiveMlAudience,
+  WeeklyFiveMlPackMode,
+} from '../types/fragrance';
 
 interface DecantsPageProps {
   onBrowseSize: (size: BottleSize) => void;
   onExploreShop: () => void;
+  onSelectProduct: (product: FragranceProduct) => void;
+  onAddWeeklyPackToBasket: (payload: {
+    audience: WeeklyFiveMlAudience;
+    mode: WeeklyFiveMlPackMode;
+    weekKey: string;
+    products: FragranceProduct[];
+    price: number;
+    regularPrice: number | null;
+  }) => void;
 }
 
 export const DecantsPage: React.FC<DecantsPageProps> = ({
   onBrowseSize,
   onExploreShop,
+  onSelectProduct,
+  onAddWeeklyPackToBasket,
 }) => {
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-16">
+    <div className="py-12 sm:py-16 space-y-12 sm:space-y-16">
       {/* Header split */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
         <div className="lg:col-span-6 space-y-5">
           <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
             {siteContent.decantsSection.kicker}
@@ -51,8 +68,14 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
         </div>
       </div>
 
+      {/* Weekly 5ml Special */}
+      <WeeklyFiveMlSection
+        onSelectProduct={onSelectProduct}
+        onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+      />
+
       {/* 4 Size Cards */}
-      <section className="space-y-8">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         <div className="border-b border-[#E5E5E5] pb-5">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#0A0A0A]">
             Four Ways to Wear AuraHut Co.

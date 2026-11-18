@@ -84,6 +84,10 @@
           "type": "number",
           "description": "Percentage discount (0 to 90) applied while on special"
         },
+        "isUnboxed": {
+          "type": "boolean",
+          "description": "True if offered as an authentic unboxed / tester full bottle without retail outer box packaging"
+        },
         "ownerUid": {
           "type": "string",
           "maxLength": 128,
@@ -444,6 +448,178 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "WeeklyFiveMlSpecial": {
+      "title": "WeeklyFiveMlSpecial",
+      "description": "Weekly 5ml discovery decant special configuration (2 Under E500 + 2 Under E800 picks) for 4 × 5ml (E100) and 2 × 5ml Under-E500 (E50) packs.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the Weekly 5ml Special section is active on the storefront"
+        },
+        "autoRotateWeekly": {
+          "type": "boolean",
+          "description": "Whether picks automatically rotate every Monday when a new week begins"
+        },
+        "weekKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "description": "ISO calendar week key (e.g. 2026-W47) associated with the saved picks"
+        },
+        "seedOffset": {
+          "type": "number",
+          "description": "Integer seed offset for re-rolling random weekly selections"
+        },
+        "under500Ids": {
+          "type": "array",
+          "description": "Legacy combined list of up to 2 perfume IDs selected from the Under E500 tier"
+        },
+        "under800Ids": {
+          "type": "array",
+          "description": "Legacy combined list of up to 2 perfume IDs selected from the Under E800 tier"
+        },
+        "womenUnder500Ids": {
+          "type": "array",
+          "description": "Up to 2 For Women perfume IDs selected from the Under E500 tier"
+        },
+        "womenUnder800Ids": {
+          "type": "array",
+          "description": "Up to 2 For Women perfume IDs selected from the Under E800 tier"
+        },
+        "menUnder500Ids": {
+          "type": "array",
+          "description": "Up to 2 For Men perfume IDs selected from the Under E500 tier"
+        },
+        "menUnder800Ids": {
+          "type": "array",
+          "description": "Up to 2 For Men perfume IDs selected from the Under E800 tier"
+        },
+        "fourPackPrice": {
+          "type": "number",
+          "description": "Bundle price in SZL for all 4 × 5ml decants (default 100)"
+        },
+        "twoPackPrice": {
+          "type": "number",
+          "description": "Bundle price in SZL for 2 × 5ml Under E500 decants (default 50)"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who configured the weekly 5ml special"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "enabled",
+        "autoRotateWeekly",
+        "weekKey",
+        "seedOffset",
+        "under500Ids",
+        "under800Ids",
+        "fourPackPrice",
+        "twoPackPrice",
+        "ownerUid",
+        "updatedAt"
+      ]
+    },
+    "GiftHamper": {
+      "title": "GiftHamper",
+      "description": "Ready-to-gift fragrance hamper / gift box curated by AuraHut Co. for gifting occasions.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Hamper display title"
+        },
+        "occasion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Gifting target or occasion (e.g. For Her, For Him, Birthday, Anniversary, Corporate)"
+        },
+        "subtitle": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Concise hamper summary"
+        },
+        "itemsIncluded": {
+          "type": "array",
+          "description": "1 to 8 items included inside the hamper (perfume bottles, body mist, decant, lotion, gift box)"
+        },
+        "regularPrice": {
+          "type": "number",
+          "description": "Combined individual value in SZL before hamper pricing"
+        },
+        "hamperPrice": {
+          "type": "number",
+          "description": "Gift hamper price in SZL"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Hamper photograph path or HTTPS URL"
+        },
+        "giftWrapNote": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Packaging / presentation note (ribbon, box, greeting card)"
+        },
+        "availability": {
+          "type": "string",
+          "enum": ["In Stock", "Low Stock", "Out of Stock", "Pre-Order"],
+          "description": "Current hamper availability status"
+        },
+        "featured": {
+          "type": "boolean",
+          "description": "Whether highlighted on the Gifts & Hampers showcase"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether visible to storefront visitors"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this hamper"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "title",
+        "occasion",
+        "subtitle",
+        "itemsIncluded",
+        "regularPrice",
+        "hamperPrice",
+        "image",
+        "giftWrapNote",
+        "availability",
+        "featured",
+        "active",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -470,6 +646,14 @@
     "/layeringIdeas/{ideaId}": {
       "schema": { "$ref": "#/entities/LayeringIdea" },
       "description": "Curated perfume layering pairings readable publicly when active and managed by the store owner."
+    },
+    "/weeklySpecials/{specialId}": {
+      "schema": { "$ref": "#/entities/WeeklyFiveMlSpecial" },
+      "description": "Publicly readable Weekly 5ml Special configuration managed strictly by the store owner."
+    },
+    "/hampers/{hamperId}": {
+      "schema": { "$ref": "#/entities/GiftHamper" },
+      "description": "Ready-to-gift hampers readable publicly when active and managed strictly by the store owner."
     }
   }
 }

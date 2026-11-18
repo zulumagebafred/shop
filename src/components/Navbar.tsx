@@ -1,6 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useScroll, useSpring } from 'motion/react';
-import { Menu, Search, ShoppingCart, X } from 'lucide-react';
+import {
+  ChevronDown,
+  Flame,
+  Gift,
+  Layers,
+  Menu,
+  Package,
+  Search,
+  ShoppingCart,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { siteContent } from '../data/siteContent';
@@ -10,6 +21,7 @@ interface NavbarProps {
   currentPage: AppPage;
   activeCategory: FragranceCategory | 'All';
   onlySpecials?: boolean;
+  onlyUnboxed?: boolean;
   basketCount: number;
   onNavigate: (
     page: AppPage,
@@ -18,16 +30,20 @@ interface NavbarProps {
       priceRange?: PriceRangeFilter;
       season?: SeasonFilter;
       onlySpecials?: boolean;
+      onlyUnboxed?: boolean;
     }
   ) => void;
   onOpenSearch: () => void;
   onOpenBasket: () => void;
 }
 
+type DesktopDropdownId = 'shop' | 'explore' | null;
+
 export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   activeCategory,
   onlySpecials = false,
+  onlyUnboxed = false,
   basketCount,
   onNavigate,
   onOpenSearch,
@@ -36,6 +52,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { campaign, perfumes } = useStore();
   const [showAnnouncement, setShowAnnouncement] = useState(siteContent.announcementBar.enabled);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<DesktopDropdownId>(null);
+  const navContainerRef = useRef<HTMLDivElement | null>(null);
+  const hoverCloseTimer = useRef<number | null>(null);
 
   const { scrollYProgress } = useScroll();
   const smoothProgress = useSpring(scrollYProgress, {
@@ -52,59 +71,138 @@ export const Navbar: React.FC<NavbarProps> = ({
       ? campaign.announcementText
       : siteContent.announcementBar.text;
 
-  const navItems: {
-    label: string;
-    page: AppPage;
-    category?: FragranceCategory | 'All';
-    onlySpecials?: boolean;
-  }[] = [
-    { label: 'Home', page: 'home' },
-    { label: 'Shop', page: 'shop', category: 'All', onlySpecials: false },
-    { label: 'Men', page: 'shop', category: 'Men', onlySpecials: false },
-    { label: 'Women', page: 'shop', category: 'Women', onlySpecials: false },
-    { label: 'Unisex', page: 'shop', category: 'Unisex', onlySpecials: false },
-    ...(showSpecialsNav
-      ? [
-          {
-            label: campaign.badgeText || 'Specials',
-            page: 'shop' as AppPage,
-            category: 'All' as const,
-            onlySpecials: true,
-          },
-        ]
-      : []),
-    { label: 'Combo / Layering', page: 'combos' },
-    { label: 'Discover Decants', page: 'decants' },
-    { label: 'Our Stores', page: 'stores' },
-    { label: 'About Us', page: 'about' },
-  ];
-
-  const isItemActive = (item: (typeof navItems)[number]) => {
-    if (item.page === 'shop') {
-      if (item.onlySpecials) {
-        return currentPage === 'shop' && onlySpecials;
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (navContainerRef.current && !navContainerRef.current.contains(e.target as Node)) {
+        setOpenDropdown(null);
       }
-      return (
-        currentPage === 'shop' &&
-        !onlySpecials &&
-        activeCategory === (item.category ?? 'All')
-      );
-    }
-    return currentPage === item.page;
-  };
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenDropdown(null);
+        setMobileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
-  const handleNavClick = (item: (typeof navItems)[number]) => {
-    onNavigate(item.page, {
-      category: item.category,
+  const navigateClean = (
+    page: AppPage,
+    options?: {
+      category?: FragranceCategory | 'All';
+      onlySpecials?: boolean;
+      onlyUnboxed?: boolean;
+    }
+  ) => {
+    onNavigate(page, {
+      category: options?.category,
       priceRange: 'all',
       season: 'all',
-      onlySpecials: item.onlySpecials ?? false,
+      onlySpecials: options?.onlySpecials ?? false,
+      onlyUnboxed: options?.onlyUnboxed ?? false,
     });
+    setOpenDropdown(null);
     setMobileMenuOpen(false);
   };
 
+  const shopMenuItems: {
+    label: string;
+    subtitle: string;
+    category: FragranceCategory | 'All';
+    onlySpecials?: boolean;
+    onlyUnboxed?: boolean;
+    accent?: boolean;
+  }[] = [
+    {
+      label: 'All Fragrances',
+      subtitle: 'Complete Arabian bottles & decants collection',
+      category: 'All',
+    },
+    {
+      label: "Men's Collection",
+      subtitle: 'Ouds, warm spices, leather & woods',
+      category: 'Men',
+    },
+    {
+      label: "Women's Collection",
+      subtitle: 'Rose, vanilla, white musk & praline',
+      category: 'Women',
+    },
+    {
+      label: 'Unisex Signatures',
+      subtitle: 'Rich saffron, amber & shared extraits',
+      category: 'Unisex',
+    },
+    {
+      label: 'Unboxed Original Bottles',
+      subtitle: 'Authentic flacons · No outer box savings',
+      category: 'All',
+      onlyUnboxed: true,
+    },
+    ...(showSpecialsNav
+      ? [
+          {
+            label: campaign.badgeText || 'Seasonal Specials',
+            subtitle: 'Limited-time price reductions',
+            category: 'All' as const,
+            onlySpecials: true,
+            accent: true,
+          },
+        ]
+      : []),
+  ];
+
+  const experienceMenuItems: {
+    label: string;
+    subtitle: string;
+    page: AppPage;
+    icon: typeof Sparkles;
+  }[] = [
+    {
+      label: 'Discover Decants & 5ml Weekly',
+      subtitle: '5ml, 10ml & 22ml travel vials + Weekly E50/E100 Special',
+      page: 'decants',
+      icon: Sparkles,
+    },
+    {
+      label: 'Combo Deals & Layering Ideas',
+      subtitle: 'Multi-bottle bundle prices & scent pairing rituals',
+      page: 'combos',
+      icon: Layers,
+    },
+  ];
+
+  const isShopMenuItemActive = (item: (typeof shopMenuItems)[number]) => {
+    if (currentPage !== 'shop') return false;
+    if (item.onlySpecials) return onlySpecials;
+    if (item.onlyUnboxed) return onlyUnboxed;
+    return !onlySpecials && !onlyUnboxed && activeCategory === item.category;
+  };
+
+  const handleDropdownEnter = (id: DesktopDropdownId) => {
+    if (hoverCloseTimer.current) {
+      window.clearTimeout(hoverCloseTimer.current);
+      hoverCloseTimer.current = null;
+    }
+    setOpenDropdown(id);
+  };
+
+  const handleDropdownLeave = () => {
+    hoverCloseTimer.current = window.setTimeout(() => {
+      setOpenDropdown(null);
+    }, 140);
+  };
+
+  const isShopActive = currentPage === 'shop';
+  const isExploreActive = currentPage === 'combos' || currentPage === 'decants';
+
   return (
-    <div className="sticky top-0 z-40 w-full">
+    <div className="sticky top-0 z-40 w-full" ref={navContainerRef}>
       <AnimatePresence initial={false}>
         {showAnnouncement && (
           <motion.div
@@ -150,7 +248,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <motion.button
             type="button"
             whileTap={{ scale: 0.98 }}
-            onClick={() => onNavigate('home')}
+            onClick={() => navigateClean('home')}
             className="inline-flex items-center gap-2.5 text-lg sm:text-xl font-bold tracking-[0.14em] text-[#0A0A0A] hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] rounded-lg px-1"
           >
             <span className="w-9 h-9 rounded-xl bg-black overflow-hidden shrink-0 inline-flex items-center justify-center border border-[#0A0A0A]">
@@ -164,34 +262,273 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{siteConfig.brandName}</span>
           </motion.button>
 
+          {/* Clean 6-Item Primary Desktop Navigation with Dropdown Menus */}
           <nav
             aria-label="Primary Navigation"
-            className="hidden lg:flex items-center justify-center gap-3.5 xl:gap-5"
+            className="hidden lg:flex items-center justify-center gap-5 xl:gap-7"
           >
-            {navItems.map((item) => {
-              const active = isItemActive(item);
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => handleNavClick(item)}
-                  className={`relative py-1 text-[12.5px] xl:text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
-                    active
-                      ? 'text-[#0A0A0A] font-semibold'
-                      : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+            {/* 1. Home */}
+            <button
+              type="button"
+              onClick={() => navigateClean('home')}
+              className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                currentPage === 'home'
+                  ? 'text-[#0A0A0A] font-semibold'
+                  : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+              }`}
+            >
+              Home
+              {currentPage === 'home' && (
+                <motion.span
+                  layoutId="nav-underline"
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                />
+              )}
+            </button>
+
+            {/* 2. Shop Dropdown */}
+            <div
+              className="relative"
+              onMouseEnter={() => handleDropdownEnter('shop')}
+              onMouseLeave={handleDropdownLeave}
+            >
+              <button
+                type="button"
+                aria-expanded={openDropdown === 'shop'}
+                aria-haspopup="menu"
+                onClick={() =>
+                  setOpenDropdown((prev) => (prev === 'shop' ? null : 'shop'))
+                }
+                className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 inline-flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                  isShopActive || openDropdown === 'shop'
+                    ? 'text-[#0A0A0A] font-semibold'
+                    : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+                }`}
+              >
+                <span>Shop</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    openDropdown === 'shop' ? 'rotate-180' : ''
                   }`}
-                >
-                  {item.label}
-                  {active && (
-                    <motion.span
-                      layoutId="nav-underline"
-                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
-                    />
-                  )}
-                </button>
-              );
-            })}
+                />
+                {isShopActive && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                  />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {openDropdown === 'shop' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    role="menu"
+                    className="absolute left-0 top-full pt-2.5 z-50 w-72"
+                  >
+                    <div className="bg-white border border-[#E5E5E5] rounded-2xl shadow-xl p-2 space-y-1">
+                      {shopMenuItems.map((item) => {
+                        const active = isShopMenuItemActive(item);
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            role="menuitem"
+                            onClick={() =>
+                              navigateClean('shop', {
+                                category: item.category,
+                                onlySpecials: Boolean(item.onlySpecials),
+                                onlyUnboxed: Boolean(item.onlyUnboxed),
+                              })
+                            }
+                            className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-colors flex items-start justify-between gap-2.5 ${
+                              active
+                                ? 'bg-[#0A0A0A] text-white'
+                                : 'hover:bg-[#F6F6F7] text-[#0A0A0A]'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                {item.onlyUnboxed && (
+                                  <Package
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      active ? 'text-[#FACC15]' : 'text-[#0A0A0A]'
+                                    }`}
+                                  />
+                                )}
+                                {item.accent && (
+                                  <Flame className="w-3.5 h-3.5 shrink-0 text-[#DC2626]" />
+                                )}
+                                <span>{item.label}</span>
+                              </div>
+                              <p
+                                className={`text-[11px] mt-0.5 leading-snug ${
+                                  active ? 'text-white/75' : 'text-[#666666]'
+                                }`}
+                              >
+                                {item.subtitle}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* 3. Gifts & Hampers */}
+            <button
+              type="button"
+              onClick={() => navigateClean('gifts')}
+              className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                currentPage === 'gifts'
+                  ? 'text-[#0A0A0A] font-semibold'
+                  : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+              }`}
+            >
+              <Gift className="w-3.5 h-3.5" />
+              <span>Gifts &amp; Hampers</span>
+              {currentPage === 'gifts' && (
+                <motion.span
+                  layoutId="nav-underline"
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                />
+              )}
+            </button>
+
+            {/* 4. Decants & Combos Dropdown */}
+            <div
+              className="relative"
+              onMouseEnter={() => handleDropdownEnter('explore')}
+              onMouseLeave={handleDropdownLeave}
+            >
+              <button
+                type="button"
+                aria-expanded={openDropdown === 'explore'}
+                aria-haspopup="menu"
+                onClick={() =>
+                  setOpenDropdown((prev) => (prev === 'explore' ? null : 'explore'))
+                }
+                className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 inline-flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                  isExploreActive || openDropdown === 'explore'
+                    ? 'text-[#0A0A0A] font-semibold'
+                    : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+                }`}
+              >
+                <span>Decants &amp; Combos</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    openDropdown === 'explore' ? 'rotate-180' : ''
+                  }`}
+                />
+                {isExploreActive && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                  />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {openDropdown === 'explore' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                    role="menu"
+                    className="absolute left-0 top-full pt-2.5 z-50 w-80"
+                  >
+                    <div className="bg-white border border-[#E5E5E5] rounded-2xl shadow-xl p-2 space-y-1">
+                      {experienceMenuItems.map((item) => {
+                        const Icon = item.icon;
+                        const active = currentPage === item.page;
+                        return (
+                          <button
+                            key={item.page}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => navigateClean(item.page)}
+                            className={`w-full text-left px-3.5 py-3 rounded-xl transition-colors flex items-start gap-3 ${
+                              active
+                                ? 'bg-[#0A0A0A] text-white'
+                                : 'hover:bg-[#F6F6F7] text-[#0A0A0A]'
+                            }`}
+                          >
+                            <Icon
+                              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                active ? 'text-[#FACC15]' : 'text-[#0A0A0A]'
+                              }`}
+                            />
+                            <div className="min-w-0">
+                              <span className="block text-xs font-semibold">
+                                {item.label}
+                              </span>
+                              <p
+                                className={`text-[11px] mt-0.5 leading-snug ${
+                                  active ? 'text-white/75' : 'text-[#666666]'
+                                }`}
+                              >
+                                {item.subtitle}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* 5. Our Stores */}
+            <button
+              type="button"
+              onClick={() => navigateClean('stores')}
+              className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                currentPage === 'stores'
+                  ? 'text-[#0A0A0A] font-semibold'
+                  : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+              }`}
+            >
+              Our Stores
+              {currentPage === 'stores' && (
+                <motion.span
+                  layoutId="nav-underline"
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                />
+              )}
+            </button>
+
+            {/* 6. About Us */}
+            <button
+              type="button"
+              onClick={() => navigateClean('about')}
+              className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                currentPage === 'about'
+                  ? 'text-[#0A0A0A] font-semibold'
+                  : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+              }`}
+            >
+              About Us
+              {currentPage === 'about' && (
+                <motion.span
+                  layoutId="nav-underline"
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                />
+              )}
+            </button>
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
@@ -235,6 +572,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         />
       </header>
 
+      {/* Organized Sectioned Mobile Drawer */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
@@ -276,24 +614,102 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 space-y-1">
-                {navItems.map((item) => {
-                  const active = isItemActive(item);
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => handleNavClick(item)}
-                      className={`w-full text-left py-3 px-4 rounded-xl flex items-center justify-between text-sm transition-colors ${
-                        active
-                          ? 'bg-[#0A0A0A] text-white font-semibold'
-                          : 'text-[#525252] hover:bg-[#F4F4F5] hover:text-[#0A0A0A] font-medium'
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 space-y-6">
+                {/* Group 1: Shop Collections */}
+                <div className="space-y-1">
+                  <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#737373]">
+                    Shop Fragrances
+                  </p>
+                  {shopMenuItems.map((item) => {
+                    const active = isShopMenuItemActive(item);
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() =>
+                          navigateClean('shop', {
+                            category: item.category,
+                            onlySpecials: Boolean(item.onlySpecials),
+                            onlyUnboxed: Boolean(item.onlyUnboxed),
+                          })
+                        }
+                        className={`w-full text-left py-2.5 px-3.5 rounded-xl flex items-center justify-between text-sm transition-colors ${
+                          active
+                            ? 'bg-[#0A0A0A] text-white font-semibold'
+                            : 'text-[#404040] hover:bg-[#F4F4F5] hover:text-[#0A0A0A] font-medium'
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Group 2: Hampers, Decants & Combos */}
+                <div className="space-y-1 border-t border-[#ECECEE] pt-4">
+                  <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#737373]">
+                    Gifting &amp; Experiences
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigateClean('gifts')}
+                    className={`w-full text-left py-2.5 px-3.5 rounded-xl flex items-center gap-2 text-sm transition-colors ${
+                      currentPage === 'gifts'
+                        ? 'bg-[#0A0A0A] text-white font-semibold'
+                        : 'text-[#404040] hover:bg-[#F4F4F5] hover:text-[#0A0A0A] font-medium'
+                    }`}
+                  >
+                    <Gift className="w-4 h-4 shrink-0" />
+                    <span>Gifts &amp; Hampers</span>
+                  </button>
+                  {experienceMenuItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = currentPage === item.page;
+                    return (
+                      <button
+                        key={item.page}
+                        type="button"
+                        onClick={() => navigateClean(item.page)}
+                        className={`w-full text-left py-2.5 px-3.5 rounded-xl flex items-center gap-2 text-sm transition-colors ${
+                          active
+                            ? 'bg-[#0A0A0A] text-white font-semibold'
+                            : 'text-[#404040] hover:bg-[#F4F4F5] hover:text-[#0A0A0A] font-medium'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Group 3: The House */}
+                <div className="space-y-1 border-t border-[#ECECEE] pt-4">
+                  <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#737373]">
+                    The House
+                  </p>
+                  {[
+                    { label: 'Home', page: 'home' as AppPage },
+                    { label: 'Our Stores (Manzini & Mbabane)', page: 'stores' as AppPage },
+                    { label: 'About AuraHut Co.', page: 'about' as AppPage },
+                  ].map((item) => {
+                    const active = currentPage === item.page;
+                    return (
+                      <button
+                        key={item.page}
+                        type="button"
+                        onClick={() => navigateClean(item.page)}
+                        className={`w-full text-left py-2.5 px-3.5 rounded-xl text-sm transition-colors ${
+                          active
+                            ? 'bg-[#0A0A0A] text-white font-semibold'
+                            : 'text-[#404040] hover:bg-[#F4F4F5] hover:text-[#0A0A0A] font-medium'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="p-6 border-t border-[#E5E5E5] bg-[#F6F6F7] space-y-3">

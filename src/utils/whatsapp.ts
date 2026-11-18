@@ -89,10 +89,11 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
   const finalPayable =
     itemsAfterCoupon !== null ? itemsAfterCoupon + deliveryFee : null;
 
+  const unboxedLabel = payload.product.isUnboxed ? ' (Unboxed · No Retail Box)' : '';
   const lines = [
     siteConfig.whatsapp.defaultGreeting,
     '',
-    `• Perfume: ${payload.product.name}`,
+    `• Perfume: ${payload.product.name}${unboxedLabel}`,
     `• Brand: ${payload.product.brand}`,
     `• Size: ${payload.size}`,
     `• Quantity: ${payload.quantity}`,
@@ -150,14 +151,15 @@ export function buildBasketWhatsAppMessage(
 
   const itemBlocks = items.map((item, idx) => {
     const lineTotal = item.unitPrice !== null ? item.unitPrice * item.quantity : null;
+    const unboxedTag = item.isUnboxed ? ' [Unboxed · No Box]' : '';
     const specialNote =
       item.onSpecial && item.specialDiscountPercent
         ? ` [-${item.specialDiscountPercent}% Special]`
         : '';
     return [
-      `${idx + 1}. ${item.productName}${specialNote}`,
+      `${idx + 1}. ${item.productName}${unboxedTag}${specialNote}`,
       `   Brand: ${item.brand}`,
-      `   Size: ${item.size} | Qty: ${item.quantity} | Price: ${formatPrice(lineTotal)}`,
+      `   Details: ${item.size} | Qty: ${item.quantity} | Price: ${formatPrice(lineTotal)}`,
     ].join('\n');
   });
 
@@ -216,4 +218,15 @@ export function createWhatsAppUrl(message: string, overrideNumber?: string): str
     raw = `268${raw.slice(1)}`;
   }
   return `https://wa.me/${raw}?text=${encodeURIComponent(message)}`;
+}
+
+export function openExternalUrl(url: string): void {
+  if (typeof document === 'undefined' || !url) return;
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }

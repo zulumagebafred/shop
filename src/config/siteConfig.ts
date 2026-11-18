@@ -37,6 +37,7 @@ export const siteConfig = {
   },
 
   defaultBranch: 'manzini' as BranchId,
+  privatePortalSlug: 'ah-vault-94k',
 
   branches: [
     {
@@ -93,6 +94,15 @@ export const siteConfig = {
     'Khadlaj': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR19Z5ZJerFY6y8yZe-OtsQgRR64L2X8xkxeM3TGQVLTw&s',
   } as Record<string, string>,
 };
+
+export function getPrivatePortalSlug(): string {
+  const envPath =
+    typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_PATH
+      ? String(import.meta.env.VITE_ADMIN_PATH)
+      : '';
+  const raw = envPath.trim() || siteConfig.privatePortalSlug;
+  return raw.replace(/^[#/]+|\/+$/g, '').toLowerCase() || 'ah-vault-94k';
+}
 
 export function formatPrice(amount: number | null): string {
   if (amount === null || Number.isNaN(amount)) {

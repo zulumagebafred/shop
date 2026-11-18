@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ResilientImage } from '../components/ResilientImage';
+import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { formatPrice } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { findBestMatchingProduct } from '../data/combosAndLayering';
@@ -22,6 +23,8 @@ import {
   LayeringIdea,
   PriceRangeFilter,
   SeasonFilter,
+  WeeklyFiveMlAudience,
+  WeeklyFiveMlPackMode,
 } from '../types/fragrance';
 import { getProductPriceSummary, getSizeEffectivePrice } from '../utils/pricing';
 
@@ -33,6 +36,14 @@ interface ComboLayeringPageProps {
     quantity: number
   ) => void;
   onAddComboToBasket: (combo: ComboDeal, fallbackImage: string) => void;
+  onAddWeeklyPackToBasket: (payload: {
+    audience: WeeklyFiveMlAudience;
+    mode: WeeklyFiveMlPackMode;
+    weekKey: string;
+    products: FragranceProduct[];
+    price: number;
+    regularPrice: number | null;
+  }) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
   onNavigate: (
     page: AppPage,
@@ -66,6 +77,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
   onSelectProduct,
   onAddToBasket,
   onAddComboToBasket,
+  onAddWeeklyPackToBasket,
   onNavigate,
 }) => {
   const { perfumes, combos, layeringIdeas } = useStore();
@@ -165,6 +177,14 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
           </div>
         </div>
       </section>
+
+      {/* SECTION 0: WEEKLY 5ML SPECIAL */}
+      {(activeView === 'all' || activeView === 'combos') && (
+        <WeeklyFiveMlSection
+          onSelectProduct={onSelectProduct}
+          onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+        />
+      )}
 
       {/* SECTION 1: COMBO DEALS */}
       {(activeView === 'all' || activeView === 'combos') && (

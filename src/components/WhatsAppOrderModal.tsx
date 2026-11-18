@@ -28,7 +28,12 @@ import {
   getHighestAvailableSize,
   getSizeEffectivePrice,
 } from '../utils/pricing';
-import { buildSingleWhatsAppMessage, createWhatsAppUrl, getDeliveryFee } from '../utils/whatsapp';
+import {
+  buildSingleWhatsAppMessage,
+  createWhatsAppUrl,
+  getDeliveryFee,
+  openExternalUrl,
+} from '../utils/whatsapp';
 import { DeliveryMethodSelector } from './DeliveryMethodSelector';
 import { ResilientImage } from './ResilientImage';
 
@@ -238,7 +243,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
       return;
     }
     if (whatsappUrl) {
-      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      openExternalUrl(whatsappUrl);
     } else {
       setShowConfigHint(true);
     }

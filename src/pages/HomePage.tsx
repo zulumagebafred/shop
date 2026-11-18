@@ -8,9 +8,11 @@ import {
   ExternalLink,
   Facebook,
   Flower2,
+  Gift,
   Instagram,
   Leaf,
   MapPin,
+  Package,
   Phone,
   ShieldCheck,
   ShoppingBag,
@@ -22,6 +24,7 @@ import { HouseLogo } from '../components/HouseLogo';
 import { ProductCard } from '../components/ProductCard';
 import { ResilientImage } from '../components/ResilientImage';
 import { RevealSection } from '../components/RevealSection';
+import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, matchesHouseBrand } from '../data/catalogue';
@@ -36,6 +39,8 @@ import {
   FragranceProduct,
   PriceRangeFilter,
   SeasonFilter,
+  WeeklyFiveMlAudience,
+  WeeklyFiveMlPackMode,
 } from '../types/fragrance';
 
 interface HomePageProps {
@@ -48,11 +53,20 @@ interface HomePageProps {
       priceRange?: PriceRangeFilter;
       season?: SeasonFilter;
       onlySpecials?: boolean;
+      onlyUnboxed?: boolean;
     }
   ) => void;
   onSelectProduct: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
   onSelectBranchAndBasket: (branchId: BranchId) => void;
+  onAddWeeklyPackToBasket: (payload: {
+    audience: WeeklyFiveMlAudience;
+    mode: WeeklyFiveMlPackMode;
+    weekKey: string;
+    products: FragranceProduct[];
+    price: number;
+    regularPrice: number | null;
+  }) => void;
 }
 
 type ScentMood = 'all' | 'fresh' | 'warm' | 'oud' | 'sweet';
@@ -196,6 +210,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onSelectProduct,
   onQuickWhatsApp,
   onSelectBranchAndBasket,
+  onAddWeeklyPackToBasket,
 }) => {
   const { perfumes, campaign, campaignLoading, catalogueLoading } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
@@ -839,6 +854,12 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </section>
 
+      {/* WEEKLY 5ML SPECIAL (4 FOR E100 OR 2 UNDER-E500 FOR E50) */}
+      <WeeklyFiveMlSection
+        onSelectProduct={onSelectProduct}
+        onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+      />
+
       {/* SHOP DEALS BY PRICE */}
       <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 sm:pt-16">
         <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-6">
@@ -1384,6 +1405,107 @@ export const HomePage: React.FC<HomePageProps> = ({
               );
             })}
           </div>
+        </div>
+      </RevealSection>
+
+      {/* UNBOXED BOTTLES & LUXURY GIFT HAMPERS */}
+      <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 sm:pt-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+          {/* Card 1: Unboxed Perfumes */}
+          <article className="group bg-[#F6F6F7] border border-[#E5E5E5] hover:border-[#0A0A0A] rounded-3xl p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-12 gap-5 items-center transition-colors">
+            <button
+              type="button"
+              onClick={() =>
+                onNavigate('shop', {
+                  category: 'All',
+                  brand: 'All',
+                  size: 'All',
+                  priceRange: 'all',
+                  season: 'all',
+                  onlySpecials: false,
+                  onlyUnboxed: true,
+                })
+              }
+              aria-label="Shop Unboxed Original Perfumes"
+              className="sm:col-span-5 aspect-[4/3] rounded-2xl overflow-hidden bg-white border border-[#E5E5E5] block w-full text-left cursor-pointer"
+            >
+              <ResilientImage
+                src="/assets/images/unboxed_perfume_flacon_1795005243926.jpg"
+                alt="Authentic Unboxed Perfume Bottles at AuraHut Co."
+                fallbackTitle="Unboxed Bottles"
+                loading="eager"
+                className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
+              />
+            </button>
+            <div className="sm:col-span-7 space-y-3">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#525252]">
+                <Package className="w-3.5 h-3.5 text-[#0A0A0A]" />
+                <span>Personal Wear Value</span>
+              </span>
+              <h3 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
+                Unboxed Original Perfumes
+              </h3>
+              <p className="text-xs sm:text-sm text-[#525252] leading-relaxed">
+                Authentic original Arabian bottles without outer retail boxes — same genuine scent inside at everyday savings.
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  onNavigate('shop', {
+                    category: 'All',
+                    brand: 'All',
+                    size: 'All',
+                    priceRange: 'all',
+                    season: 'all',
+                    onlySpecials: false,
+                    onlyUnboxed: true,
+                  })
+                }
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider"
+              >
+                <span>Shop Unboxed Bottles</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </article>
+
+          {/* Card 2: Gift Hampers & Sets */}
+          <article className="group bg-[#0A0A0A] text-white border border-[#0A0A0A] hover:border-[#FACC15]/50 rounded-3xl p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-12 gap-5 items-center transition-colors">
+            <button
+              type="button"
+              onClick={() => onNavigate('gifts')}
+              aria-label="Explore Luxury Perfume Gift Hampers"
+              className="sm:col-span-5 aspect-[4/3] rounded-2xl overflow-hidden bg-[#141414] border border-white/15 block w-full text-left cursor-pointer"
+            >
+              <ResilientImage
+                src="/assets/images/luxury_gift_hamper_1795005244668.jpg"
+                alt="AuraHut Co. Luxury Gift Hampers and Perfume Sets"
+                fallbackTitle="Gift Hampers"
+                loading="eager"
+                className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
+              />
+            </button>
+            <div className="sm:col-span-7 space-y-3">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FACC15]">
+                <Gift className="w-3.5 h-3.5" />
+                <span>Curated Gifting</span>
+              </span>
+              <h3 className="text-xl sm:text-2xl font-bold text-white">
+                Luxury Perfume Gift Hampers
+              </h3>
+              <p className="text-xs sm:text-sm text-white/75 leading-relaxed">
+                Ready-to-gift satin boxes pairing bottles, body mists, decants &amp; personal cards for birthdays, anniversaries &amp; celebrations.
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigate('gifts')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-wider"
+              >
+                <span>Explore Gift Hampers</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </article>
         </div>
       </RevealSection>
 

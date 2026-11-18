@@ -28,6 +28,7 @@ import {
   starterCombos,
   starterLayeringIdeas,
 } from '../data/combosAndLayering';
+import { DEFAULT_HAMPER_IMAGE, starterHampers } from '../data/hampers';
 import {
   OWNER_EMAIL,
   OperationType,
@@ -40,9 +41,15 @@ import {
   ComboDeal,
   Coupon,
   FragranceProduct,
+  GiftHamper,
   LayeringIdea,
   SpecialCampaign,
+  WeeklyFiveMlSpecial,
 } from '../types/fragrance';
+import {
+  DEFAULT_WEEKLY_FIVE_ML_SPECIAL,
+  getWeekWindowBounds,
+} from '../utils/weeklySpecial';
 
 export const DEFAULT_CAMPAIGN: SpecialCampaign = {
   title: 'Black Friday Specials',
@@ -64,6 +71,7 @@ export type PerfumeInput = Omit<FragranceProduct, 'id' | 'slug'> & {
 export type CouponInput = Omit<Coupon, 'id'>;
 export type ComboInput = Omit<ComboDeal, 'id'>;
 export type LayeringIdeaInput = Omit<LayeringIdea, 'id'>;
+export type GiftHamperInput = Omit<GiftHamper, 'id'>;
 
 interface StoreContextValue {
   // Auth
@@ -99,6 +107,16 @@ interface StoreContextValue {
   usingSampleLayering: boolean;
   layeringLoading: boolean;
 
+  // Gift Hampers & Gifts
+  hampers: GiftHamper[];
+  liveHampers: GiftHamper[];
+  usingSampleHampers: boolean;
+  hampersLoading: boolean;
+
+  // Weekly 5ml Special
+  weeklySpecial: WeeklyFiveMlSpecial;
+  weeklySpecialLoading: boolean;
+
   // Storefront Coupon Validation
   lookupCouponByCode: (
     rawCode: string
@@ -118,11 +136,15 @@ interface StoreContextValue {
   toggleCouponActive: (coupon: Coupon) => Promise<void>;
   deleteCoupon: (code: string) => Promise<void>;
   saveCampaign: (campaign: SpecialCampaign) => Promise<void>;
+  saveWeeklySpecial: (next: WeeklyFiveMlSpecial) => Promise<void>;
   saveComboDeal: (input: ComboInput, existingId?: string) => Promise<string>;
   deleteComboDeal: (comboId: string) => Promise<void>;
   saveLayeringIdea: (input: LayeringIdeaInput, existingId?: string) => Promise<string>;
   deleteLayeringIdea: (ideaId: string) => Promise<void>;
   importStarterCombosAndLayering: () => Promise<number>;
+  saveHamper: (input: GiftHamperInput, existingId?: string) => Promise<string>;
+  deleteHamper: (hamperId: string) => Promise<void>;
+  importStarterHampers: () => Promise<number>;
 }
 
 const StoreContext = createContext<StoreContextValue | undefined>(undefined);
@@ -157,6 +179,45 @@ const CAMPAIGN_CACHE_KEY = 'aurahut_campaign_cache_v1';
 const PERFUMES_CACHE_KEY = 'aurahut_perfumes_cache_v1';
 const COMBOS_CACHE_KEY = 'aurahut_combos_cache_v1';
 const LAYERING_CACHE_KEY = 'aurahut_layering_cache_v1';
+const WEEKLY_5ML_CACHE_KEY = 'aurahut_weekly_5ml_cache_v1';
+const HAMPERS_CACHE_KEY = 'aurahut_hampers_cache_v1';
+
+function readCachedWeeklySpecial(): WeeklyFiveMlSpecial | null {
+  try {
+    const raw = localStorage.getItem(WEEKLY_5ML_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WeeklyFiveMlSpecial>;
+    if (typeof parsed.enabled !== 'boolean') return null;
+    return {
+      enabled: parsed.enabled,
+      autoRotateWeekly: parsed.autoRotateWeekly !== false,
+      weekKey: String(parsed.weekKey ?? ''),
+      seedOffset: Math.max(0, Number(parsed.seedOffset ?? 0) || 0),
+      under500Ids: Array.isArray(parsed.under500Ids)
+        ? parsed.under500Ids.map(String).slice(0, 2)
+        : [],
+      under800Ids: Array.isArray(parsed.under800Ids)
+        ? parsed.under800Ids.map(String).slice(0, 2)
+        : [],
+      womenUnder500Ids: Array.isArray(parsed.womenUnder500Ids)
+        ? parsed.womenUnder500Ids.map(String).slice(0, 2)
+        : [],
+      womenUnder800Ids: Array.isArray(parsed.womenUnder800Ids)
+        ? parsed.womenUnder800Ids.map(String).slice(0, 2)
+        : [],
+      menUnder500Ids: Array.isArray(parsed.menUnder500Ids)
+        ? parsed.menUnder500Ids.map(String).slice(0, 2)
+        : [],
+      menUnder800Ids: Array.isArray(parsed.menUnder800Ids)
+        ? parsed.menUnder800Ids.map(String).slice(0, 2)
+        : [],
+      fourPackPrice: Number(parsed.fourPackPrice ?? 100) || 100,
+      twoPackPrice: Number(parsed.twoPackPrice ?? 50) || 50,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function readCachedCampaign(): SpecialCampaign | null {
   try {
@@ -263,6 +324,18 @@ function readCachedLayering(): LayeringIdea[] {
   return [];
 }
 
+function readCachedHampers(): GiftHamper[] {
+  try {
+    const raw = localStorage.getItem(HAMPERS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as GiftHamper[];
+  } catch {
+    // Ignore cache parse errors
+  }
+  return [];
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -270,6 +343,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const initialCachedCampaign = useMemo(() => readCachedCampaign(), []);
   const initialCachedCombos = useMemo(() => readCachedCombos(), []);
   const initialCachedLayering = useMemo(() => readCachedLayering(), []);
+  const initialCachedWeeklySpecial = useMemo(() => readCachedWeeklySpecial(), []);
+  const initialCachedHampers = useMemo(() => readCachedHampers(), []);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -282,6 +357,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     initialCachedCampaign ?? DEFAULT_CAMPAIGN
   );
   const [campaignLoading, setCampaignLoading] = useState(initialCachedCampaign === null);
+  const [weeklySpecial, setWeeklySpecial] = useState<WeeklyFiveMlSpecial>(
+    initialCachedWeeklySpecial ?? DEFAULT_WEEKLY_FIVE_ML_SPECIAL
+  );
+  const [weeklySpecialLoading, setWeeklySpecialLoading] = useState(
+    initialCachedWeeklySpecial === null
+  );
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [couponsLoading, setCouponsLoading] = useState(false);
 
@@ -289,6 +370,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [combosLoading, setCombosLoading] = useState(initialCachedCombos.length === 0);
   const [liveLayeringIdeas, setLiveLayeringIdeas] = useState<LayeringIdea[]>(initialCachedLayering);
   const [layeringLoading, setLayeringLoading] = useState(initialCachedLayering.length === 0);
+  const [liveHampers, setLiveHampers] = useState<GiftHamper[]>(initialCachedHampers);
+  const [hampersLoading, setHampersLoading] = useState(initialCachedHampers.length === 0);
 
   const isOwner = useMemo(() => {
     void authRevision;
@@ -339,6 +422,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             availability: d.availability ?? 'In Stock',
             featured: Boolean(d.featured),
             bestseller: Boolean(d.bestseller),
+            isUnboxed: Boolean(d.isUnboxed),
             onSpecial: Boolean(d.onSpecial),
             specialLabel: typeof d.specialLabel === 'string' ? d.specialLabel : '',
             specialDiscountPercent:
@@ -421,6 +505,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     const safetyTimer = window.setTimeout(() => {
       setCampaignLoading(false);
+    }, 2500);
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
+  }, []);
+
+  // 3b. Public Weekly 5ml Special Listener
+  useEffect(() => {
+    const ref = doc(db, 'weeklySpecials', 'active-5ml');
+    const unsubscribe = onSnapshot(
+      ref,
+      (snap) => {
+        const nextWeekly: WeeklyFiveMlSpecial = snap.exists()
+          ? (() => {
+              const d = snap.data();
+              const fourPrice = Number(d.fourPackPrice ?? 100);
+              const twoPrice = Number(d.twoPackPrice ?? 50);
+              return {
+                enabled: Boolean(d.enabled),
+                autoRotateWeekly: d.autoRotateWeekly !== false,
+                weekKey: String(d.weekKey ?? ''),
+                seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
+                under500Ids: Array.isArray(d.under500Ids)
+                  ? d.under500Ids.map(String).slice(0, 2)
+                  : [],
+                under800Ids: Array.isArray(d.under800Ids)
+                  ? d.under800Ids.map(String).slice(0, 2)
+                  : [],
+                womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
+                  ? d.womenUnder500Ids.map(String).slice(0, 2)
+                  : [],
+                womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
+                  ? d.womenUnder800Ids.map(String).slice(0, 2)
+                  : [],
+                menUnder500Ids: Array.isArray(d.menUnder500Ids)
+                  ? d.menUnder500Ids.map(String).slice(0, 2)
+                  : [],
+                menUnder800Ids: Array.isArray(d.menUnder800Ids)
+                  ? d.menUnder800Ids.map(String).slice(0, 2)
+                  : [],
+                fourPackPrice: Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
+                twoPackPrice: Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
+              };
+            })()
+          : DEFAULT_WEEKLY_FIVE_ML_SPECIAL;
+        setWeeklySpecial(nextWeekly);
+        setWeeklySpecialLoading(false);
+        try {
+          localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(nextWeekly));
+        } catch {
+          // Ignore storage quota errors
+        }
+      },
+      (error) => {
+        setWeeklySpecialLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.GET, 'weeklySpecials/active-5ml');
+        } catch {
+          // Diagnostic error logged inside handleFirestoreError
+        }
+      }
+    );
+    const safetyTimer = window.setTimeout(() => {
+      setWeeklySpecialLoading(false);
     }, 2500);
     return () => {
       unsubscribe();
@@ -589,6 +738,67 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [isOwner]);
 
+  // 7. Public Gift Hampers Listener
+  useEffect(() => {
+    const hampersQuery = isOwner
+      ? query(collection(db, 'hampers'))
+      : query(collection(db, 'hampers'), where('active', '==', true));
+
+    const unsubscribe = onSnapshot(
+      hampersQuery,
+      (snapshot) => {
+        const items: GiftHamper[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            id: docSnap.id,
+            title: String(d.title ?? ''),
+            occasion: String(d.occasion ?? 'For Her'),
+            subtitle: String(d.subtitle ?? ''),
+            itemsIncluded: Array.isArray(d.itemsIncluded)
+              ? d.itemsIncluded.map(String).filter(Boolean)
+              : [],
+            regularPrice: Number(d.regularPrice ?? 0),
+            hamperPrice: Number(d.hamperPrice ?? 0),
+            image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
+            giftWrapNote: String(d.giftWrapNote ?? ''),
+            availability: d.availability ?? 'In Stock',
+            featured: Boolean(d.featured),
+            active: Boolean(d.active),
+          };
+        });
+        items.sort((a, b) => Number(b.featured) - Number(a.featured) || a.title.localeCompare(b.title));
+        setLiveHampers(items);
+        setHampersLoading(false);
+        try {
+          if (items.length > 0) {
+            localStorage.setItem(HAMPERS_CACHE_KEY, JSON.stringify(items));
+          } else {
+            localStorage.removeItem(HAMPERS_CACHE_KEY);
+          }
+        } catch {
+          // Ignore storage quota errors
+        }
+      },
+      (error) => {
+        setHampersLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'hampers');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+
+    const safetyTimer = window.setTimeout(() => {
+      setHampersLoading(false);
+    }, 2500);
+
+    return () => {
+      unsubscribe();
+      window.clearTimeout(safetyTimer);
+    };
+  }, [isOwner]);
+
   const usingSampleFallback = !catalogueLoading && livePerfumes.length === 0;
   const perfumes = livePerfumes.length > 0 ? livePerfumes : fragranceCatalogue;
   const usingSampleCombos = !combosLoading && liveCombos.length === 0;
@@ -596,6 +806,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const usingSampleLayering = !layeringLoading && liveLayeringIdeas.length === 0;
   const layeringIdeas =
     liveLayeringIdeas.length > 0 ? liveLayeringIdeas : starterLayeringIdeas;
+  const usingSampleHampers = !hampersLoading && liveHampers.length === 0;
+  const hampers = liveHampers.length > 0 ? liveHampers : starterHampers;
 
   const signInOwnerWithGoogle = async () => {
     await signInWithPopup(auth, googleProvider);
@@ -759,6 +971,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       availability: input.availability,
       featured: Boolean(input.featured),
       bestseller: Boolean(input.bestseller),
+      isUnboxed: Boolean(input.isUnboxed),
       onSpecial: Boolean(input.onSpecial),
       specialLabel: (input.specialLabel ?? '').trim().slice(0, 60),
       specialDiscountPercent: safeDiscount,
@@ -856,6 +1069,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           availability: item.availability,
           featured: item.featured,
           bestseller: item.bestseller,
+          isUnboxed: Boolean(item.isUnboxed),
           onSpecial: false,
           specialLabel: '',
           specialDiscountPercent: 0,
@@ -975,6 +1189,73 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         updatedAt: serverTimestamp(),
       };
       if (existing.exists()) {
+        await setDoc(ref, payload, { merge: true });
+      } else {
+        await setDoc(ref, { ...payload, ownerUid });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  };
+
+  const saveWeeklySpecial = async (next: WeeklyFiveMlSpecial): Promise<void> => {
+    const ownerUid = requireOwnerUid();
+    const ref = doc(db, 'weeklySpecials', 'active-5ml');
+    const path = 'weeklySpecials/active-5ml';
+    try {
+      const existingSnap = await getDoc(ref);
+      const safeId = (val: string) =>
+        val
+          .trim()
+          .replace(/[^a-zA-Z0-9_-]/g, '')
+          .slice(0, 128);
+      const fourPackPrice = Math.min(10000, Math.max(1, Number(next.fourPackPrice || 100)));
+      const twoPackPrice = Math.min(
+        fourPackPrice,
+        Math.max(1, Number(next.twoPackPrice || 50))
+      );
+      const activeWeek = (next.weekKey.trim() || getWeekWindowBounds().weekKey).slice(0, 24);
+      const sanitizePair = (arr: string[], exclude?: Set<string>) =>
+        arr
+          .map(safeId)
+          .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
+          .slice(0, 2);
+
+      const womenUnder500Ids = sanitizePair(next.womenUnder500Ids ?? []);
+      const womenUnder800Ids = sanitizePair(
+        next.womenUnder800Ids ?? [],
+        new Set(womenUnder500Ids)
+      );
+      const menUnder500Ids = sanitizePair(next.menUnder500Ids ?? []);
+      const menUnder800Ids = sanitizePair(
+        next.menUnder800Ids ?? [],
+        new Set(menUnder500Ids)
+      );
+
+      const under500Ids = sanitizePair(
+        next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids
+      );
+      const under800Ids = sanitizePair(
+        next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
+        new Set(under500Ids)
+      );
+
+      const payload = {
+        enabled: Boolean(next.enabled),
+        autoRotateWeekly: Boolean(next.autoRotateWeekly),
+        weekKey: activeWeek,
+        seedOffset: Math.min(1000000, Math.max(0, Math.floor(Number(next.seedOffset || 0)))),
+        under500Ids,
+        under800Ids,
+        womenUnder500Ids,
+        womenUnder800Ids,
+        menUnder500Ids,
+        menUnder800Ids,
+        fourPackPrice,
+        twoPackPrice,
+        updatedAt: serverTimestamp(),
+      };
+      if (existingSnap.exists()) {
         await setDoc(ref, payload, { merge: true });
       } else {
         await setDoc(ref, { ...payload, ownerUid });
@@ -1154,6 +1435,105 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const saveHamper = async (
+    input: GiftHamperInput,
+    existingId?: string
+  ): Promise<string> => {
+    const ownerUid = requireOwnerUid();
+    const cleanTitle = input.title.trim().slice(0, 140);
+    if (!cleanTitle) {
+      throw new Error('Gift hamper title is required.');
+    }
+    const cleanOccasion = (input.occasion.trim() || 'For Her').slice(0, 60);
+    const cleanItems = input.itemsIncluded
+      .map((item) => item.trim().slice(0, 140))
+      .filter(Boolean)
+      .slice(0, 8);
+    if (cleanItems.length < 1) {
+      throw new Error('Add at least 1 included item to this gift hamper.');
+    }
+    const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
+    const hamperPrice = Math.min(regularPrice, Math.max(0, Number(input.hamperPrice || 0)));
+    const cleanImage = (input.image.trim() || DEFAULT_HAMPER_IMAGE).slice(0, 500);
+
+    const id = existingId || `hamper-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+    const ref = doc(db, 'hampers', id);
+    const path = `hampers/${id}`;
+
+    const mutablePayload = {
+      title: cleanTitle,
+      occasion: cleanOccasion,
+      subtitle: input.subtitle.trim().slice(0, 300),
+      itemsIncluded: cleanItems,
+      regularPrice,
+      hamperPrice,
+      image: cleanImage,
+      giftWrapNote: input.giftWrapNote.trim().slice(0, 200),
+      availability: input.availability,
+      featured: Boolean(input.featured),
+      active: Boolean(input.active),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (existingId) {
+        await setDoc(ref, mutablePayload, { merge: true });
+      } else {
+        await setDoc(ref, {
+          ...mutablePayload,
+          ownerUid,
+          createdAt: serverTimestamp(),
+        });
+      }
+      return id;
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        existingId ? OperationType.UPDATE : OperationType.CREATE,
+        path
+      );
+    }
+  };
+
+  const deleteHamper = async (hamperId: string): Promise<void> => {
+    requireOwnerUid();
+    const path = `hampers/${hamperId}`;
+    try {
+      await deleteDoc(doc(db, 'hampers', hamperId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const importStarterHampers = async (): Promise<number> => {
+    const ownerUid = requireOwnerUid();
+    const batch = writeBatch(db);
+    try {
+      for (const item of starterHampers) {
+        batch.set(doc(db, 'hampers', item.id), {
+          title: item.title.slice(0, 140),
+          occasion: item.occasion.slice(0, 60),
+          subtitle: item.subtitle.slice(0, 300),
+          itemsIncluded: item.itemsIncluded.slice(0, 8).map((x) => x.slice(0, 140)),
+          regularPrice: item.regularPrice,
+          hamperPrice: item.hamperPrice,
+          image: (item.image || DEFAULT_HAMPER_IMAGE).slice(0, 500),
+          giftWrapNote: item.giftWrapNote.slice(0, 200),
+          availability: item.availability,
+          featured: item.featured,
+          active: item.active,
+          ownerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      return starterHampers.length;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'hampers');
+    }
+  };
+
   const value: StoreContextValue = {
     user,
     authReady,
@@ -1182,6 +1562,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     liveLayeringIdeas,
     usingSampleLayering,
     layeringLoading,
+    hampers,
+    liveHampers,
+    usingSampleHampers,
+    hampersLoading,
+    weeklySpecial,
+    weeklySpecialLoading,
     lookupCouponByCode,
     savePerfume,
     deletePerfume,
@@ -1191,11 +1577,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     toggleCouponActive,
     deleteCoupon,
     saveCampaign,
+    saveWeeklySpecial,
     saveComboDeal,
     deleteComboDeal,
     saveLayeringIdea,
     deleteLayeringIdea,
     importStarterCombosAndLayering,
+    saveHamper,
+    deleteHamper,
+    importStarterHampers,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

@@ -9,7 +9,7 @@ import { ArrowUp } from 'lucide-react';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
 import { ToastData, ToastNotification } from './components/ToastNotification';
-import { siteConfig } from './config/siteConfig';
+import { getPrivatePortalSlug, siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { HomePage } from './pages/HomePage';
 
@@ -24,6 +24,9 @@ const ProductDetailPage = lazy(() =>
 );
 const DecantsPage = lazy(() =>
   import('./pages/DecantsPage').then((m) => ({ default: m.DecantsPage }))
+);
+const GiftsHampersPage = lazy(() =>
+  import('./pages/GiftsHampersPage').then((m) => ({ default: m.GiftsHampersPage }))
 );
 const StoresPage = lazy(() =>
   import('./pages/StoresPage').then((m) => ({ default: m.StoresPage }))
@@ -55,8 +58,11 @@ import {
   DeliveryMethod,
   FragranceCategory,
   FragranceProduct,
+  GiftHamper,
   PriceRangeFilter,
   SeasonFilter,
+  WeeklyFiveMlAudience,
+  WeeklyFiveMlPackMode,
 } from './types/fragrance';
 import { getEffectiveUnitPrice } from './utils/pricing';
 
@@ -65,11 +71,20 @@ const BRANCH_STORAGE_KEY = 'aurahut_preferred_branch_v1';
 const DELIVERY_METHOD_STORAGE_KEY = 'aurahut_delivery_method_v1';
 const POST_OFFICE_TOWN_STORAGE_KEY = 'aurahut_post_office_town_v1';
 
+const PRIVATE_PORTAL_SLUG = getPrivatePortalSlug();
+
+function isPrivatePortalLocation(pathname: string, hash: string): boolean {
+  const normalizedHash = hash.toLowerCase();
+  const normalizedPath = pathname.toLowerCase().replace(/\/+$/, '') || '/';
+  return (
+    normalizedHash === `#${PRIVATE_PORTAL_SLUG}` ||
+    normalizedPath === `/${PRIVATE_PORTAL_SLUG}`
+  );
+}
+
 function detectInitialPage(): AppPage {
   if (typeof window === 'undefined') return 'home';
-  const hash = window.location.hash.toLowerCase();
-  const path = window.location.pathname.toLowerCase();
-  if (hash === '#admin' || path === '/admin' || path === '/admin/') {
+  if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
     return 'admin';
   }
   return 'home';
@@ -96,6 +111,7 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
+  const [onlyUnboxed, setOnlyUnboxed] = useState<boolean>(false);
 
   // Overlays, Modals & UX Feedback
   const [searchOpen, setSearchOpen] = useState(false);
@@ -242,6 +258,7 @@ function AppContent() {
     selectedPriceRange,
     selectedSeason,
     onlySpecials,
+    onlyUnboxed,
     forceScrollTopInstant,
   ]);
 
@@ -254,14 +271,34 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const onHashChange = () => {
-      if (window.location.hash.toLowerCase() === '#admin') {
+    const syncPortalFromLocation = () => {
+      if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
         setCurrentPage('admin');
       }
     };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener('hashchange', syncPortalFromLocation);
+    window.addEventListener('popstate', syncPortalFromLocation);
+    return () => {
+      window.removeEventListener('hashchange', syncPortalFromLocation);
+      window.removeEventListener('popstate', syncPortalFromLocation);
+    };
   }, []);
+
+  useEffect(() => {
+    const metaId = 'aurahut-private-robots-meta';
+    const existing = document.getElementById(metaId);
+    if (currentPage === 'admin') {
+      if (!existing) {
+        const meta = document.createElement('meta');
+        meta.id = metaId;
+        meta.name = 'robots';
+        meta.content = 'noindex, nofollow';
+        document.head.appendChild(meta);
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  }, [currentPage]);
 
   const showToast = (title: string, subtitle: string) => {
     if (toastTimerRef.current) {
@@ -287,6 +324,7 @@ function AppContent() {
       season?: SeasonFilter;
       query?: string;
       onlySpecials?: boolean;
+      onlyUnboxed?: boolean;
     }
   ) => {
     if (page === 'shop') {
@@ -297,10 +335,11 @@ function AppContent() {
       if (options?.season !== undefined) setSelectedSeason(options.season);
       if (options?.query !== undefined) setSearchQuery(options.query);
       if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
+      if (options?.onlyUnboxed !== undefined) setOnlyUnboxed(options.onlyUnboxed);
     }
     if (page === 'admin') {
-      window.history.replaceState(null, '', '#admin');
-    } else if (window.location.hash === '#admin' || window.location.pathname === '/admin') {
+      window.history.replaceState(null, '', `#${PRIVATE_PORTAL_SLUG}`);
+    } else if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
       window.history.replaceState(null, '', '/');
     }
     setCurrentPage(page);
@@ -322,6 +361,7 @@ function AppContent() {
     setSearchQuery('');
     setOnlyInStock(false);
     setOnlySpecials(false);
+    setOnlyUnboxed(false);
   };
 
   const handleAddToBasket = (
@@ -349,6 +389,7 @@ function AppContent() {
           originalUnitPrice: rawPrice,
           onSpecial: product.onSpecial,
           specialDiscountPercent: product.specialDiscountPercent,
+          isUnboxed: Boolean(product.isUnboxed),
           quantity: next[existingIndex].quantity + quantity,
         };
         return next;
@@ -365,6 +406,7 @@ function AppContent() {
           originalUnitPrice: rawPrice,
           onSpecial: product.onSpecial,
           specialDiscountPercent: product.specialDiscountPercent,
+          isUnboxed: Boolean(product.isUnboxed),
           quantity,
           isSampleListing: product.isSampleListing,
         },
@@ -373,7 +415,49 @@ function AppContent() {
 
     showToast(
       `Added ${product.name}`,
-      `${size} × ${quantity} added to your cart`
+      `${size}${product.isUnboxed ? ' (Unboxed)' : ''} × ${quantity} added to your cart`
+    );
+  };
+
+  const handleAddHamperToBasket = (hamper: GiftHamper, customGiftNote?: string) => {
+    const hamperProductId = `hamper-${hamper.id}`;
+    const noteSuffix = customGiftNote ? ` · Card: "${customGiftNote.slice(0, 48)}"` : '';
+    const hamperDetails = `${hamper.occasion} · ${hamper.itemsIncluded.length} items${noteSuffix}`;
+
+    setBasketItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.productId === hamperProductId && item.size === hamperDetails
+      );
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          unitPrice: hamper.hamperPrice,
+          originalUnitPrice: hamper.regularPrice,
+          quantity: next[existingIndex].quantity + 1,
+        };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          productId: hamperProductId,
+          productName: hamper.title,
+          brand: 'Gift Hamper',
+          image: hamper.image || '/assets/images/luxury_gift_hamper_1795005244668.jpg',
+          size: hamperDetails,
+          unitPrice: hamper.hamperPrice,
+          originalUnitPrice: hamper.regularPrice,
+          onSpecial: hamper.regularPrice > hamper.hamperPrice,
+          quantity: 1,
+          isSampleListing: false,
+        },
+      ];
+    });
+
+    showToast(
+      `Added ${hamper.title}`,
+      `Gift hamper added to your cart (E${hamper.hamperPrice.toFixed(0)})`
     );
   };
 
@@ -415,6 +499,62 @@ function AppContent() {
     showToast(
       `Added ${combo.title}`,
       `Bundle added for E${combo.comboPrice.toFixed(0)} (was E${combo.regularPrice.toFixed(0)})`
+    );
+  };
+
+  const handleAddWeeklyPackToBasket = (payload: {
+    audience: WeeklyFiveMlAudience;
+    mode: WeeklyFiveMlPackMode;
+    weekKey: string;
+    products: FragranceProduct[];
+    price: number;
+    regularPrice: number | null;
+  }) => {
+    const productNames = payload.products.map((p) => p.name);
+    const isFourPack = payload.mode === '4-for-100';
+    const audienceTag = `For ${payload.audience}`;
+    const itemId = `weekly-5ml-${payload.weekKey}-${payload.audience.toLowerCase()}-${payload.mode}`;
+    const itemTitle = isFourPack
+      ? `5ml Special · ${audienceTag} (4 × 5ml)`
+      : `5ml Special · ${audienceTag} (2 × 5ml · Under E500)`;
+    const packLabel = `${isFourPack ? '4 × 5ml' : '2 × 5ml (Under E500)'} (${audienceTag}): ${productNames.join(' + ')}`;
+    const primaryImage =
+      payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
+
+    setBasketItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) => item.productId === itemId && item.size === packLabel
+      );
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          unitPrice: payload.price,
+          originalUnitPrice: payload.regularPrice,
+          quantity: next[existingIndex].quantity + 1,
+        };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          productId: itemId,
+          productName: itemTitle,
+          brand: 'Weekly 5ml Special',
+          image: primaryImage,
+          size: packLabel,
+          unitPrice: payload.price,
+          originalUnitPrice: payload.regularPrice,
+          onSpecial: true,
+          quantity: 1,
+          isSampleListing: false,
+        },
+      ];
+    });
+
+    showToast(
+      `Added ${audienceTag} ${isFourPack ? '4 × 5ml Pack (E' + payload.price + ')' : '2 × 5ml Pack (E' + payload.price + ')'}`,
+      productNames.join(' + ')
     );
   };
 
@@ -480,6 +620,7 @@ function AppContent() {
         currentPage={currentPage}
         activeCategory={selectedCategory}
         onlySpecials={onlySpecials}
+        onlyUnboxed={onlyUnboxed}
         basketCount={totalBasketCount}
         onNavigate={handleNavigate}
         onOpenSearch={() => setSearchOpen(true)}
@@ -510,6 +651,7 @@ function AppContent() {
                 onSelectProduct={handleSelectProduct}
                 onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
                 onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
+                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
               />
             )}
 
@@ -523,6 +665,7 @@ function AppContent() {
                 searchQuery={searchQuery}
                 onlyInStock={onlyInStock}
                 onlySpecials={onlySpecials}
+                onlyUnboxed={onlyUnboxed}
                 onCategoryChange={setSelectedCategory}
                 onBrandChange={setSelectedBrand}
                 onSizeChange={setSelectedSize}
@@ -531,6 +674,7 @@ function AppContent() {
                 onSearchChange={setSearchQuery}
                 onOnlyInStockChange={setOnlyInStock}
                 onOnlySpecialsChange={setOnlySpecials}
+                onOnlyUnboxedChange={setOnlyUnboxed}
                 onResetFilters={handleResetFilters}
                 onSelectProduct={handleSelectProduct}
                 onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
@@ -560,7 +704,15 @@ function AppContent() {
                 onSelectProduct={handleSelectProduct}
                 onAddToBasket={handleAddToBasket}
                 onAddComboToBasket={handleAddComboToBasket}
+                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
                 onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
+                onNavigate={(p, opts) => handleNavigate(p, opts)}
+              />
+            )}
+
+            {currentPage === 'gifts' && (
+              <GiftsHampersPage
+                onAddHamperToBasket={handleAddHamperToBasket}
                 onNavigate={(p, opts) => handleNavigate(p, opts)}
               />
             )}
@@ -573,6 +725,8 @@ function AppContent() {
                 onExploreShop={() =>
                   handleNavigate('shop', { category: 'All', brand: 'All', size: 'All' })
                 }
+                onSelectProduct={handleSelectProduct}
+                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
               />
             )}
 

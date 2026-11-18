@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Filter, Flame, Search, X } from 'lucide-react';
+import { Filter, Flame, Package, Search, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useStore } from '../context/StoreContext';
 import {
@@ -30,6 +30,7 @@ interface ShopPageProps {
   searchQuery: string;
   onlyInStock: boolean;
   onlySpecials: boolean;
+  onlyUnboxed: boolean;
   onCategoryChange: (cat: FragranceCategory | 'All') => void;
   onBrandChange: (brand: string) => void;
   onSizeChange: (size: BottleSize | 'All') => void;
@@ -38,6 +39,7 @@ interface ShopPageProps {
   onSearchChange: (q: string) => void;
   onOnlyInStockChange: (val: boolean) => void;
   onOnlySpecialsChange: (val: boolean) => void;
+  onOnlyUnboxedChange: (val: boolean) => void;
   onResetFilters: () => void;
   onSelectProduct: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
@@ -62,6 +64,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   searchQuery,
   onlyInStock,
   onlySpecials,
+  onlyUnboxed,
   onCategoryChange,
   onBrandChange,
   onSizeChange,
@@ -70,6 +73,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onSearchChange,
   onOnlyInStockChange,
   onOnlySpecialsChange,
+  onOnlyUnboxedChange,
   onResetFilters,
   onSelectProduct,
   onQuickWhatsApp,
@@ -110,6 +114,14 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     [perfumes]
   );
 
+  const unboxedCount = useMemo(
+    () =>
+      perfumes.filter(
+        (p) => Boolean(p.isUnboxed) && p.availability !== 'Out of Stock'
+      ).length,
+    [perfumes]
+  );
+
   const isSearching = searchQuery.trim().length > 0;
 
   const filteredProducts = useMemo(() => {
@@ -141,6 +153,9 @@ export const ShopPage: React.FC<ShopPageProps> = ({
         return false;
       }
       if (onlySpecials && (!product.onSpecial || product.availability === 'Out of Stock')) {
+        return false;
+      }
+      if (onlyUnboxed && !product.isUnboxed) {
         return false;
       }
       if (q) {
@@ -180,6 +195,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     searchQuery,
     onlyInStock,
     onlySpecials,
+    onlyUnboxed,
     sortBy,
   ]);
 
@@ -194,6 +210,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     searchQuery,
     onlyInStock,
     onlySpecials,
+    onlyUnboxed,
     sortBy,
   ]);
 
@@ -233,10 +250,13 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     selectedSeason !== 'all' ||
     searchQuery.trim() !== '' ||
     onlyInStock ||
-    onlySpecials;
+    onlySpecials ||
+    onlyUnboxed;
 
   const headingTitle = onlySpecials
     ? campaign.title || 'Fragrance Specials'
+    : onlyUnboxed
+    ? 'Unboxed Perfume Bottles'
     : activeSeasonMeta && selectedPriceRange !== 'all' && activePriceMeta
     ? `${activeSeasonMeta.title} · ${activePriceMeta.label}`
     : activeSeasonMeta
@@ -255,6 +275,8 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
             {onlySpecials
               ? campaign.badgeText || 'Special Offers'
+              : onlyUnboxed
+              ? 'Authentic Bottles · No Outer Retail Box'
               : activeSeasonMeta
               ? activeSeasonMeta.eyebrow
               : 'AuraHut Co. Catalogue'}
@@ -265,6 +287,8 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
             {onlySpecials && campaign.subtitle
               ? campaign.subtitle
+              : onlyUnboxed
+              ? 'Original Arabian perfume bottles without outer retail cardboard packaging — same genuine fragrance inside at everyday value.'
               : activeSeasonMeta
               ? `${activeSeasonMeta.scentCue} — crafted for ${activeSeasonMeta.shortLabel.toLowerCase()} wear.`
               : selectedPriceRange !== 'all' && activePriceMeta
@@ -460,12 +484,25 @@ export const ShopPage: React.FC<ShopPageProps> = ({
             })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onOnlyUnboxedChange(!onlyUnboxed)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                onlyUnboxed
+                  ? 'bg-[#0A0A0A] text-[#FACC15] border-[#0A0A0A]'
+                  : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Unboxed ({unboxedCount})</span>
+            </button>
+
             {specialsCount > 0 && (
               <button
                 type="button"
                 onClick={() => onOnlySpecialsChange(!onlySpecials)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                   onlySpecials
                     ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
                     : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'

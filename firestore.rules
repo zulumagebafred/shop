@@ -66,6 +66,7 @@ service cloud.firestore {
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
         'description', 'image', 'notes', 'sizes', 'availability', 'featured',
         'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent',
+        'isUnboxed',
         'ownerUid', 'createdAt', 'updatedAt'
       ]) &&
       data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 160 &&
@@ -89,6 +90,36 @@ service cloud.firestore {
       data.onSpecial is bool &&
       data.specialLabel is string && data.specialLabel.size() <= 60 &&
       data.specialDiscountPercent is number && data.specialDiscountPercent >= 0 && data.specialDiscountPercent <= 90 &&
+      (!('isUnboxed' in data) || data.isUnboxed is bool) &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidHamper(data) {
+      return data.keys().hasAll([
+        'title', 'occasion', 'subtitle', 'itemsIncluded',
+        'regularPrice', 'hamperPrice', 'image', 'giftWrapNote',
+        'availability', 'featured', 'active', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'title', 'occasion', 'subtitle', 'itemsIncluded',
+        'regularPrice', 'hamperPrice', 'image', 'giftWrapNote',
+        'availability', 'featured', 'active', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+      data.occasion is string && data.occasion.size() >= 1 && data.occasion.size() <= 60 &&
+      data.subtitle is string && data.subtitle.size() <= 300 &&
+      data.itemsIncluded is list && data.itemsIncluded.size() >= 1 && data.itemsIncluded.size() <= 8 &&
+      data.itemsIncluded[0] is string && data.itemsIncluded[0].size() >= 1 && data.itemsIncluded[0].size() <= 140 &&
+      data.regularPrice is number && data.regularPrice >= 0 && data.regularPrice <= 100000 &&
+      data.hamperPrice is number && data.hamperPrice >= 0 && data.hamperPrice <= 100000 &&
+      data.hamperPrice <= data.regularPrice &&
+      data.image is string && data.image.size() >= 1 && data.image.size() <= 500 &&
+      data.giftWrapNote is string && data.giftWrapNote.size() <= 200 &&
+      data.availability in ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'] &&
+      data.featured is bool &&
+      data.active is bool &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
@@ -197,6 +228,44 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
+    function isValidWeeklyPickList(ids) {
+      return ids is list &&
+        ids.size() <= 2 &&
+        (ids.size() == 0 || isValidId(ids[0])) &&
+        (ids.size() < 2 || isValidId(ids[1]));
+    }
+
+    function isValidWeeklySpecial(data) {
+      return data.keys().hasAll([
+        'enabled', 'autoRotateWeekly', 'weekKey', 'seedOffset',
+        'under500Ids', 'under800Ids', 'fourPackPrice', 'twoPackPrice',
+        'ownerUid', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'enabled', 'autoRotateWeekly', 'weekKey', 'seedOffset',
+        'under500Ids', 'under800Ids',
+        'womenUnder500Ids', 'womenUnder800Ids',
+        'menUnder500Ids', 'menUnder800Ids',
+        'fourPackPrice', 'twoPackPrice',
+        'ownerUid', 'updatedAt'
+      ]) &&
+      data.enabled is bool &&
+      data.autoRotateWeekly is bool &&
+      data.weekKey is string && data.weekKey.size() >= 1 && data.weekKey.size() <= 24 &&
+      data.seedOffset is number && data.seedOffset >= 0 && data.seedOffset <= 1000000 &&
+      isValidWeeklyPickList(data.under500Ids) &&
+      isValidWeeklyPickList(data.under800Ids) &&
+      (!('womenUnder500Ids' in data) || isValidWeeklyPickList(data.womenUnder500Ids)) &&
+      (!('womenUnder800Ids' in data) || isValidWeeklyPickList(data.womenUnder800Ids)) &&
+      (!('menUnder500Ids' in data) || isValidWeeklyPickList(data.menUnder500Ids)) &&
+      (!('menUnder800Ids' in data) || isValidWeeklyPickList(data.menUnder800Ids)) &&
+      data.fourPackPrice is number && data.fourPackPrice >= 1 && data.fourPackPrice <= 10000 &&
+      data.twoPackPrice is number && data.twoPackPrice >= 1 && data.twoPackPrice <= 10000 &&
+      data.twoPackPrice <= data.fourPackPrice &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules
     match /test/{docId} {
       allow get: if docId == 'connection';
@@ -237,9 +306,32 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly([
           'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
           'description', 'image', 'notes', 'sizes', 'availability', 'featured',
-          'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent', 'updatedAt'
+          'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent', 'isUnboxed', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(perfumeId);
+    }
+
+    match /hampers/{hamperId} {
+      allow get: if isValidId(hamperId) && (isOwnerEmail() || existing().active == true);
+      allow list: if isOwnerEmail() || existing().active == true;
+      allow create: if isAdmin() &&
+        isValidId(hamperId) &&
+        isValidHamper(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(hamperId) &&
+        isValidHamper(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'occasion', 'subtitle', 'itemsIncluded',
+          'regularPrice', 'hamperPrice', 'image', 'giftWrapNote',
+          'availability', 'featured', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(hamperId);
     }
 
     match /coupons/{couponId} {
@@ -328,6 +420,29 @@ service cloud.firestore {
           'sprayRatio', 'occasion', 'whyItWorks', 'active', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(ideaId);
+    }
+
+    match /weeklySpecials/{specialId} {
+      allow get: if isValidId(specialId);
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(specialId) &&
+        isValidWeeklySpecial(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(specialId) &&
+        isValidWeeklySpecial(incoming()) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'enabled', 'autoRotateWeekly', 'weekKey', 'seedOffset',
+          'under500Ids', 'under800Ids',
+          'womenUnder500Ids', 'womenUnder800Ids',
+          'menUnder500Ids', 'menUnder800Ids',
+          'fourPackPrice', 'twoPackPrice', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(specialId);
     }
   }
 }

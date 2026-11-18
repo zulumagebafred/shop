@@ -22,7 +22,12 @@ import {
   DRIVER_DELIVERY_FEE,
 } from '../types/fragrance';
 import { calculateCouponDiscount } from '../utils/pricing';
-import { buildBasketWhatsAppMessage, createWhatsAppUrl, getDeliveryFee } from '../utils/whatsapp';
+import {
+  buildBasketWhatsAppMessage,
+  createWhatsAppUrl,
+  getDeliveryFee,
+  openExternalUrl,
+} from '../utils/whatsapp';
 import { DeliveryMethodSelector } from './DeliveryMethodSelector';
 import { ResilientImage } from './ResilientImage';
 
@@ -173,7 +178,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
       return;
     }
     if (whatsappUrl) {
-      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      openExternalUrl(whatsappUrl);
     } else {
       setShowDispatchNotice(true);
     }

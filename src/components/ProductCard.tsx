@@ -124,6 +124,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <span className="text-[#0A0A0A] font-semibold">{product.brand}</span>
             <span aria-hidden="true">·</span>
             <span>{product.category}</span>
+            {product.isUnboxed && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-[#0A0A0A] font-semibold">Unboxed</span>
+              </>
+            )}
           </div>
 
           <button

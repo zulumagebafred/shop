@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   Flame,
+  Gift,
   KeyRound,
   Layers,
   Lock,
@@ -29,9 +30,10 @@ import {
   X,
 } from 'lucide-react';
 import { ResilientImage } from '../components/ResilientImage';
-import { formatPrice, siteConfig } from '../config/siteConfig';
+import { formatPrice, getPrivatePortalSlug, siteConfig } from '../config/siteConfig';
 import { PerfumeInput, resolveAdminLoginEmail, useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, houseImages } from '../data/catalogue';
+import { DEFAULT_HAMPER_IMAGE, GIFT_HAMPER_OCCASIONS } from '../data/hampers';
 import { OWNER_EMAIL } from '../lib/firebase';
 import {
   AvailabilityStatus,
@@ -42,20 +44,28 @@ import {
   CouponScope,
   FragranceCategory,
   FragranceProduct,
+  GiftHamper,
   LayeringIdea,
   STANDARD_BOTTLE_SIZES,
   SizeOption,
   SpecialCampaign,
+  WeeklyFiveMlAudience,
+  WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 import { getEffectiveUnitPrice, getProductPriceSummary } from '../utils/pricing';
+import {
+  getWeekWindowBounds,
+  pickRandomWeeklyAudienceIds,
+  resolveWeeklyFiveMlSelection,
+} from '../utils/weeklySpecial';
 
 interface AdminDashboardPageProps {
   onBackToStorefront: () => void;
   onNotify: (title: string, subtitle: string) => void;
 }
 
-type AdminTab = 'perfumes' | 'specials' | 'combos' | 'coupons';
-type InventoryFilter = 'all' | 'Men' | 'Women' | 'Unisex' | 'specials' | 'low-stock';
+type AdminTab = 'perfumes' | 'specials' | 'combos' | 'hampers' | 'coupons';
+type InventoryFilter = 'all' | 'Men' | 'Women' | 'Unisex' | 'unboxed' | 'specials' | 'low-stock';
 type InventorySort = 'name-asc' | 'brand-asc' | 'price-desc' | 'price-asc';
 
 const DEFAULT_EDITOR_SIZES: BottleSize[] = ['5ml', '10ml', '22ml', '100ml'];
@@ -167,12 +177,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     catalogueLoading,
     catalogueError,
     campaign,
+    weeklySpecial,
     coupons,
     couponsLoading,
     liveCombos,
     combosLoading,
     liveLayeringIdeas,
     layeringLoading,
+    liveHampers,
+    hampersLoading,
     savePerfume,
     deletePerfume,
     togglePerfumeSpecial,
@@ -181,11 +194,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     toggleCouponActive,
     deleteCoupon,
     saveCampaign,
+    saveWeeklySpecial,
     saveComboDeal,
     deleteComboDeal,
     saveLayeringIdea,
     deleteLayeringIdea,
     importStarterCombosAndLayering,
+    saveHamper,
+    deleteHamper,
+    importStarterHampers,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('perfumes');
@@ -207,6 +224,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [showNewOwnerPassword, setShowNewOwnerPassword] = useState(false);
   const [savingOwnerPassword, setSavingOwnerPassword] = useState(false);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [copiedPortalLink, setCopiedPortalLink] = useState(false);
+
+  const handleCopyPrivatePortalLink = async () => {
+    try {
+      const url = `${window.location.origin}/#${getPrivatePortalSlug()}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedPortalLink(true);
+      onNotify('Private Link Copied', `Saved to clipboard: /#${getPrivatePortalSlug()}`);
+      window.setTimeout(() => setCopiedPortalLink(false), 2200);
+    } catch {
+      // Ignore clipboard permission denial
+    }
+  };
 
   // Live ticker for countdown preview
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -245,6 +275,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [customSizeInput, setCustomSizeInput] = useState('');
   const [pFeatured, setPFeatured] = useState(true);
   const [pBestseller, setPBestseller] = useState(false);
+  const [pUnboxed, setPUnboxed] = useState(false);
   const [pOnSpecial, setPOnSpecial] = useState(false);
   const [pSpecialLabel, setPSpecialLabel] = useState('Black Friday Special');
   const [pSpecialDiscount, setPSpecialDiscount] = useState('20');
@@ -253,6 +284,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [campaignDraft, setCampaignDraft] = useState<SpecialCampaign>(campaign);
   const [campaignSyncedOnce, setCampaignSyncedOnce] = useState(false);
   const [savingCampaign, setSavingCampaign] = useState(false);
+  const [weeklyDraft, setWeeklyDraft] = useState<WeeklyFiveMlSpecial>(weeklySpecial);
+  const [weeklyAudienceTab, setWeeklyAudienceTab] = useState<WeeklyFiveMlAudience>('Women');
+  const [savingWeeklySpecial, setSavingWeeklySpecial] = useState(false);
   const [applyingBulkSpecial, setApplyingBulkSpecial] = useState(false);
   const [bulkSpecialDiscount, setBulkSpecialDiscount] = useState('20');
   const [customDurationDays, setCustomDurationDays] = useState('7');
@@ -269,6 +303,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   useEffect(() => {
     setCampaignDraft(campaign);
   }, [campaign]);
+
+  useEffect(() => {
+    setWeeklyDraft(weeklySpecial);
+  }, [weeklySpecial]);
 
   // Close editor modal cleanly with Escape
   useEffect(() => {
@@ -324,6 +362,26 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [confirmDeleteLayerId, setConfirmDeleteLayerId] = useState<string | null>(null);
   const [importingCombosStarter, setImportingCombosStarter] = useState(false);
 
+  // Gift Hamper Editor state
+  const [editingHamperId, setEditingHamperId] = useState<string | null>(null);
+  const [hTitle, setHTitle] = useState('');
+  const [hOccasion, setHOccasion] = useState(GIFT_HAMPER_OCCASIONS[0]);
+  const [hSubtitle, setHSubtitle] = useState('');
+  const [hItemsText, setHItemsText] = useState(
+    '100ml Arabian Fragrance Bottle\nMatching Body Mist\nRibbon Presentation Box & Gift Card'
+  );
+  const [hRegularPrice, setHRegularPrice] = useState('1250');
+  const [hHamperPrice, setHHamperPrice] = useState('990');
+  const [hImage, setHImage] = useState(DEFAULT_HAMPER_IMAGE);
+  const [hGiftWrapNote, setHGiftWrapNote] = useState('Includes complimentary satin ribbon box & card');
+  const [hAvailability, setHAvailability] = useState<AvailabilityStatus>('In Stock');
+  const [hFeatured, setHFeatured] = useState(true);
+  const [hActive, setHActive] = useState(true);
+  const [savingHamper, setSavingHamper] = useState(false);
+  const [hamperError, setHamperError] = useState<string | null>(null);
+  const [confirmDeleteHamperId, setConfirmDeleteHamperId] = useState<string | null>(null);
+  const [importingHampersStarter, setImportingHampersStarter] = useState(false);
+
   // Combo Catalogue Picker state
   const [comboPickerSearch, setComboPickerSearch] = useState('');
   const [selectedComboPicks, setSelectedComboPicks] = useState<
@@ -348,6 +406,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const specialPerfumes = useMemo(
     () => livePerfumes.filter((p) => Boolean(p.onSpecial)),
+    [livePerfumes]
+  );
+
+  const unboxedPerfumes = useMemo(
+    () => livePerfumes.filter((p) => Boolean(p.isUnboxed)),
     [livePerfumes]
   );
 
@@ -378,6 +441,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       if (inventoryFilter === 'Men' && p.category !== 'Men') return false;
       if (inventoryFilter === 'Women' && p.category !== 'Women') return false;
       if (inventoryFilter === 'Unisex' && p.category !== 'Unisex') return false;
+      if (inventoryFilter === 'unboxed' && !p.isUnboxed) return false;
       if (inventoryFilter === 'specials' && !p.onSpecial) return false;
       if (
         inventoryFilter === 'low-stock' &&
@@ -391,7 +455,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
-        p.availability.toLowerCase().includes(q)
+        p.availability.toLowerCase().includes(q) ||
+        (p.isUnboxed && 'unboxed'.includes(q))
       );
     });
 
@@ -578,6 +643,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setCustomSizeInput('');
     setPFeatured(false);
     setPBestseller(false);
+    setPUnboxed(false);
     setPOnSpecial(false);
     setPSpecialLabel(campaign.badgeText || 'Black Friday Special');
     setPSpecialDiscount('20');
@@ -603,6 +669,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setCustomSizeInput('');
     setPFeatured(p.featured);
     setPBestseller(p.bestseller);
+    setPUnboxed(Boolean(p.isUnboxed));
     setPOnSpecial(Boolean(p.onSpecial));
     setPSpecialLabel(p.specialLabel || campaign.badgeText || 'Black Friday Special');
     setPSpecialDiscount(String(p.specialDiscountPercent ?? 0));
@@ -628,6 +695,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setCustomSizeInput('');
     setPFeatured(p.featured);
     setPBestseller(false);
+    setPUnboxed(Boolean(p.isUnboxed));
     setPOnSpecial(Boolean(p.onSpecial));
     setPSpecialLabel(p.specialLabel || campaign.badgeText || 'Black Friday Special');
     setPSpecialDiscount(String(p.specialDiscountPercent ?? 0));
@@ -656,6 +724,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           availability: nextAvailability,
           featured: product.featured,
           bestseller: product.bestseller,
+          isUnboxed: Boolean(product.isUnboxed),
           onSpecial: product.onSpecial,
           specialLabel: product.specialLabel,
           specialDiscountPercent: product.specialDiscountPercent,
@@ -768,6 +837,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       sizes: uniqueSizes,
       featured: pFeatured,
       bestseller: pBestseller,
+      isUnboxed: pUnboxed,
       onSpecial: pOnSpecial,
       specialLabel: pOnSpecial ? pSpecialLabel.trim() : '',
       specialDiscountPercent: pOnSpecial ? safeDiscount : 0,
@@ -822,6 +892,77 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       );
     } finally {
       setSavingCampaign(false);
+    }
+  };
+
+  const resolvedWeeklyDraft = useMemo(
+    () => resolveWeeklyFiveMlSelection(catalogForBuilders, weeklyDraft, nowMs),
+    [catalogForBuilders, weeklyDraft, nowMs]
+  );
+
+  const handleRandomizeWeeklyPicks = (target: WeeklyFiveMlAudience | 'Both' = 'Both') => {
+    const activeWeek = getWeekWindowBounds(nowMs).weekKey;
+    const nextSeed = (weeklyDraft.seedOffset ?? 0) + 1;
+    setWeeklyDraft((prev) => {
+      const next = {
+        ...prev,
+        weekKey: activeWeek,
+        seedOffset: nextSeed,
+      };
+      if (target === 'Women' || target === 'Both') {
+        const freshWomen = pickRandomWeeklyAudienceIds(
+          catalogForBuilders,
+          'Women',
+          activeWeek,
+          nextSeed
+        );
+        next.womenUnder500Ids = freshWomen.under500Ids;
+        next.womenUnder800Ids = freshWomen.under800Ids;
+      }
+      if (target === 'Men' || target === 'Both') {
+        const freshMen = pickRandomWeeklyAudienceIds(
+          catalogForBuilders,
+          'Men',
+          activeWeek,
+          nextSeed
+        );
+        next.menUnder500Ids = freshMen.under500Ids;
+        next.menUnder800Ids = freshMen.under800Ids;
+      }
+      return next;
+    });
+  };
+
+  const handleSaveWeeklySpecial = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSavingWeeklySpecial(true);
+    try {
+      const currentWeekKey = resolvedWeeklyDraft.weekKey;
+      const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
+      const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
+      const men500Ids = resolvedWeeklyDraft.men.under500Picks.map((c) => c.product.id);
+      const men800Ids = resolvedWeeklyDraft.men.under800Picks.map((c) => c.product.id);
+      await saveWeeklySpecial({
+        ...weeklyDraft,
+        weekKey: currentWeekKey,
+        under500Ids: women500Ids,
+        under800Ids: women800Ids,
+        womenUnder500Ids: women500Ids,
+        womenUnder800Ids: women800Ids,
+        menUnder500Ids: men500Ids,
+        menUnder800Ids: men800Ids,
+      });
+      onNotify(
+        weeklyDraft.enabled ? 'Weekly 5ml Special Saved' : 'Weekly 5ml Special Paused',
+        `Updated For Women & For Men 5ml picks for ${resolvedWeeklyDraft.weekLabel}.`
+      );
+    } catch (err) {
+      onNotify(
+        'Save Error',
+        extractReadableError(err, 'Could not save Weekly 5ml Special.')
+      );
+    } finally {
+      setSavingWeeklySpecial(false);
     }
   };
 
@@ -1188,6 +1329,115 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
+  const resetHamperForm = () => {
+    setEditingHamperId(null);
+    setHTitle('');
+    setHOccasion(GIFT_HAMPER_OCCASIONS[0]);
+    setHSubtitle('');
+    setHItemsText(
+      '100ml Arabian Fragrance Bottle\nMatching Body Mist\nRibbon Presentation Box & Gift Card'
+    );
+    setHRegularPrice('1250');
+    setHHamperPrice('990');
+    setHImage(DEFAULT_HAMPER_IMAGE);
+    setHGiftWrapNote('Includes complimentary satin ribbon box & card');
+    setHAvailability('In Stock');
+    setHFeatured(true);
+    setHActive(true);
+    setHamperError(null);
+  };
+
+  const handleEditHamper = (hamper: GiftHamper) => {
+    setEditingHamperId(hamper.id);
+    setHTitle(hamper.title);
+    setHOccasion(hamper.occasion || GIFT_HAMPER_OCCASIONS[0]);
+    setHSubtitle(hamper.subtitle);
+    setHItemsText(hamper.itemsIncluded.join('\n'));
+    setHRegularPrice(String(hamper.regularPrice));
+    setHHamperPrice(String(hamper.hamperPrice));
+    setHImage(hamper.image || DEFAULT_HAMPER_IMAGE);
+    setHGiftWrapNote(hamper.giftWrapNote);
+    setHAvailability(hamper.availability);
+    setHFeatured(hamper.featured);
+    setHActive(hamper.active);
+    setHamperError(null);
+  };
+
+  const handleSaveHamperSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setHamperError(null);
+    const items = hItemsText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!hTitle.trim()) {
+      setHamperError('Please enter a gift hamper title.');
+      return;
+    }
+    if (items.length === 0) {
+      setHamperError('List at least 1 included item (one item per line).');
+      return;
+    }
+    const regNum = Number(hRegularPrice);
+    const hamperNum = Number(hHamperPrice);
+    if (!Number.isFinite(regNum) || !Number.isFinite(hamperNum) || hamperNum <= 0) {
+      setHamperError('Enter valid Regular and Gift Hamper prices in Emalangeni.');
+      return;
+    }
+    if (hamperNum > regNum) {
+      setHamperError('Gift hamper price cannot be higher than regular price.');
+      return;
+    }
+
+    setSavingHamper(true);
+    try {
+      await saveHamper(
+        {
+          title: hTitle,
+          occasion: hOccasion,
+          subtitle: hSubtitle,
+          itemsIncluded: items,
+          regularPrice: regNum,
+          hamperPrice: hamperNum,
+          image: hImage,
+          giftWrapNote: hGiftWrapNote,
+          availability: hAvailability,
+          featured: hFeatured,
+          active: hActive,
+        },
+        editingHamperId ?? undefined
+      );
+      onNotify(
+        editingHamperId ? 'Hamper Updated' : 'Gift Hamper Published',
+        `${hTitle.trim()} is live on Gifts & Hampers.`
+      );
+      resetHamperForm();
+    } catch (err) {
+      setHamperError(extractReadableError(err, 'Could not save gift hamper.'));
+    } finally {
+      setSavingHamper(false);
+    }
+  };
+
+  const handleImportStarterHampers = async () => {
+    setImportingHampersStarter(true);
+    try {
+      const count = await importStarterHampers();
+      onNotify(
+        'Starter Hampers Imported',
+        `Imported ${count} starter gift hampers into Firestore for editing.`
+      );
+    } catch (err) {
+      onNotify(
+        'Import Failed',
+        extractReadableError(err, 'Could not import starter hampers.')
+      );
+    } finally {
+      setImportingHampersStarter(false);
+    }
+  };
+
   const handleCopyCoupon = async (code: string) => {
     try {
       await navigator.clipboard.writeText(code);
@@ -1275,19 +1525,36 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {user.email}
               </span>
               {isOwner && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPasswordModalError(null);
-                    setNewOwnerPassword('');
-                    setConfirmOwnerPassword('');
-                    setPasswordModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Password</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleCopyPrivatePortalLink}
+                    title="Copy private owner portal link"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
+                  >
+                    {copiedPortalLink ? (
+                      <Check className="w-3.5 h-3.5 text-[#FACC15]" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {copiedPortalLink ? 'Copied' : 'Portal Link'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasswordModalError(null);
+                      setNewOwnerPassword('');
+                      setConfirmOwnerPassword('');
+                      setPasswordModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Password</span>
+                  </button>
+                </>
               )}
               <button
                 type="button"
@@ -1707,6 +1974,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   { id: 'perfumes', label: 'Perfumes & Pricing', icon: Package },
                   { id: 'specials', label: 'Specials & Countdown', icon: Flame },
                   { id: 'combos', label: 'Combos & Layering', icon: Layers },
+                  { id: 'hampers', label: `Hampers & Gifts (${liveHampers.length})`, icon: Gift },
                   { id: 'coupons', label: 'Social Coupon Codes', icon: Tag },
                 ] as const
               ).map((tab) => {
@@ -1811,6 +2079,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           { id: 'Men', label: 'Men' },
                           { id: 'Women', label: 'Women' },
                           { id: 'Unisex', label: 'Unisex' },
+                          { id: 'unboxed', label: `Unboxed (${unboxedPerfumes.length})` },
                           { id: 'specials', label: `On Special (${specialPerfumes.length})` },
                           { id: 'low-stock', label: `Stock Alerts (${stockAlertPerfumes.length})` },
                         ] as const
@@ -1917,6 +2186,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               </span>
                               <span>·</span>
                               <span>{product.category}</span>
+                              {product.isUnboxed && (
+                                <span className="px-2 py-0.5 rounded-full bg-[#0A0A0A] text-white text-[10px] font-semibold">
+                                  Unboxed
+                                </span>
+                              )}
                               {product.bestseller && (
                                 <span className="px-2 py-0.5 rounded-full bg-[#F4F4F5] text-[#0A0A0A] text-[10px] font-semibold">
                                   Best Seller
@@ -2124,7 +2398,369 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             {/* TAB 2: SPECIALS & COUNTDOWN */}
             {activeTab === 'specials' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="space-y-8">
+                {/* Weekly 5ml Special Manager (4 for E100 / 2 for E50) */}
+                <form
+                  onSubmit={handleSaveWeeklySpecial}
+                  className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-6"
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E5E5E5] pb-5">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
+                        Discovery Scent Bar · {resolvedWeeklyDraft.weekLabel}
+                      </p>
+                      <h2 className="text-2xl font-bold text-[#0A0A0A]">
+                        Weekly 5ml Special (4 for E100 / 2 for E50)
+                      </h2>
+                      <p className="text-xs text-[#525252]">
+                        Draws separate <strong>For Women</strong> and <strong>For Men</strong> lineups (2 Under E500 + 2 Under E800 each). Customers choosing 2 × 5ml for E50 can only pick from the Under E500 pair.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 shrink-0">
+                      <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[#E5E5E5] bg-[#F6F6F7] cursor-pointer text-xs font-medium">
+                        <input
+                          type="checkbox"
+                          checked={weeklyDraft.autoRotateWeekly}
+                          onChange={(e) =>
+                            setWeeklyDraft((prev) => ({
+                              ...prev,
+                              autoRotateWeekly: e.target.checked,
+                            }))
+                          }
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Auto-rotate weekly</span>
+                      </label>
+
+                      <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[#E5E5E5] bg-[#F6F6F7] cursor-pointer text-xs font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={weeklyDraft.enabled}
+                          onChange={(e) =>
+                            setWeeklyDraft((prev) => ({
+                              ...prev,
+                              enabled: e.target.checked,
+                            }))
+                          }
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase ${
+                            weeklyDraft.enabled
+                              ? 'bg-[#FACC15] text-[#0A0A0A]'
+                              : 'bg-[#E5E5E5] text-[#525252]'
+                          }`}
+                        >
+                          {weeklyDraft.enabled ? 'Live' : 'Off'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Gender Tabs (For Women / For Men) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div
+                      role="tablist"
+                      aria-label="Edit Women or Men weekly 5ml picks"
+                      className="inline-flex p-1 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5]"
+                    >
+                      {(['Women', 'Men'] as const).map((tabAud) => {
+                        const isSelected = weeklyAudienceTab === tabAud;
+                        const lineup =
+                          tabAud === 'Women'
+                            ? resolvedWeeklyDraft.women
+                            : resolvedWeeklyDraft.men;
+                        return (
+                          <button
+                            key={tabAud}
+                            type="button"
+                            role="tab"
+                            aria-selected={isSelected}
+                            onClick={() => setWeeklyAudienceTab(tabAud)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-[0.12em] transition-all whitespace-nowrap ${
+                              isSelected
+                                ? 'bg-[#0A0A0A] text-[#FACC15]'
+                                : 'text-[#525252] hover:text-[#0A0A0A]'
+                            }`}
+                          >
+                            For {tabAud} ({lineup.allFourPicks.length}/4)
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-[11px] text-[#525252]">
+                      Editing <strong>For {weeklyAudienceTab}</strong> weekly lineup (strictly filters out Out of Stock items)
+                    </p>
+                  </div>
+
+                  {(() => {
+                    const activeAudienceLineup =
+                      weeklyAudienceTab === 'Women'
+                        ? resolvedWeeklyDraft.women
+                        : resolvedWeeklyDraft.men;
+                    const key500: 'womenUnder500Ids' | 'menUnder500Ids' =
+                      weeklyAudienceTab === 'Women' ? 'womenUnder500Ids' : 'menUnder500Ids';
+                    const key800: 'womenUnder800Ids' | 'menUnder800Ids' =
+                      weeklyAudienceTab === 'Women' ? 'womenUnder800Ids' : 'menUnder800Ids';
+
+                    return (
+                      <>
+                        {(activeAudienceLineup.usingFallbackTiers ||
+                          activeAudienceLineup.usingUnisexSupplement) && (
+                          <div className="px-4 py-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-xs text-[#92400E]">
+                            {activeAudienceLineup.usingUnisexSupplement
+                              ? `Note: Fewer than 4 strict ${weeklyAudienceTab} fragrances matched both price tiers, so Unisex in-stock options were included to fill all 4 slots.`
+                              : `Note: Fewer than 2 in-stock ${weeklyAudienceTab} full bottles were found under E500 or E501–E800, so lower-priced decant/mid-bottle fallbacks were included to keep all 4 slots filled.`}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Under E500 Picks */}
+                          <div className="p-4 sm:p-5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] space-y-4">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0A0A0A]">
+                                  For {weeklyAudienceTab} · 2 Picks Under E500
+                                </span>
+                                <p className="text-[11px] text-[#525252]">
+                                  Eligible for both 2 × 5ml (E{weeklyDraft.twoPackPrice}) &amp; 4 × 5ml (E{weeklyDraft.fourPackPrice})
+                                </p>
+                              </div>
+                            </div>
+
+                            {[0, 1].map((slotIdx) => {
+                              const chosenCandidate =
+                                activeAudienceLineup.under500Picks[slotIdx];
+                              const chosenId = chosenCandidate?.product.id ?? '';
+                              return (
+                                <div
+                                  key={`${weeklyAudienceTab}-u500-slot-${slotIdx}`}
+                                  className="space-y-1.5"
+                                >
+                                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
+                                    For {weeklyAudienceTab} Under E500 Slot {slotIdx + 1}
+                                  </label>
+                                  <div className="flex items-center gap-2.5">
+                                    {chosenCandidate && (
+                                      <div className="w-10 h-10 rounded-lg bg-white border border-[#E5E5E5] overflow-hidden shrink-0">
+                                        <ResilientImage
+                                          src={chosenCandidate.product.image}
+                                          alt={chosenCandidate.product.name}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      </div>
+                                    )}
+                                    <select
+                                      value={chosenId}
+                                      onChange={(e) => {
+                                        const nextId = e.target.value;
+                                        setWeeklyDraft((prev) => {
+                                          const currentIds =
+                                            activeAudienceLineup.under500Picks.map(
+                                              (c) => c.product.id
+                                            );
+                                          currentIds[slotIdx] = nextId;
+                                          const other500 =
+                                            slotIdx === 0 ? currentIds[1] : currentIds[0];
+                                          const next500 = currentIds
+                                            .filter(
+                                              (id, i) => id && (i === slotIdx || id !== other500)
+                                            )
+                                            .slice(0, 2);
+                                          const next800 = activeAudienceLineup.under800Picks
+                                            .map((c) => c.product.id)
+                                            .filter((id) => !next500.includes(id));
+                                          return {
+                                            ...prev,
+                                            weekKey: resolvedWeeklyDraft.weekKey,
+                                            [key500]: next500,
+                                            [key800]: next800,
+                                          };
+                                        });
+                                      }}
+                                      className="flex-1 px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                                    >
+                                      {activeAudienceLineup.under500Pool.map((opt) => (
+                                        <option key={opt.product.id} value={opt.product.id}>
+                                          {opt.product.name} ({opt.product.brand} · {opt.product.category})
+                                          {opt.tierPrice !== null
+                                            ? ` · ${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                            : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Under E800 Picks */}
+                          <div className="p-4 sm:p-5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] space-y-4">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0A0A0A]">
+                                  For {weeklyAudienceTab} · 2 Picks Under E800
+                                </span>
+                                <p className="text-[11px] text-[#525252]">
+                                  Included ONLY in 4 × 5ml (E{weeklyDraft.fourPackPrice}) — locked out of E{weeklyDraft.twoPackPrice} option
+                                </p>
+                              </div>
+                            </div>
+
+                            {[0, 1].map((slotIdx) => {
+                              const chosenCandidate =
+                                activeAudienceLineup.under800Picks[slotIdx];
+                              const chosenId = chosenCandidate?.product.id ?? '';
+                              return (
+                                <div
+                                  key={`${weeklyAudienceTab}-u800-slot-${slotIdx}`}
+                                  className="space-y-1.5"
+                                >
+                                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
+                                    For {weeklyAudienceTab} Under E800 Slot {slotIdx + 1}
+                                  </label>
+                                  <div className="flex items-center gap-2.5">
+                                    {chosenCandidate && (
+                                      <div className="w-10 h-10 rounded-lg bg-white border border-[#E5E5E5] overflow-hidden shrink-0">
+                                        <ResilientImage
+                                          src={chosenCandidate.product.image}
+                                          alt={chosenCandidate.product.name}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      </div>
+                                    )}
+                                    <select
+                                      value={chosenId}
+                                      onChange={(e) => {
+                                        const nextId = e.target.value;
+                                        setWeeklyDraft((prev) => {
+                                          const currentIds =
+                                            activeAudienceLineup.under800Picks.map(
+                                              (c) => c.product.id
+                                            );
+                                          currentIds[slotIdx] = nextId;
+                                          const other800 =
+                                            slotIdx === 0 ? currentIds[1] : currentIds[0];
+                                          const fixed500 =
+                                            activeAudienceLineup.under500Picks.map(
+                                              (c) => c.product.id
+                                            );
+                                          const next800 = currentIds
+                                            .filter(
+                                              (id, i) =>
+                                                id &&
+                                                !fixed500.includes(id) &&
+                                                (i === slotIdx || id !== other800)
+                                            )
+                                            .slice(0, 2);
+                                          return {
+                                            ...prev,
+                                            weekKey: resolvedWeeklyDraft.weekKey,
+                                            [key500]: fixed500,
+                                            [key800]: next800,
+                                          };
+                                        });
+                                      }}
+                                      className="flex-1 px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                                    >
+                                      {activeAudienceLineup.under800Pool.map((opt) => (
+                                        <option key={opt.product.id} value={opt.product.id}>
+                                          {opt.product.name} ({opt.product.brand} · {opt.product.category})
+                                          {opt.tierPrice !== null
+                                            ? ` · ${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                            : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Pricing + Randomize + Save Row */}
+                  <div className="pt-2 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
+                          4 × 5ml Pack Price (E)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10000}
+                          value={weeklyDraft.fourPackPrice}
+                          onChange={(e) =>
+                            setWeeklyDraft((prev) => ({
+                              ...prev,
+                              fourPackPrice: Number(e.target.value || 100),
+                            }))
+                          }
+                          className="w-32 px-3 py-2 border border-[#D4D4D4] rounded-xl text-sm font-bold tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
+                          2 × 5ml (Under E500) Price (E)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10000}
+                          value={weeklyDraft.twoPackPrice}
+                          onChange={(e) =>
+                            setWeeklyDraft((prev) => ({
+                              ...prev,
+                              twoPackPrice: Number(e.target.value || 50),
+                            }))
+                          }
+                          className="w-32 px-3 py-2 border border-[#D4D4D4] rounded-xl text-sm font-bold tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeWeeklyPicks(weeklyAudienceTab)}
+                        className="px-4 py-3 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F6F6F7] transition-colors text-xs font-semibold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Randomize {weeklyAudienceTab}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeWeeklyPicks('Both')}
+                        className="px-5 py-3 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#F6F6F7] transition-colors text-xs font-semibold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Randomize Both</span>
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={savingWeeklySpecial}
+                        className="px-6 py-3 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 transition-colors text-xs font-semibold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <Check className="w-3.5 h-3.5 text-[#FACC15]" />
+                        <span>
+                          {savingWeeklySpecial ? 'Saving...' : 'Save Weekly 5ml Special'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                 {/* Campaign Banner & Timer Configurator */}
                 <div className="lg:col-span-5 space-y-6">
                   {/* Live Storefront Hero Preview */}
@@ -2706,6 +3342,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </div>
                     </>
                   )}
+                </div>
                 </div>
               </div>
             )}
@@ -3801,6 +4438,398 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 </div>
               </div>
             )}
+
+            {/* TAB 5: GIFT HAMPERS & SETS */}
+            {activeTab === 'hampers' && (
+              <div className="space-y-8">
+                <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-[#0A0A0A]">
+                      Gift Hampers &amp; Ready-to-Gift Sets
+                    </h2>
+                    <p className="text-xs sm:text-sm text-[#525252] mt-1">
+                      Create and publish curated perfume hampers (bottles + mists + decants + ribbon box) for For Her, For Him, Birthdays, and Anniversaries.
+                    </p>
+                  </div>
+                  {liveHampers.length === 0 && (
+                    <button
+                      type="button"
+                      disabled={importingHampersStarter}
+                      onClick={handleImportStarterHampers}
+                      className="px-5 py-2.5 rounded-full border border-[#0A0A0A] bg-white hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2 shrink-0"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>
+                        {importingHampersStarter ? 'Importing...' : 'Import 4 Starter Hampers'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  {/* Left Form: Add / Edit Gift Hamper */}
+                  <form
+                    onSubmit={handleSaveHamperSubmit}
+                    className="lg:col-span-5 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-[#0A0A0A]">
+                          {editingHamperId ? 'Edit Gift Hamper' : 'Create Gift Hamper'}
+                        </h3>
+                        <p className="text-xs text-[#666666]">
+                          Set bundle contents, occasion tag, and hamper pricing
+                        </p>
+                      </div>
+                      {editingHamperId && (
+                        <button
+                          type="button"
+                          onClick={resetHamperForm}
+                          className="text-xs underline text-[#525252] hover:text-[#0A0A0A]"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
+
+                    {hamperError && (
+                      <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B]">
+                        {hamperError}
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Hamper Title *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={140}
+                        value={hTitle}
+                        onChange={(e) => setHTitle(e.target.value)}
+                        placeholder="e.g. Her Signature Rose & Body Mist Box"
+                        required
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Occasion *
+                        </label>
+                        <select
+                          value={hOccasion}
+                          onChange={(e) => setHOccasion(e.target.value)}
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm bg-white focus:outline-none focus:border-[#0A0A0A]"
+                        >
+                          {GIFT_HAMPER_OCCASIONS.map((occ) => (
+                            <option key={occ} value={occ}>
+                              {occ}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Availability
+                        </label>
+                        <select
+                          value={hAvailability}
+                          onChange={(e) => setHAvailability(e.target.value as AvailabilityStatus)}
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm bg-white focus:outline-none focus:border-[#0A0A0A]"
+                        >
+                          <option value="In Stock">In Stock</option>
+                          <option value="Low Stock">Low Stock</option>
+                          <option value="Pre-Order">Pre-Order</option>
+                          <option value="Out of Stock">Out of Stock</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Items Included (One Per Line, 1–8 items) *
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={hItemsText}
+                        onChange={(e) => setHItemsText(e.target.value)}
+                        placeholder={'100ml Full Arabian Bottle\nFine Fragrance Body Mist\n10ml Handbag Decant\nRibbon Gift Box & Card'}
+                        required
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs leading-relaxed focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Regular Value (E) *
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100000}
+                          step="any"
+                          value={hRegularPrice}
+                          onChange={(e) => setHRegularPrice(e.target.value)}
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Hamper Price (E) *
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100000}
+                          step="any"
+                          value={hHamperPrice}
+                          onChange={(e) => setHHamperPrice(e.target.value)}
+                          required
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Short Subtitle / Description
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={300}
+                        value={hSubtitle}
+                        onChange={(e) => setHSubtitle(e.target.value)}
+                        placeholder="A ready-to-present gift box pairing rose EDP, body mist, and discovery decant."
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Gift Wrap Note
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={200}
+                        value={hGiftWrapNote}
+                        onChange={(e) => setHGiftWrapNote(e.target.value)}
+                        placeholder="Includes complimentary ribbon wrap & handwritten card"
+                        className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wider">
+                        Photo URL or Preset Image
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={hImage}
+                        onChange={(e) => setHImage(e.target.value)}
+                        placeholder={DEFAULT_HAMPER_IMAGE}
+                        className="w-full px-3.5 py-2 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
+                      />
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setHImage(DEFAULT_HAMPER_IMAGE)}
+                          className="px-2.5 py-1 rounded-full bg-[#F6F6F7] border border-[#D4D4D4] text-[10px] font-medium hover:border-[#0A0A0A]"
+                        >
+                          Default Hamper Photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHImage('/assets/images/unboxed_perfume_flacon_1795005243926.jpg')}
+                          className="px-2.5 py-1 rounded-full bg-[#F6F6F7] border border-[#D4D4D4] text-[10px] font-medium hover:border-[#0A0A0A]"
+                        >
+                          Obsidian Flacon Photo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-5 pt-1 text-xs font-medium">
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hFeatured}
+                          onChange={(e) => setHFeatured(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Featured Hamper</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hActive}
+                          onChange={(e) => setHActive(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Active on Storefront</span>
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingHamper}
+                      className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                    >
+                      {savingHamper
+                        ? 'Saving Gift Hamper...'
+                        : editingHamperId
+                        ? 'Update Gift Hamper'
+                        : 'Publish Gift Hamper'}
+                    </button>
+                  </form>
+
+                  {/* Right List: Live Hampers */}
+                  <div className="lg:col-span-7 bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                    <div className="border-b border-[#E5E5E5] pb-4">
+                      <h3 className="text-xl font-bold text-[#0A0A0A]">
+                        Live Gift Hampers ({liveHampers.length})
+                      </h3>
+                      <p className="text-xs text-[#666666]">
+                        Active hampers appear immediately on the public Gifts &amp; Hampers page (out-of-stock or paused hampers are hidden automatically).
+                      </p>
+                    </div>
+
+                    {hampersLoading ? (
+                      <p className="text-sm text-[#666666] py-6">Loading hampers...</p>
+                    ) : liveHampers.length === 0 ? (
+                      <div className="py-10 text-center border border-dashed border-[#D4D4D4] rounded-2xl space-y-2">
+                        <Gift className="w-6 h-6 mx-auto text-[#737373]" />
+                        <p className="text-base font-bold text-[#0A0A0A]">
+                          No Live Gift Hampers in Database Yet
+                        </p>
+                        <p className="text-xs text-[#666666]">
+                          Create a gift hamper on the left or click &ldquo;Import 4 Starter Hampers&rdquo; above.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {liveHampers.map((hamper) => (
+                          <div
+                            key={hamper.id}
+                            className="p-4 border border-[#E5E5E5] bg-[#F7F7F8] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                          >
+                            <div className="flex items-start gap-3.5 min-w-0">
+                              <div className="w-16 h-16 rounded-xl overflow-hidden bg-white border border-[#E5E5E5] shrink-0">
+                                <ResilientImage
+                                  src={hamper.image}
+                                  alt={hamper.title}
+                                  fallbackTitle={hamper.title}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-bold text-[#0A0A0A]">
+                                    {hamper.title}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full ${
+                                      hamper.active && hamper.availability !== 'Out of Stock'
+                                        ? 'bg-[#FACC15] text-[#0A0A0A]'
+                                        : 'bg-[#E5E5E5] text-[#525252]'
+                                    }`}
+                                  >
+                                    {hamper.active ? hamper.availability : 'Paused'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-[#525252]">
+                                  {hamper.occasion} · {hamper.itemsIncluded.length} items ·{' '}
+                                  <strong className="text-[#0A0A0A] tabular-nums">
+                                    {formatPrice(hamper.hamperPrice)}
+                                  </strong>{' '}
+                                  {hamper.regularPrice > hamper.hamperPrice && (
+                                    <span className="line-through text-[#737373] tabular-nums">
+                                      {formatPrice(hamper.regularPrice)}
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await saveHamper({ ...hamper, active: !hamper.active }, hamper.id);
+                                    onNotify(
+                                      hamper.active ? 'Hamper Paused' : 'Hamper Activated',
+                                      `${hamper.title} updated.`
+                                    );
+                                  } catch (err) {
+                                    onNotify(
+                                      'Update Failed',
+                                      extractReadableError(err, 'Could not update hamper status.')
+                                    );
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                {hamper.active ? 'Pause' : 'Activate'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditHamper(hamper)}
+                                className="px-3.5 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                              >
+                                Edit
+                              </button>
+                              {confirmDeleteHamperId === hamper.id ? (
+                                <div className="inline-flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await deleteHamper(hamper.id);
+                                        setConfirmDeleteHamperId(null);
+                                        onNotify('Hamper Deleted', `${hamper.title} removed.`);
+                                      } catch (err) {
+                                        onNotify(
+                                          'Delete Failed',
+                                          extractReadableError(err, 'Could not delete hamper.')
+                                        );
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-[#DC2626] text-white rounded-full text-xs font-semibold"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteHamperId(null)}
+                                    className="px-2.5 py-1.5 border border-[#D4D4D4] bg-white rounded-full text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteHamperId(hamper.id)}
+                                  aria-label={`Delete hamper ${hamper.title}`}
+                                  className="p-2 bg-white border border-[#D4D4D4] rounded-full text-[#525252] hover:text-[#DC2626] hover:border-[#DC2626]"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -4219,6 +5248,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Featured Listing</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pUnboxed}
+                          onChange={(e) => setPUnboxed(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <Package className="w-3.5 h-3.5" />
+                        <span>Unboxed Perfume (No Retail Box)</span>
                       </label>
                       <label className="inline-flex items-center gap-2 cursor-pointer font-semibold">
                         <input

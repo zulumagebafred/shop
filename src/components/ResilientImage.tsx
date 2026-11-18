@@ -10,6 +10,28 @@ interface ResilientImageProps {
   fetchPriority?: 'high' | 'low' | 'auto';
 }
 
+const KNOWN_WEBP_IMAGES = new Set<string>([
+  'boutique_interior_1794676715739.webp',
+  'cat_mens_oud_1794676712301.webp',
+  'cat_unisex_amber_1794676712905.webp',
+  'cat_womens_rose_1794676712431.webp',
+  'craft_ingredients_1794676716101.webp',
+  'decant_collection_1794676715190.webp',
+  'hero_luxury_oud_1794676712385.webp',
+  'house_afnan_1794685070293.webp',
+  'house_al_haramain_1794685068564.webp',
+  'house_armaf_1794685069505.webp',
+  'house_fragrance_world_1794685071433.webp',
+  'house_lattafa_1794685069142.webp',
+  'house_paris_corner_1794685071664.webp',
+  'house_rasasi_1794685069093.webp',
+  'house_reef_1794685069325.webp',
+  'prod_amber_elixir_1794676714034.webp',
+  'prod_musk_imperial_1794676714707.webp',
+  'prod_royal_oud_1794676713330.webp',
+  'prod_velvet_rose_1794676713525.webp',
+]);
+
 function resolveOptimizedPaths(rawSrc: string): {
   webpSrc: string | null;
   fallbackSrc: string;
@@ -20,7 +42,7 @@ function resolveOptimizedPaths(rawSrc: string): {
   }
 
   // Remap legacy /src/assets/images/*.jpg paths (e.g. from saved Firestore entries)
-  // to the compressed public /assets/images/* assets bundled into production dist/.
+  // to the public /assets/images/* assets bundled into production dist/.
   const normalized = trimmed.startsWith('/src/assets/images/')
     ? trimmed.replace('/src/assets/images/', '/assets/images/')
     : trimmed;
@@ -29,8 +51,10 @@ function resolveOptimizedPaths(rawSrc: string): {
     normalized.startsWith('/assets/images/') &&
     /\.(jpe?g|png)$/i.test(normalized)
   ) {
+    const webpCandidate = normalized.replace(/\.(jpe?g|png)$/i, '.webp');
+    const fileName = webpCandidate.slice('/assets/images/'.length);
     return {
-      webpSrc: normalized.replace(/\.(jpe?g|png)$/i, '.webp'),
+      webpSrc: KNOWN_WEBP_IMAGES.has(fileName) ? webpCandidate : null,
       fallbackSrc: normalized,
     };
   }
