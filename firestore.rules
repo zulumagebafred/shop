@@ -28,8 +28,13 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    function isOwnerEmail() {
+    function isPrimaryOwnerEmail() {
       return isVerifiedUser() && request.auth.token.email.lower() == 'zulumagebafred@gmail.com';
+    }
+
+    function isOwnerEmail() {
+      return isVerifiedUser() &&
+        request.auth.token.email.lower() in ['zulumagebafred@gmail.com', 'tese.khumalo@gmail.com'];
     }
 
     function isAdmin() {
@@ -272,20 +277,20 @@ service cloud.firestore {
     }
 
     match /admins/{adminId} {
-      allow get: if isValidId(adminId) && (isOwnerEmail() || (isVerifiedUser() && request.auth.uid == adminId));
-      allow list: if isOwnerEmail();
-      allow create: if isOwnerEmail() &&
+      allow get: if isValidId(adminId) && (isPrimaryOwnerEmail() || (isVerifiedUser() && request.auth.uid == adminId));
+      allow list: if isPrimaryOwnerEmail();
+      allow create: if isPrimaryOwnerEmail() &&
         isValidId(adminId) &&
         isValidAdmin(incoming()) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
-      allow update: if isOwnerEmail() &&
+      allow update: if isPrimaryOwnerEmail() &&
         isValidId(adminId) &&
         isValidAdmin(incoming()) &&
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']);
-      allow delete: if isOwnerEmail() && isValidId(adminId);
+      allow delete: if isPrimaryOwnerEmail() && isValidId(adminId);
     }
 
     match /perfumes/{perfumeId} {

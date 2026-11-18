@@ -4,6 +4,15 @@ import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const OWNER_EMAIL = 'zulumagebafred@gmail.com';
+export const ADMIN_EMAILS: readonly string[] = [
+  OWNER_EMAIL,
+  'tese.khumalo@gmail.com',
+];
+
+export function isAuthorizedAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);

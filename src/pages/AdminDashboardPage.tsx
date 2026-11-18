@@ -34,7 +34,7 @@ import { formatPrice, getPrivatePortalSlug, siteConfig } from '../config/siteCon
 import { PerfumeInput, resolveAdminLoginEmail, useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, houseImages } from '../data/catalogue';
 import { DEFAULT_HAMPER_IMAGE, GIFT_HAMPER_OCCASIONS } from '../data/hampers';
-import { OWNER_EMAIL } from '../lib/firebase';
+import { isAuthorizedAdminEmail, OWNER_EMAIL } from '../lib/firebase';
 import {
   AvailabilityStatus,
   BottleSize,
@@ -487,20 +487,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const mapFirebaseAuthError = (err: unknown, fallback: string): string => {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('auth/operation-not-allowed')) {
-      return 'Email/Password sign-in is disabled in Firebase Console. Enable it under Authentication → Sign-in method → Email/Password, then click "Reset / Set Password" to choose your password for zulumageba.';
+      return 'Email/Password sign-in is disabled in Firebase Console. Enable it under Authentication → Sign-in method → Email/Password, then try signing in again.';
     }
     if (
       msg.includes('auth/invalid-credential') ||
       msg.includes('auth/wrong-password') ||
       msg.includes('auth/user-not-found')
     ) {
-      return 'Incorrect login or password. If you have not set a password for zulumageba yet, click "Reset / Set Password" to create one via email, or sign in with Google and click "Password" at the top.';
+      return 'Incorrect login or password. Double-check your admin email/username and password, or click "Reset / Set Password" to set a new password via email.';
     }
     if (msg.includes('auth/popup-blocked') || msg.includes('auth/popup-closed-by-user')) {
-      return 'Google popup was blocked or closed. Use the zulumageba + password form above instead (works on any device without popups).';
+      return 'Google popup was blocked or closed. Use the email/username + password form above instead (works on any device without popups).';
     }
     if (msg.includes('auth/too-many-requests')) {
-      return 'Too many sign-in attempts. Please wait a few minutes or sign in with Google below.';
+      return 'Too many sign-in attempts. Please wait a few minutes before trying again.';
     }
     if (msg.includes('auth/requires-recent-login')) {
       return 'For security, please sign out and sign back in right before updating your password.';
@@ -526,7 +526,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setAuthError(null);
     setAuthNotice(null);
     if (!loginId.trim()) {
-      setAuthError('Enter your admin login (zulumageba).');
+      setAuthError('Enter your admin email or username.');
       return;
     }
     if (!loginPassword) {
@@ -547,12 +547,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleSendPasswordReset = async () => {
     setAuthError(null);
     setAuthNotice(null);
-    const targetLogin = loginId.trim() || 'zulumageba';
+    if (!loginId.trim()) {
+      setAuthError('Enter your admin email or username first, then click Reset / Set Password.');
+      return;
+    }
+    const targetLogin = loginId.trim();
     setSendingReset(true);
     try {
       const sentEmail = await sendOwnerPasswordReset(targetLogin);
       setAuthNotice(
-        `Password setup/reset email sent to ${sentEmail}. Open the link in your email to set your password, then log in with "zulumageba" on any device.`
+        `Password setup/reset email sent to ${sentEmail}. Open the link in your email to set your password, then sign in on any device.`
       );
     } catch (err) {
       setAuthError(mapFirebaseAuthError(err, 'Could not send password reset email.'));
@@ -614,7 +618,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setConfirmOwnerPassword('');
       onNotify(
         'Admin Password Saved',
-        'You can now log in manually from any device using "zulumageba" and this password.'
+        'You can now log in manually from any device using your admin email and this password.'
       );
     } catch (err) {
       setPasswordModalError(
@@ -1602,10 +1606,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             <div className="space-y-2">
               <h1 className="text-2xl sm:text-3xl font-bold text-[#0A0A0A] tracking-tight">
-                Owner Admin Login
+                Store Admin Login
               </h1>
               <p className="text-sm text-[#525252] leading-relaxed">
-                Enter your owner login (<span className="font-semibold text-[#0A0A0A]">zulumageba</span>) and password to sign in on any device, or continue with Google.
+                Enter your admin email or username and password to sign in.
               </p>
             </div>
 
@@ -1627,7 +1631,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   htmlFor="admin-login-id"
                   className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
                 >
-                  Login / Username
+                  Login / Email
                 </label>
                 <input
                   id="admin-login-id"
@@ -1635,7 +1639,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   autoComplete="username"
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
-                  placeholder="zulumageba"
+                  placeholder="Enter admin email or username"
                   required
                   className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
                 />
@@ -1691,46 +1695,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
               <button
                 type="submit"
-                disabled={signingInPassword || signingIn}
+                disabled={signingInPassword}
                 className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
               >
                 {signingInPassword ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
 
-            <div className="relative flex items-center py-1">
-              <div className="flex-1 border-t border-[#E5E5E5]" />
-              <span className="px-3 text-[11px] uppercase tracking-wider text-[#737373]">
-                or
-              </span>
-              <div className="flex-1 border-t border-[#E5E5E5]" />
-            </div>
-
-            <div className="space-y-2.5">
-              <button
-                type="button"
-                disabled={signingIn || signingInPassword}
-                onClick={handleGoogleSignIn}
-                className="w-full py-3 px-5 border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#F5F5F5] disabled:opacity-50 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.12em]"
-              >
-                {signingIn ? 'Opening Google Sign-In...' : 'Sign In with Google (Owner)'}
-              </button>
-              <button
-                type="button"
-                onClick={onBackToStorefront}
-                className="w-full py-3 px-5 border border-[#D4D4D4] text-[#525252] hover:border-[#0A0A0A] hover:text-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
-              >
-                Return to Customer Storefront
-              </button>
-            </div>
-
-            <p className="text-[11px] text-[#737373] border-t border-[#E5E5E5] pt-4">
-              Authorized Owner Account: <span className="font-semibold text-[#0A0A0A]">{OWNER_EMAIL}</span>
-            </p>
+            <button
+              type="button"
+              onClick={onBackToStorefront}
+              className="w-full py-3 px-5 border border-[#D4D4D4] text-[#525252] hover:border-[#0A0A0A] hover:text-[#0A0A0A] transition-colors rounded-full text-xs font-semibold uppercase tracking-wider"
+            >
+              Return to Customer Storefront
+            </button>
           </motion.div>
         ) : !isOwner ? (
-          /* Gate 2: Email Verification Needed or Non-Owner Denied */
-          user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase() && !user.emailVerified ? (
+          /* Gate 2: Email Verification Needed or Non-Admin Denied */
+          isAuthorizedAdminEmail(user.email) && !user.emailVerified ? (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1806,7 +1788,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   Owner Authorization Required
                 </h1>
                 <p className="text-sm text-[#525252] leading-relaxed">
-                  Signed in as <strong className="text-[#0A0A0A]">{user.email}</strong>. Only the verified AuraHut Co. owner account ({OWNER_EMAIL}) has permission to edit catalogue pricing, coupon codes, or special promotions.
+                  Signed in as <strong className="text-[#0A0A0A]">{user.email}</strong>. Only verified AuraHut Co. administrator accounts have permission to edit catalogue pricing, coupon codes, or special promotions.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
@@ -5400,7 +5382,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                 <form onSubmit={handleSaveOwnerPassword} className="p-6 space-y-4">
                   <p className="text-xs text-[#525252] leading-relaxed">
-                    Set or update the manual login password for <strong className="text-[#0A0A0A]">zulumageba</strong> ({OWNER_EMAIL}) so you can sign in on any device.
+                    Set or update the manual login password for <strong className="text-[#0A0A0A]">{user?.email ?? OWNER_EMAIL}</strong> so you can sign in on any device.
                   </p>
 
                   <div className="space-y-1.5">

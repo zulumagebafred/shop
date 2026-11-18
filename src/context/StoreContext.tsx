@@ -36,6 +36,7 @@ import {
   db,
   googleProvider,
   handleFirestoreError,
+  isAuthorizedAdminEmail,
 } from '../lib/firebase';
 import {
   ComboDeal,
@@ -172,6 +173,7 @@ export function resolveAdminLoginEmail(loginInput: string): string {
   if (!cleaned) return OWNER_EMAIL;
   if (cleaned.includes('@')) return cleaned;
   if (cleaned === 'zulumageba' || cleaned === 'zulumagebafred') return OWNER_EMAIL;
+  if (cleaned === 'tese' || cleaned === 'tese.khumalo') return 'tese.khumalo@gmail.com';
   return `${cleaned}@gmail.com`;
 }
 
@@ -378,7 +380,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     return Boolean(
       user &&
         user.emailVerified &&
-        user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase()
+        isAuthorizedAdminEmail(user.email)
     );
   }, [user, authRevision]);
 
