@@ -1455,27 +1455,28 @@ export const HomePage: React.FC<HomePageProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
             {siteConfig.branches.map((branch) => (
               <article
                 key={branch.id}
-                className="bg-white border border-[#E5E5E5] rounded-3xl p-4 sm:p-5 flex flex-col"
+                className="bg-white border border-[#E5E5E5] rounded-3xl p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-12 gap-5 items-stretch"
               >
-                <div className="aspect-[16/9] rounded-2xl bg-[#F5F5F5] overflow-hidden">
+                <div className="sm:col-span-5 aspect-[9/16] max-w-[290px] sm:max-w-none w-full mx-auto bg-[#0A0A0A] rounded-2xl overflow-hidden">
                   <ResilientImage
                     src={branch.image}
-                    alt={`${branch.name} Store`}
+                    alt={`${branch.name} Storefront & Visual Directions`}
                     fallbackTitle={branch.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover object-center"
                   />
                 </div>
-                <div className="px-2 pt-6 pb-2 flex-1 flex flex-col justify-between space-y-6">
+
+                <div className="sm:col-span-7 px-1 py-1 flex flex-col justify-between space-y-6">
                   <div className="space-y-4">
-                    <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#E5E5E5] pb-3">
                       <h3 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
                         {branch.name}
                       </h3>
-                      <span className="text-xs uppercase tracking-wider text-[#525252]">
+                      <span className="text-[11px] uppercase tracking-wider text-[#525252] font-medium">
                         {branch.city}, Eswatini
                       </span>
                     </div>
@@ -1483,7 +1484,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <div className="space-y-2.5 text-sm text-[#404040]">
                       <p className="flex items-start gap-2.5">
                         <MapPin className="w-4 h-4 text-[#0A0A0A] shrink-0 mt-0.5" />
-                        <span>{branch.address}</span>
+                        <span className="leading-snug">{branch.address}</span>
                       </p>
                       <div className="flex items-start gap-2.5">
                         <Clock className="w-4 h-4 text-[#0A0A0A] shrink-0 mt-0.5" />
@@ -1497,7 +1498,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                         <Phone className="w-4 h-4 text-[#0A0A0A] shrink-0" />
                         <a
                           href={`tel:${branch.phoneDisplay.replace(/[^\d+]/g, '')}`}
-                          className="hover:underline"
+                          className="hover:underline tabular-nums"
                         >
                           {branch.phoneDisplay}
                         </a>
@@ -1505,12 +1506,12 @@ export const HomePage: React.FC<HomePageProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-[#E5E5E5] flex flex-wrap gap-3">
+                  <div className="pt-4 border-t border-[#E5E5E5] flex flex-wrap gap-2.5">
                     <a
                       href={branch.googleMapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-1 min-w-[160px] py-2.5 px-4 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F6F6F7] transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5"
+                      className="flex-1 min-w-[130px] py-2.5 px-4 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F6F6F7] transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                       <span>Directions</span>
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -1518,7 +1519,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <button
                       type="button"
                       onClick={() => onSelectBranchAndBasket(branch.id)}
-                      className="flex-1 min-w-[160px] py-2.5 px-4 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5"
+                      className="flex-1 min-w-[130px] py-2.5 px-4 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                       <ShoppingBag className="w-3.5 h-3.5 text-white" />
                       <span>Shop {branch.city}</span>

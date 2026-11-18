@@ -163,26 +163,57 @@ export const siteContent = {
   ] satisfies OwnershipStep[],
 
   aboutSection: {
-    kicker: 'Our Heritage',
+    kicker: 'Woman-Owned · Founded in Eswatini',
     headline: 'About AuraHut Co.',
-    lead: 'Bringing genuine Arabian perfumery into everyday life across Eswatini.',
-    paragraphs: [
-      'Born from an appreciation for rare agarwood, sun-cured resins, and rich Middle Eastern extrait traditions, AuraHut Co. serves fragrance wearers across Manzini, Mbabane, and all corners of Eswatini.',
-      'Choosing a signature scent should feel calm and certain. Through measured 5ml, 10ml, and 22ml glass decants alongside sealed full bottles, you know exactly how a fragrance wears on your skin before it lives on your shelf.',
+    lead: 'Scents, Just for You.',
+    taglineMotto: 'Feel at home in yourself.',
+    founderName: 'Nomfanelo Teyise Khumalo',
+    founderKnownAs: 'Teyise',
+    founderRole: 'Founder & Managing Director, AuraHut Co.',
+    founderImage: '/assets/aistudio/teyise_image_9b43dbee.jpeg',
+    intro:
+      'AuraHut Co. is a woman-owned fragrance business founded in Eswatini. We specialise in Arabian perfumes and help you find a fragrance that feels like you. Whether you’re choosing an everyday scent, shopping for a gift, or exploring something new, we give you the space to try, ask questions, and choose with confidence.',
+    storyParagraph:
+      'AuraHut Co. began in 2021 when Nomfanelo Teyise Khumalo opened her first shop in Mhlaleni under the name Arabian Perfume Hut. The business grew to Manzini and Mbabane, and in February 2025, we became AuraHut Co. Today, we welcome customers at our Manzini and Mbabane stores and deliver across Eswatini through the Post Office.',
+    milestones: [
+      { year: '2021', label: 'First shop opened in Mhlaleni as Arabian Perfume Hut' },
+      { year: '2022–24', label: 'Expanded into Manzini & Mbabane city centres' },
+      { year: 'Feb 2025', label: 'Rebranded & relaunched as AuraHut Co.' },
+      { year: 'Today', label: '2 stores + nationwide Eswatini Post Office delivery' },
+    ],
+    founderParagraphs: [
+      'Nomfanelo Teyise Khumalo, known as Teyise, is an entrepreneur and mother of four. She studied cooperatives and spent nine years working in the cooperative sector. She was inspired by how early cooperatives pooled their resources to make everyday goods more affordable. That same idea shapes her plans for AuraHut Co. She wants to buy fragrances in bulk and work with local sellers to bring quality perfumes within reach of more people and create opportunities to earn extra income.',
+      'Teyise joined a network marketing business to learn how to train sales teams, support independent sellers, and build lasting customer relationships. Along the way, she earned two trips to Cape Town and a six-day, all-expenses-paid trip to Bali, Indonesia. She applies those lessons at AuraHut Co. by working with sales agents and mentoring young people who want to start a business.',
+    ],
+    discoveryBarParagraphs: [
+      'At our Discovery Scent Bar, you can try fragrances in-store and take home a 5 ml, 10 ml, or 22 ml decant filled from the original bottle. You get to wear the scent in your own time and see how it settles on your skin before choosing a full bottle.',
+      'We stock fragrances from Lattafa, Armaf, Al Haramain, Ajmal, Rasasi, Fragrance World, Pendora Scents, Emper, Frank Olivier, and Motala. Our range also includes perfume oils, body mists, lotions, and fragrances for your home and car.',
+    ],
+    stockedHousesLine:
+      'Lattafa · Armaf · Al Haramain · Ajmal · Rasasi · Fragrance World · Pendora Scents · Emper · Frank Olivier · Motala',
+    futureParagraphs: [
+      'Our long-term goal is to become one of Eswatini’s best-known fragrance brands and a recognised wholesaler and distributor across Africa. We plan to establish our own warehouse in Eswatini, buy stock in bulk, and supply independent resellers, retailers, and distribution partners across the continent.',
+      'We also plan to open small Discovery Scent Bars in towns and shopping malls, starting in Eswatini and expanding into other African markets over time. As we grow, we want to give more sales agents and resellers access to stock, product training, and mentorship so they can serve customers in their own communities and earn extra income through fragrance sales.',
     ],
     image: '/assets/images/craft_ingredients_1794676716101.jpg',
     pillars: [
       {
-        title: 'Authentic Provenance',
-        detail: 'Curated Arabian perfume houses sourced for genuine oil concentration and longevity.',
+        title: 'Our Vision',
+        subtitle: 'Pan-African Recognition',
+        detail:
+          'To build a fragrance brand from Eswatini that is recognised across Africa for making quality perfumes easier to discover and creating opportunities for independent sellers to grow.',
       },
       {
-        title: 'Measured Glass Decants',
-        detail: 'Cleanly transferred from authentic flacons so you can wear a scent across real days.',
+        title: 'Our Mission',
+        subtitle: 'Confidence & Opportunity',
+        detail:
+          'To help people find fragrances that express who they are and make them feel confident in their own skin, while giving aspiring entrepreneurs the practical support to start selling in their communities.',
       },
       {
-        title: 'Two Eswatini Stores',
-        detail: 'In-person scent testing and fast collection in both Manzini and Mbabane.',
+        title: 'Our Motto',
+        subtitle: 'Feel at home in yourself.',
+        detail:
+          'A fragrance can express your personality, match your mood, or give you a little more confidence as you go about your day. We want you to find the one that feels naturally yours.',
       },
     ],
   },
