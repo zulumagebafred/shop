@@ -23,6 +23,11 @@ import {
 } from '../types/fragrance';
 import { calculateCouponDiscount } from '../utils/pricing';
 import {
+  formatBranchName,
+  getAvailableBranches,
+  isAvailableAtBranch,
+} from '../utils/branches';
+import {
   buildBasketWhatsAppMessage,
   createWhatsAppUrl,
   getDeliveryFee,
@@ -70,7 +75,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
   onClose,
   onExploreShop,
 }) => {
-  const { lookupCouponByCode } = useStore();
+  const { lookupCouponByCode, perfumes } = useStore();
   const [customerNote, setCustomerNote] = useState('');
   const [couponInput, setCouponInput] = useState('');
   const [couponFeedback, setCouponFeedback] = useState<string | null>(null);
@@ -441,6 +446,60 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                         if (address.trim()) setDeliveryAddressError(false);
                       }}
                     />
+
+                    {(() => {
+                      if (deliveryMethod !== 'store-pickup') return null;
+                      const mismatchedProducts = items
+                        .map((item) => {
+                          const match = perfumes.find((p) => p.id === item.productId);
+                          if (!match) return null;
+                          const stocked = getAvailableBranches(match);
+                          if (stocked.length === 0 || isAvailableAtBranch(match, selectedBranch)) {
+                            return null;
+                          }
+                          return { item, stocked };
+                        })
+                        .filter(
+                          (entry): entry is { item: BasketItem; stocked: BranchId[] } =>
+                            entry !== null
+                        );
+
+                      if (mismatchedProducts.length === 0) return null;
+
+                      const otherBranch: BranchId =
+                        selectedBranch === 'manzini' ? 'mbabane' : 'manzini';
+                      const allItemsInOther = items.every((item) => {
+                        const match = perfumes.find((p) => p.id === item.productId);
+                        if (!match) return true;
+                        const stocked = getAvailableBranches(match);
+                        return stocked.length === 0 || stocked.includes(otherBranch);
+                      });
+
+                      return (
+                        <div className="mt-3 p-3 bg-[#FEF3C7] border border-[#F59E0B] rounded-xl text-xs text-[#92400E] flex flex-col gap-2">
+                          <p className="leading-snug">
+                            <strong>Branch Stock Notice:</strong>{' '}
+                            {mismatchedProducts.map((m) => m.item.productName).join(', ')}{' '}
+                            {mismatchedProducts.length === 1 ? 'is' : 'are'} currently stocked at our{' '}
+                            <strong>{formatBranchName(otherBranch)}</strong> branch rather than{' '}
+                            {formatBranchName(selectedBranch)}.
+                          </p>
+                          {allItemsInOther ? (
+                            <button
+                              type="button"
+                              onClick={() => onSelectBranch(otherBranch)}
+                              className="self-start px-3 py-1.5 rounded-full bg-[#0A0A0A] text-white text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap"
+                            >
+                              Switch Pickup to {formatBranchName(otherBranch)}
+                            </button>
+                          ) : (
+                            <p className="text-[11px] font-medium">
+                              Tip: Choose Post Office or Driver Delivery so we can coordinate stock across both branches.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Optional Note */}

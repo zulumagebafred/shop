@@ -24,6 +24,12 @@ import {
   FragranceProduct,
 } from '../types/fragrance';
 import {
+  formatBranchName,
+  getAvailableBranches,
+  getBranchAvailabilityLabel,
+  isAvailableAtBranch,
+} from '../utils/branches';
+import {
   getEffectiveUnitPrice,
   getHighestAvailableSize,
   getSizeEffectivePrice,
@@ -291,6 +297,14 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               <span>{product.category}</span>
               <span aria-hidden="true">·</span>
               <span>{product.availability}</span>
+              {product.availability !== 'Out of Stock' && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-[#0A0A0A] font-semibold">
+                    {getBranchAvailabilityLabel(product)}
+                  </span>
+                </>
+              )}
               {product.isUnboxed && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -453,6 +467,36 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               if (address.trim()) setDeliveryAddressError(false);
             }}
           />
+
+          {(() => {
+            const stockedBranches = getAvailableBranches(product);
+            const selectedBranchHasStock = isAvailableAtBranch(product, selectedBranch);
+            if (
+              deliveryMethod !== 'store-pickup' ||
+              selectedBranchHasStock ||
+              stockedBranches.length === 0
+            ) {
+              return null;
+            }
+            const alternativeBranch = stockedBranches[0];
+            return (
+              <div className="p-3.5 bg-[#FEF3C7] border border-[#F59E0B] rounded-xl text-xs text-[#92400E] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <p className="leading-relaxed">
+                  <strong>{formatBranchName(alternativeBranch)} Stock Only:</strong>{' '}
+                  This fragrance is currently available at our{' '}
+                  <strong>{formatBranchName(alternativeBranch)}</strong> store, not in{' '}
+                  {formatBranchName(selectedBranch)}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onSelectBranch(alternativeBranch)}
+                  className="px-3.5 py-1.5 rounded-full bg-[#0A0A0A] text-white text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap shrink-0 hover:bg-[#262626] transition-colors"
+                >
+                  Switch to {formatBranchName(alternativeBranch)}
+                </button>
+              </div>
+            );
+          })()}
 
           {deliveryFee > 0 && lineTotal !== null && (
             <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-xl px-4 py-2.5 flex items-center justify-between text-xs">

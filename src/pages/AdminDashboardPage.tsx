@@ -38,6 +38,7 @@ import { isAuthorizedAdminEmail, OWNER_EMAIL } from '../lib/firebase';
 import {
   AvailabilityStatus,
   BottleSize,
+  BranchId,
   ComboDeal,
   Coupon,
   CouponDiscountType,
@@ -52,6 +53,13 @@ import {
   WeeklyFiveMlAudience,
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
+import {
+  ALL_BRANCH_IDS,
+  getAvailableBranches,
+  getBranchAvailabilityLabel,
+  isAvailableAtBranch,
+  normalizeBranches,
+} from '../utils/branches';
 import { getEffectiveUnitPrice, getProductPriceSummary } from '../utils/pricing';
 import {
   getWeekWindowBounds,
@@ -65,7 +73,16 @@ interface AdminDashboardPageProps {
 }
 
 type AdminTab = 'perfumes' | 'specials' | 'combos' | 'hampers' | 'coupons';
-type InventoryFilter = 'all' | 'Men' | 'Women' | 'Unisex' | 'unboxed' | 'specials' | 'low-stock';
+type InventoryFilter =
+  | 'all'
+  | 'Men'
+  | 'Women'
+  | 'Unisex'
+  | 'manzini'
+  | 'mbabane'
+  | 'unboxed'
+  | 'specials'
+  | 'low-stock';
 type InventorySort = 'name-asc' | 'brand-asc' | 'price-desc' | 'price-asc';
 
 const DEFAULT_EDITOR_SIZES: BottleSize[] = ['5ml', '10ml', '22ml', '100ml'];
@@ -266,6 +283,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [pCategory, setPCategory] = useState<FragranceCategory>('Unisex');
   const [pConcentration, setPConcentration] = useState('Eau de Parfum');
   const [pAvailability, setPAvailability] = useState<AvailabilityStatus>('In Stock');
+  const [pBranches, setPBranches] = useState<BranchId[]>(['manzini', 'mbabane']);
   const [pDescription, setPDescription] = useState('');
   const [pImage, setPImage] = useState(houseImages[featuredPerfumeHouses[0]]);
   const [pTopNotes, setPTopNotes] = useState('');
@@ -441,6 +459,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       if (inventoryFilter === 'Men' && p.category !== 'Men') return false;
       if (inventoryFilter === 'Women' && p.category !== 'Women') return false;
       if (inventoryFilter === 'Unisex' && p.category !== 'Unisex') return false;
+      if (inventoryFilter === 'manzini' && !isAvailableAtBranch(p, 'manzini')) return false;
+      if (inventoryFilter === 'mbabane' && !isAvailableAtBranch(p, 'mbabane')) return false;
       if (inventoryFilter === 'unboxed' && !p.isUnboxed) return false;
       if (inventoryFilter === 'specials' && !p.onSpecial) return false;
       if (
@@ -456,6 +476,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         p.brand.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
         p.availability.toLowerCase().includes(q) ||
+        getBranchAvailabilityLabel(p).toLowerCase().includes(q) ||
         (p.isUnboxed && 'unboxed'.includes(q))
       );
     });
@@ -638,6 +659,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setPCategory('Unisex');
     setPConcentration('Eau de Parfum');
     setPAvailability('In Stock');
+    setPBranches(['manzini', 'mbabane']);
     setPDescription('');
     setPImage(houseImages[featuredPerfumeHouses[0]]);
     setPTopNotes('');
@@ -664,6 +686,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setPCategory(p.category);
     setPConcentration(p.concentration);
     setPAvailability(p.availability);
+    const activeBranches = getAvailableBranches(p);
+    setPBranches(
+      p.availability === 'Out of Stock'
+        ? []
+        : activeBranches.length > 0
+        ? activeBranches
+        : ['manzini', 'mbabane']
+    );
     setPDescription(p.description);
     setPImage(p.image);
     setPTopNotes(p.notes.top.join(', '));
@@ -690,6 +720,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setPCategory(p.category);
     setPConcentration(p.concentration);
     setPAvailability(p.availability);
+    const activeBranches = getAvailableBranches(p);
+    setPBranches(
+      p.availability === 'Out of Stock'
+        ? []
+        : activeBranches.length > 0
+        ? activeBranches
+        : ['manzini', 'mbabane']
+    );
     setPDescription(p.description);
     setPImage(p.image);
     setPTopNotes(p.notes.top.join(', '));
@@ -712,6 +750,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   ) => {
     if (product.availability === nextAvailability) return;
     setUpdatingStatusId(product.id);
+    const existingBranches = getAvailableBranches(product);
+    const nextBranches: BranchId[] =
+      nextAvailability === 'Out of Stock'
+        ? []
+        : existingBranches.length > 0
+        ? existingBranches
+        : ['manzini', 'mbabane'];
     try {
       await savePerfume(
         {
@@ -726,6 +771,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           notes: product.notes,
           sizes: product.sizes,
           availability: nextAvailability,
+          availableBranches: nextBranches,
           featured: product.featured,
           bestseller: product.bestseller,
           isUnboxed: Boolean(product.isUnboxed),
@@ -824,12 +870,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       ? Math.min(90, Math.max(0, parsedDiscount))
       : 0;
 
+    const cleanBranches =
+      pAvailability === 'Out of Stock' ? [] : normalizeBranches(pBranches);
+    if (pAvailability !== 'Out of Stock' && cleanBranches.length === 0) {
+      setFormError('Select at least one store branch (Manzini or Mbabane), or set availability to Out of Stock.');
+      return;
+    }
+
     const payload: PerfumeInput = {
       name: pName.trim(),
       brand: resolvedBrand,
       category: pCategory,
       concentration: pConcentration.trim() || 'Eau de Parfum',
       availability: pAvailability,
+      availableBranches: cleanBranches,
       description: resolvedDescription,
       image: pImage.trim() || houseImages[featuredPerfumeHouses[0]],
       isSampleListing: false,
@@ -2061,6 +2115,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           { id: 'Men', label: 'Men' },
                           { id: 'Women', label: 'Women' },
                           { id: 'Unisex', label: 'Unisex' },
+                          { id: 'manzini', label: 'Manzini' },
+                          { id: 'mbabane', label: 'Mbabane' },
                           { id: 'unboxed', label: `Unboxed (${unboxedPerfumes.length})` },
                           { id: 'specials', label: `On Special (${specialPerfumes.length})` },
                           { id: 'low-stock', label: `Stock Alerts (${stockAlertPerfumes.length})` },
@@ -2168,6 +2224,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               </span>
                               <span>·</span>
                               <span>{product.category}</span>
+                              <span className="px-2 py-0.5 rounded-full bg-[#F4F4F5] text-[#0A0A0A] border border-[#E5E5E5] text-[10px] font-semibold">
+                                {getBranchAvailabilityLabel(product)}
+                              </span>
                               {product.isUnboxed && (
                                 <span className="px-2 py-0.5 rounded-full bg-[#0A0A0A] text-white text-[10px] font-semibold">
                                   Unboxed
@@ -4953,9 +5012,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={pAvailability}
-                        onChange={(e) =>
-                          setPAvailability(e.target.value as AvailabilityStatus)
-                        }
+                        onChange={(e) => {
+                          const next = e.target.value as AvailabilityStatus;
+                          setPAvailability(next);
+                          if (next === 'Out of Stock') {
+                            setPBranches([]);
+                          } else if (pBranches.length === 0) {
+                            setPBranches(['manzini', 'mbabane']);
+                          }
+                        }}
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
                       >
                         <option value="In Stock">In Stock</option>
@@ -4963,6 +5028,62 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <option value="Out of Stock">Out of Stock</option>
                         <option value="Pre-Order">Pre-Order</option>
                       </select>
+                    </div>
+                  </div>
+
+                  {/* Per-Branch Store Stock Toggles (Manzini & Mbabane) */}
+                  <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
+                        Store Branch Availability
+                      </span>
+                      <span className="block text-[11px] text-[#666666]">
+                        Choose which AuraHut Co. branch currently stocks this fragrance.
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {ALL_BRANCH_IDS.map((branchId) => {
+                        const branchMeta = siteConfig.branches.find((b) => b.id === branchId);
+                        const checked = pBranches.includes(branchId);
+                        return (
+                          <label
+                            key={branchId}
+                            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                              checked
+                                ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                                : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                const next = isChecked
+                                  ? normalizeBranches([...pBranches, branchId])
+                                  : pBranches.filter((b) => b !== branchId);
+                                setPBranches(next);
+                                if (next.length === 0) {
+                                  setPAvailability('Out of Stock');
+                                } else if (pAvailability === 'Out of Stock') {
+                                  setPAvailability('In Stock');
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            <span
+                              className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[10px] ${
+                                checked
+                                  ? 'bg-[#FACC15] text-[#0A0A0A] border-[#FACC15]'
+                                  : 'bg-white border-[#D4D4D4]'
+                              }`}
+                            >
+                              {checked ? '✓' : ''}
+                            </span>
+                            <span>{branchMeta?.city ?? branchId} Store</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 

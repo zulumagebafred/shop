@@ -23,6 +23,12 @@ import {
   FragranceProduct,
 } from '../types/fragrance';
 import {
+  formatBranchName,
+  getAvailableBranches,
+  getBranchAvailabilityLabel,
+  isAvailableAtBranch,
+} from '../utils/branches';
+import {
   calculateCouponDiscount,
   getEffectiveUnitPrice,
   getHighestAvailableSize,
@@ -284,8 +290,8 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-wider text-[#525252]">
-                      {product.brand} · Quick Order
+                    <p className="text-[11px] uppercase tracking-wider text-[#525252] truncate">
+                      {product.brand} · {getBranchAvailabilityLabel(product)}
                     </p>
                     <h3 className="text-base font-semibold text-[#0A0A0A] truncate">
                       {product.name}
@@ -409,6 +415,33 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                     if (address.trim()) setDeliveryAddressError(false);
                   }}
                 />
+
+                {(() => {
+                  const stockedBranches = getAvailableBranches(product);
+                  const branchHasStock = isAvailableAtBranch(product, selectedBranch);
+                  if (
+                    deliveryMethod !== 'store-pickup' ||
+                    branchHasStock ||
+                    stockedBranches.length === 0
+                  ) {
+                    return null;
+                  }
+                  const altBranch = stockedBranches[0];
+                  return (
+                    <div className="p-3 bg-[#FEF3C7] border border-[#F59E0B] rounded-xl text-xs text-[#92400E] flex items-center justify-between gap-2.5">
+                      <p className="leading-snug">
+                        Stocked at <strong>{formatBranchName(altBranch)}</strong> only.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => onSelectBranch(altBranch)}
+                        className="px-3 py-1.5 rounded-full bg-[#0A0A0A] text-white text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap shrink-0"
+                      >
+                        Switch to {formatBranchName(altBranch)}
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Coupon Input */}
                 <div className="space-y-1.5">

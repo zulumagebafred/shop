@@ -3,7 +3,13 @@ import { motion } from 'motion/react';
 import { ShoppingBag } from 'lucide-react';
 import { formatPrice } from '../config/siteConfig';
 import { FragranceProduct, PriceRangeFilter } from '../types/fragrance';
-import { getBestPriceOptionForRange, getProductPriceSummary } from '../utils/pricing';
+import { formatBranchName, getSingleBranchExclusive } from '../utils/branches';
+import {
+  getBestPriceOptionForRange,
+  getEffectiveUnitPrice,
+  getProductPriceSummary,
+  parseVolumeMl,
+} from '../utils/pricing';
 import { ResilientImage } from './ResilientImage';
 
 interface ProductCardProps {
@@ -40,7 +46,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   fetchPriority = 'auto',
   priceRange = 'all',
 }) => {
-  const availableSizes = product.sizes.filter((s) => s.available);
+  const availableSizes = [...product.sizes]
+    .filter((s) => s.available)
+    .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
+
+  const singleBranch = getSingleBranchExclusive(product);
   const summary = getProductPriceSummary(product);
   const rangedMatch =
     priceRange !== 'all' ? getBestPriceOptionForRange(product, priceRange) : null;
@@ -94,8 +104,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           fetchPriority={fetchPriority}
           className="w-full h-full object-cover saturate-[1.12] contrast-[1.03] transition-transform duration-400 ease-out group-hover:scale-[1.03]"
         />
-        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial) && (
-          <div className="absolute top-2.5 left-2.5">
+        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial || singleBranch) && (
+          <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
             {product.availability === 'Out of Stock' ? (
               <span className="bg-white/95 text-[#991B1B] border border-[#FCA5A5] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
                 Out of Stock
@@ -109,11 +119,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 {product.specialLabel || 'Special'}
                 {product.specialDiscountPercent ? ` · -${product.specialDiscountPercent}%` : ''}
               </span>
-            ) : (
+            ) : product.availability !== 'In Stock' ? (
               <span className="bg-white/95 text-[#0A0A0A] border border-[#E5E5E5] px-2.5 py-1 rounded-full text-[10px] font-medium tracking-wide">
                 {product.availability}
               </span>
-            )}
+            ) : null}
           </div>
         )}
       </button>
@@ -128,6 +138,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-[#0A0A0A] font-semibold">Unboxed</span>
+              </>
+            )}
+            {singleBranch && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-[#0A0A0A] font-semibold">
+                  {formatBranchName(singleBranch)} Only
+                </span>
               </>
             )}
           </div>
@@ -146,11 +164,42 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             {scentPreview}
           </p>
 
-          <p className="text-[11px] text-[#737373] tabular-nums">
-            {availableSizes.length > 0
-              ? `Sizes: ${availableSizes.map((s) => s.size).join(' · ')}`
-              : 'Currently unavailable'}
-          </p>
+          {/* Transparent Per-Size Pricing Breakdown (5ml, 10ml & Bottle Sizes) */}
+          {availableSizes.length > 0 ? (
+            <div className="pt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] tabular-nums">
+              {availableSizes.map((opt, sizeIdx) => {
+                const eff = getEffectiveUnitPrice(
+                  opt.price,
+                  product.onSpecial,
+                  product.specialDiscountPercent
+                );
+                const isHighest = opt.size === displaySize;
+                return (
+                  <React.Fragment key={`${product.id}-${opt.size}-${sizeIdx}`}>
+                    <span
+                      className={
+                        isHighest
+                          ? 'text-[#0A0A0A] font-semibold'
+                          : 'text-[#525252]'
+                      }
+                    >
+                      <span className="text-[#737373] font-normal">{opt.size}</span>{' '}
+                      <span className="font-semibold text-[#0A0A0A]">
+                        {eff !== null ? formatPrice(eff) : 'Ask'}
+                      </span>
+                    </span>
+                    {sizeIdx < availableSizes.length - 1 && (
+                      <span aria-hidden="true" className="text-[#D4D4D4]">
+                        ·
+                      </span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[11px] text-[#737373] pt-1">Currently unavailable</p>
+          )}
         </div>
 
         <div className="pt-3 border-t border-[#ECECEE] space-y-3">
@@ -202,3 +251,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </motion.article>
   );
 };
+

@@ -29,7 +29,13 @@ import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, matchesHouseBrand } from '../data/catalogue';
 import { siteContent } from '../data/siteContent';
-import { getProductPriceSummary, matchesPriceRange } from '../utils/pricing';
+import { formatBranchName, getSingleBranchExclusive } from '../utils/branches';
+import {
+  getEffectiveUnitPrice,
+  getProductPriceSummary,
+  matchesPriceRange,
+  parseVolumeMl,
+} from '../utils/pricing';
 import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
 import {
   AppPage,
@@ -554,10 +560,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                 activeSlideProduct.onSpecial && activeSlideProduct.specialDiscountPercent
                   ? activeSlideProduct.specialDiscountPercent
                   : 0;
+              const activeSizes = [...activeSlideProduct.sizes]
+                .filter((s) => s.available)
+                .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
+              const activeSingleBranch = getSingleBranchExclusive(activeSlideProduct);
 
               return (
                 <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
-                  {/* Left Column — Campaign Headline, Special Countdown & Explore Special */}
+                  {/* Left Column — Campaign Headline, Special Countdown, Spotlight Prices & Buy Now */}
                   <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
                       {campaign.enabled && campaign.badgeText
@@ -573,8 +583,54 @@ export const HomePage: React.FC<HomePageProps> = ({
                     {/* Live Special Countdown (Days : Hours : Minutes : Seconds) */}
                     <HeroCountdown endsAt={campaign.endsAt} />
 
-                    {/* Single Primary Action */}
-                    <div className="pt-2 flex items-center justify-center lg:justify-start">
+                    {/* Spotlight Perfume Name, Branch Cue & Transparent Size Prices */}
+                    <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left">
+                      <p className="text-xs font-semibold text-white/90 truncate">
+                        {activeSlideProduct.name}{' '}
+                        <span className="text-white/55 font-normal">
+                          · {activeSlideProduct.brand}
+                          {activeSingleBranch
+                            ? ` · ${formatBranchName(activeSingleBranch)} Only`
+                            : ''}
+                        </span>
+                      </p>
+                      {activeSizes.length > 0 && (
+                        <p className="text-xs text-white/75 tabular-nums">
+                          {activeSizes.map((s, idx) => {
+                            const eff = getEffectiveUnitPrice(
+                              s.price,
+                              activeSlideProduct.onSpecial,
+                              activeSlideProduct.specialDiscountPercent
+                            );
+                            return (
+                              <React.Fragment key={`${activeSlideProduct.id}-hero-${s.size}`}>
+                                <span className="text-white/60">{s.size}</span>{' '}
+                                <span className="text-[#FACC15] font-semibold">
+                                  {eff !== null ? formatPrice(eff) : 'Ask'}
+                                </span>
+                                {idx < activeSizes.length - 1 && (
+                                  <span className="mx-1.5 text-white/30">·</span>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Hero Actions: Buy Now & Explore Special */}
+                    <div className="pt-1 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+                      <motion.button
+                        type="button"
+                        whileHover={{ y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => onQuickWhatsApp(activeSlideProduct)}
+                        className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Buy Now</span>
+                      </motion.button>
+
                       <motion.button
                         type="button"
                         whileHover={{ y: -2 }}
@@ -589,7 +645,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                             onlySpecials: true,
                           })
                         }
-                        className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+                        className="px-6 py-3.5 rounded-full border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0"
                       >
                         <span>Explore Special</span>
                         <ArrowRight className="w-3.5 h-3.5" />
@@ -758,6 +814,36 @@ export const HomePage: React.FC<HomePageProps> = ({
                                       </span>
                                     ) : null}
                                   </div>
+                                  {(() => {
+                                    const decant5 = product.sizes.find(
+                                      (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 5
+                                    );
+                                    const decant10 = product.sizes.find(
+                                      (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 10
+                                    );
+                                    if (!decant5 && !decant10) return null;
+                                    const p5 = decant5
+                                      ? getEffectiveUnitPrice(
+                                          decant5.price,
+                                          product.onSpecial,
+                                          product.specialDiscountPercent
+                                        )
+                                      : null;
+                                    const p10 = decant10
+                                      ? getEffectiveUnitPrice(
+                                          decant10.price,
+                                          product.onSpecial,
+                                          product.specialDiscountPercent
+                                        )
+                                      : null;
+                                    return (
+                                      <p className="text-[10px] text-[#525252] tabular-nums truncate">
+                                        {p5 !== null ? `5ml ${formatPrice(p5)}` : ''}
+                                        {p5 !== null && p10 !== null ? ' · ' : ''}
+                                        {p10 !== null ? `10ml ${formatPrice(p10)}` : ''}
+                                      </p>
+                                    );
+                                  })()}
                                 </div>
                               </motion.button>
                             </motion.div>
@@ -815,7 +901,19 @@ export const HomePage: React.FC<HomePageProps> = ({
               <p className="text-sm sm:text-base text-white/75 max-w-lg">
                 New seasonal special offers are updating soon. Explore our in-stock Arabian bottles and travel decants across Manzini and Mbabane.
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+                {availablePerfumes[0] && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => onQuickWhatsApp(availablePerfumes[0])}
+                    className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Buy Now</span>
+                  </motion.button>
+                )}
                 <motion.button
                   type="button"
                   whileHover={{ y: -2 }}
@@ -830,7 +928,11 @@ export const HomePage: React.FC<HomePageProps> = ({
                       onlySpecials: false,
                     })
                   }
-                  className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+                  className={`px-7 py-3.5 rounded-full transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 ${
+                    availablePerfumes[0]
+                      ? 'border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A]'
+                      : 'bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] shadow-[0_12px_30px_rgba(250,204,21,0.28)]'
+                  }`}
                 >
                   <span>Browse Available Catalogue</span>
                   <ArrowRight className="w-3.5 h-3.5" />

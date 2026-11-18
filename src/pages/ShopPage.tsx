@@ -13,8 +13,10 @@ import {
   matchesPriceRange,
 } from '../utils/pricing';
 import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
+import { isAvailableAtBranch } from '../utils/branches';
 import {
   BottleSize,
+  BranchStockFilter,
   FragranceCategory,
   FragranceProduct,
   PriceRangeFilter,
@@ -27,6 +29,7 @@ interface ShopPageProps {
   selectedSize: BottleSize | 'All';
   selectedPriceRange: PriceRangeFilter;
   selectedSeason: SeasonFilter;
+  selectedBranchFilter: BranchStockFilter;
   searchQuery: string;
   onlyInStock: boolean;
   onlySpecials: boolean;
@@ -36,6 +39,7 @@ interface ShopPageProps {
   onSizeChange: (size: BottleSize | 'All') => void;
   onPriceRangeChange: (range: PriceRangeFilter) => void;
   onSeasonChange: (season: SeasonFilter) => void;
+  onBranchFilterChange: (branch: BranchStockFilter) => void;
   onSearchChange: (q: string) => void;
   onOnlyInStockChange: (val: boolean) => void;
   onOnlySpecialsChange: (val: boolean) => void;
@@ -61,6 +65,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   selectedSize,
   selectedPriceRange,
   selectedSeason,
+  selectedBranchFilter,
   searchQuery,
   onlyInStock,
   onlySpecials,
@@ -70,6 +75,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onSizeChange,
   onPriceRangeChange,
   onSeasonChange,
+  onBranchFilterChange,
   onSearchChange,
   onOnlyInStockChange,
   onOnlySpecialsChange,
@@ -137,6 +143,9 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       if (selectedBrand !== 'All' && !matchesHouseBrand(product, selectedBrand)) {
         return false;
       }
+      if (selectedBranchFilter !== 'all' && !isAvailableAtBranch(product, selectedBranchFilter)) {
+        return false;
+      }
       if (selectedSize !== 'All') {
         const hasSize = product.sizes.some(
           (s) => s.size === selectedSize && s.available
@@ -189,6 +198,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     perfumes,
     selectedCategory,
     selectedBrand,
+    selectedBranchFilter,
     selectedSize,
     selectedPriceRange,
     selectedSeason,
@@ -204,6 +214,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   }, [
     selectedCategory,
     selectedBrand,
+    selectedBranchFilter,
     selectedSize,
     selectedPriceRange,
     selectedSeason,
@@ -245,6 +256,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   const hasActiveFilters =
     selectedCategory !== 'All' ||
     selectedBrand !== 'All' ||
+    selectedBranchFilter !== 'all' ||
     selectedSize !== 'All' ||
     selectedPriceRange !== 'all' ||
     selectedSeason !== 'all' ||
@@ -485,6 +497,36 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Store Branch Stock Filter */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#525252] mr-0.5">
+                Store:
+              </span>
+              {(
+                [
+                  { id: 'all', label: 'All Stores' },
+                  { id: 'manzini', label: 'Manzini' },
+                  { id: 'mbabane', label: 'Mbabane' },
+                ] as const
+              ).map((b) => {
+                const active = selectedBranchFilter === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => onBranchFilterChange(b.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+                      active
+                        ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                        : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                    }`}
+                  >
+                    {b.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <button
               type="button"
               onClick={() => onOnlyUnboxedChange(!onlyUnboxed)}

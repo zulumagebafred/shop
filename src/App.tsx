@@ -53,6 +53,7 @@ import {
   BasketItem,
   BottleSize,
   BranchId,
+  BranchStockFilter,
   ComboDeal,
   Coupon,
   DeliveryMethod,
@@ -108,6 +109,8 @@ function AppContent() {
   const [selectedSize, setSelectedSize] = useState<BottleSize | 'All'>('All');
   const [selectedPriceRange, setSelectedPriceRange] = useState<PriceRangeFilter>('all');
   const [selectedSeason, setSelectedSeason] = useState<SeasonFilter>('all');
+  const [selectedBranchFilter, setSelectedBranchFilter] =
+    useState<BranchStockFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
@@ -257,6 +260,7 @@ function AppContent() {
     selectedCategory,
     selectedPriceRange,
     selectedSeason,
+    selectedBranchFilter,
     onlySpecials,
     onlyUnboxed,
     forceScrollTopInstant,
@@ -322,6 +326,7 @@ function AppContent() {
       size?: BottleSize | 'All';
       priceRange?: PriceRangeFilter;
       season?: SeasonFilter;
+      branchFilter?: BranchStockFilter;
       query?: string;
       onlySpecials?: boolean;
       onlyUnboxed?: boolean;
@@ -333,6 +338,7 @@ function AppContent() {
       if (options?.size !== undefined) setSelectedSize(options.size);
       if (options?.priceRange !== undefined) setSelectedPriceRange(options.priceRange);
       if (options?.season !== undefined) setSelectedSeason(options.season);
+      if (options?.branchFilter !== undefined) setSelectedBranchFilter(options.branchFilter);
       if (options?.query !== undefined) setSearchQuery(options.query);
       if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
       if (options?.onlyUnboxed !== undefined) setOnlyUnboxed(options.onlyUnboxed);
@@ -358,6 +364,7 @@ function AppContent() {
     setSelectedSize('All');
     setSelectedPriceRange('all');
     setSelectedSeason('all');
+    setSelectedBranchFilter('all');
     setSearchQuery('');
     setOnlyInStock(false);
     setOnlySpecials(false);
@@ -662,6 +669,7 @@ function AppContent() {
                 selectedSize={selectedSize}
                 selectedPriceRange={selectedPriceRange}
                 selectedSeason={selectedSeason}
+                selectedBranchFilter={selectedBranchFilter}
                 searchQuery={searchQuery}
                 onlyInStock={onlyInStock}
                 onlySpecials={onlySpecials}
@@ -671,6 +679,7 @@ function AppContent() {
                 onSizeChange={setSelectedSize}
                 onPriceRangeChange={setSelectedPriceRange}
                 onSeasonChange={setSelectedSeason}
+                onBranchFilterChange={setSelectedBranchFilter}
                 onSearchChange={setSearchQuery}
                 onOnlyInStockChange={setOnlyInStock}
                 onOnlySpecialsChange={setOnlySpecials}

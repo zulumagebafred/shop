@@ -51,6 +51,7 @@ import {
   DEFAULT_WEEKLY_FIVE_ML_SPECIAL,
   getWeekWindowBounds,
 } from '../utils/weeklySpecial';
+import { normalizeBranches } from '../utils/branches';
 
 export const DEFAULT_CAMPAIGN: SpecialCampaign = {
   title: 'Black Friday Specials',
@@ -422,6 +423,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             },
             sizes: normalizeAndDedupeSizes(d.sizes),
             availability: d.availability ?? 'In Stock',
+            availableBranches: Array.isArray(d.availableBranches)
+              ? normalizeBranches(d.availableBranches)
+              : undefined,
             featured: Boolean(d.featured),
             bestseller: Boolean(d.bestseller),
             isUnboxed: Boolean(d.isUnboxed),
@@ -955,6 +959,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     const ref = doc(db, 'perfumes', id);
     const path = `perfumes/${id}`;
 
+    const cleanBranches =
+      input.availability === 'Out of Stock'
+        ? []
+        : normalizeBranches(input.availableBranches ?? ['manzini', 'mbabane']);
+
     const basePayload = {
       slug,
       isSampleListing: Boolean(input.isSampleListing),
@@ -971,6 +980,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       },
       sizes: sanitizedSizes,
       availability: input.availability,
+      availableBranches: cleanBranches,
       featured: Boolean(input.featured),
       bestseller: Boolean(input.bestseller),
       isUnboxed: Boolean(input.isUnboxed),
@@ -1069,6 +1079,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           },
           sizes: item.sizes.slice(0, 12),
           availability: item.availability,
+          availableBranches:
+            item.availability === 'Out of Stock'
+              ? []
+              : normalizeBranches(item.availableBranches ?? ['manzini', 'mbabane']),
           featured: item.featured,
           bestseller: item.bestseller,
           isUnboxed: Boolean(item.isUnboxed),

@@ -18,6 +18,7 @@ export const STANDARD_BOTTLE_SIZES: string[] = [
 export type AvailabilityStatus = 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Pre-Order';
 
 export type BranchId = 'manzini' | 'mbabane';
+export type BranchStockFilter = 'all' | BranchId;
 
 export type DeliveryMethod = 'store-pickup' | 'post-office' | 'driver-delivery';
 
@@ -58,6 +59,8 @@ export interface FragranceProduct {
   notes: FragranceNotes;
   sizes: SizeOption[];
   availability: AvailabilityStatus;
+  /** Stores where this perfume is currently stocked (defaults to both Manzini & Mbabane if omitted) */
+  availableBranches?: BranchId[];
   featured: boolean;
   bestseller: boolean;
   concentration: string;

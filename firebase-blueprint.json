@@ -88,6 +88,10 @@
           "type": "boolean",
           "description": "True if offered as an authentic unboxed / tester full bottle without retail outer box packaging"
         },
+        "availableBranches": {
+          "type": "array",
+          "description": "Store branch IDs where this perfume is currently stocked (manzini, mbabane)"
+        },
         "ownerUid": {
           "type": "string",
           "maxLength": 128,

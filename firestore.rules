@@ -60,6 +60,12 @@ service cloud.firestore {
         sizes[0].available is bool;
     }
 
+    function isValidBranchList(branches) {
+      return branches is list &&
+        branches.size() <= 2 &&
+        branches.hasOnly(['manzini', 'mbabane']);
+    }
+
     function isValidPerfume(data) {
       return data.keys().hasAll([
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
@@ -69,7 +75,7 @@ service cloud.firestore {
       ]) &&
       data.keys().hasOnly([
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
-        'description', 'image', 'notes', 'sizes', 'availability', 'featured',
+        'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
         'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent',
         'isUnboxed',
         'ownerUid', 'createdAt', 'updatedAt'
@@ -90,6 +96,7 @@ service cloud.firestore {
       isValidNoteList(data.notes.base) &&
       isValidSizeList(data.sizes) &&
       data.availability in ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'] &&
+      (!('availableBranches' in data) || isValidBranchList(data.availableBranches)) &&
       data.featured is bool &&
       data.bestseller is bool &&
       data.onSpecial is bool &&
@@ -310,7 +317,7 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
-          'description', 'image', 'notes', 'sizes', 'availability', 'featured',
+          'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
           'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent', 'isUnboxed', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(perfumeId);
