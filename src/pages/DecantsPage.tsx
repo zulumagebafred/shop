@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
-import { ResilientImage } from '../components/ResilientImage';
+import { DecantLineupViewer, DecantViewerSelection } from '../components/DecantLineupViewer';
 import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { siteContent } from '../data/siteContent';
 import {
@@ -30,6 +30,9 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
   onSelectProduct,
   onAddWeeklyPackToBasket,
 }) => {
+  const [selectedViewerSize, setSelectedViewerSize] =
+    useState<DecantViewerSelection>('all');
+
   return (
     <div className="py-12 sm:py-16 space-y-12 sm:space-y-16">
       {/* Header split */}
@@ -44,11 +47,28 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
           <p className="text-base text-[#404040] leading-relaxed">
             {siteContent.decantsSection.description}
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap items-center gap-2">
+            {siteContent.decantsSection.tiers.map((tier) => {
+              const active = selectedViewerSize === tier.size;
+              return (
+                <button
+                  key={tier.size}
+                  type="button"
+                  onClick={() => setSelectedViewerSize(tier.size)}
+                  className={`px-4 py-2 rounded-full text-xs font-semibold tabular-nums border transition-colors ${
+                    active
+                      ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                      : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                  }`}
+                >
+                  {tier.size}
+                </button>
+              );
+            })}
             <button
               type="button"
               onClick={onExploreShop}
-              className="px-7 py-3.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-[0.14em] inline-flex items-center gap-2"
+              className="px-6 py-2.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-[0.14em] inline-flex items-center gap-2"
             >
               <span>Browse All Fragrances</span>
               <ArrowRight className="w-4 h-4" />
@@ -56,14 +76,10 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
           </div>
         </div>
 
-        <div className="lg:col-span-6 aspect-[4/3] rounded-3xl bg-[#F5F5F5] border border-[#E5E5E5] overflow-hidden">
-          <ResilientImage
-            src={siteContent.decantsSection.image}
-            alt="5ml, 10ml, 22ml decants and 100ml Arabian perfume bottle"
-            fallbackTitle="AuraHut Co. Decant Sizes"
-            loading="eager"
-            fetchPriority="high"
-            className="w-full h-full object-cover"
+        <div className="lg:col-span-6 max-w-md lg:max-w-none mx-auto w-full">
+          <DecantLineupViewer
+            selectedSize={selectedViewerSize}
+            onSelectSize={setSelectedViewerSize}
           />
         </div>
       </div>
@@ -81,51 +97,62 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
             Four Ways to Wear AuraHut Co.
           </h2>
           <p className="text-sm text-[#525252] mt-1">
-            Select any size below to view fragrances currently offered in that format.
+            Select any size below to preview its bottle above or browse fragrances offered in that format.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {siteContent.decantsSection.tiers.map((tier) => (
-            <div
-              key={tier.size}
-              className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-6 sm:p-7 flex flex-col justify-between space-y-6"
-            >
-              <div className="space-y-3">
-                <div className="flex items-baseline justify-between border-b border-[#E5E5E5] pb-3">
-                  <span className="text-3xl font-bold text-[#0A0A0A] tabular-nums">
-                    {tier.size}
-                  </span>
-                  <span className="text-xs font-medium text-[#525252] tabular-nums">
-                    {tier.spraysEstimate}
-                  </span>
+          {siteContent.decantsSection.tiers.map((tier) => {
+            const active = selectedViewerSize === tier.size;
+            return (
+              <div
+                key={tier.size}
+                onClick={() => setSelectedViewerSize(tier.size)}
+                className={`rounded-2xl p-6 sm:p-7 flex flex-col justify-between space-y-6 border transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-white border-[#0A0A0A] shadow-sm'
+                    : 'bg-[#F6F6F7] border-[#E5E5E5] hover:border-[#0A0A0A]/50'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between border-b border-[#E5E5E5] pb-3">
+                    <span className="text-3xl font-bold text-[#0A0A0A] tabular-nums">
+                      {tier.size}
+                    </span>
+                    <span className="text-xs font-medium text-[#525252] tabular-nums">
+                      {tier.spraysEstimate}
+                    </span>
+                  </div>
+
+                  <h3 className="text-lg font-bold text-[#0A0A0A]">
+                    {tier.title}
+                  </h3>
+
+                  <p className="text-sm text-[#404040] leading-relaxed">
+                    {tier.summary}
+                  </p>
                 </div>
 
-                <h3 className="text-lg font-bold text-[#0A0A0A]">
-                  {tier.title}
-                </h3>
-
-                <p className="text-sm text-[#404040] leading-relaxed">
-                  {tier.summary}
-                </p>
+                <div className="space-y-4 pt-2">
+                  <p className="text-xs text-[#0A0A0A] flex items-center gap-1.5 font-medium">
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>{tier.idealFor}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onBrowseSize(tier.size);
+                    }}
+                    className="w-full py-2.5 px-4 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2"
+                  >
+                    <span>Filter {tier.size}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-
-              <div className="space-y-4 pt-2">
-                <p className="text-xs text-[#0A0A0A] flex items-center gap-1.5 font-medium">
-                  <Check className="w-3.5 h-3.5 shrink-0" />
-                  <span>{tier.idealFor}</span>
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onBrowseSize(tier.size)}
-                  className="w-full py-2.5 px-4 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-2"
-                >
-                  <span>Filter {tier.size}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

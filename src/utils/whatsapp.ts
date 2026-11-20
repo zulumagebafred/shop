@@ -7,8 +7,11 @@ import {
   DeliveryMethod,
   DRIVER_DELIVERY_FEE,
   FragranceProduct,
+  InfluencerReferral,
+  PublicReferral,
 } from '../types/fragrance';
-import { calculateCouponDiscount } from './pricing';
+import { calculateCouponDiscount, calculateReferralBenefit } from './pricing';
+import { sanitizeText } from './sanitize';
 
 export interface SingleOrderPayload {
   product: FragranceProduct;
@@ -18,6 +21,7 @@ export interface SingleOrderPayload {
   unitPrice: number | null;
   originalUnitPrice?: number | null;
   appliedCoupon?: Coupon | null;
+  appliedReferral?: PublicReferral | InfluencerReferral | null;
   deliveryMethod?: DeliveryMethod;
   postOfficeTown?: string;
   deliveryAddress?: string;
@@ -39,7 +43,7 @@ export function formatDeliverySummary(
   deliveryAddress?: string
 ): string[] {
   if (deliveryMethod === 'post-office') {
-    const town = postOfficeTown?.trim() || 'To confirm';
+    const town = sanitizeText(postOfficeTown ?? '', 80) || 'To confirm';
     return [
       `• Delivery Method: Post Office`,
       `• Destination Town: ${town}`,
@@ -47,12 +51,13 @@ export function formatDeliverySummary(
     ];
   }
   if (deliveryMethod === 'driver-delivery') {
+    const cleanAddr = sanitizeText(deliveryAddress ?? '', 200);
     const lines = [
       `• Delivery Method: Driver Delivery (+${formatPrice(DRIVER_DELIVERY_FEE)})`,
       `• Dispatch Store: ${branchName}`,
     ];
-    if (deliveryAddress && deliveryAddress.trim().length > 0) {
-      lines.push(`• Delivery Area / Address: ${deliveryAddress.trim()}`);
+    if (cleanAddr.length > 0) {
+      lines.push(`• Delivery Area / Address: ${cleanAddr}`);
     }
     return lines;
   }
@@ -86,8 +91,14 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
 
   const itemsAfterCoupon =
     couponSummary && couponSummary.valid ? couponSummary.finalTotal : lineTotal;
+  const referralBenefit =
+    payload.appliedReferral && itemsAfterCoupon !== null
+      ? calculateReferralBenefit(itemsAfterCoupon, payload.appliedReferral)
+      : null;
+  const itemsAfterAllDiscounts =
+    referralBenefit !== null ? referralBenefit.netOrderAmount : itemsAfterCoupon;
   const finalPayable =
-    itemsAfterCoupon !== null ? itemsAfterCoupon + deliveryFee : null;
+    itemsAfterAllDiscounts !== null ? itemsAfterAllDiscounts + deliveryFee : null;
 
   const unboxedLabel = payload.product.isUnboxed ? ' (Unboxed · No Retail Box)' : '';
   const lines = [
@@ -111,6 +122,22 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     );
   }
 
+  if (payload.appliedReferral && payload.appliedReferral.active) {
+    const handlePart = payload.appliedReferral.socialHandle
+      ? ` · ${payload.appliedReferral.socialHandle}`
+      : '';
+    lines.push(
+      `• Referral Code: ${payload.appliedReferral.code} (${payload.appliedReferral.influencerName}${handlePart})`
+    );
+    if (referralBenefit && referralBenefit.discountAmount > 0) {
+      lines.push(
+        `• Influencer Follower Perk (${payload.appliedReferral.code}): -${formatPrice(
+          referralBenefit.discountAmount
+        )}`
+      );
+    }
+  }
+
   lines.push(
     ...formatDeliverySummary(
       deliveryMethod,
@@ -124,13 +151,21 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     lines.push(`• Driver Delivery Fee: +${formatPrice(deliveryFee)}`);
   }
 
-  if (finalPayable !== null && (deliveryFee > 0 || (couponSummary && couponSummary.valid))) {
-    lines.push(`• Total Amount: ${formatPrice(finalPayable)}`);
+  if (
+    finalPayable !== null &&
+    (deliveryFee > 0 ||
+      (couponSummary && couponSummary.valid) ||
+      (referralBenefit && referralBenefit.discountAmount > 0))
+  ) {
+    lines.push(`• Estimated Order Quote: ${formatPrice(finalPayable)}`);
   } else if (finalPayable === null && deliveryFee > 0) {
     lines.push(`• Driver Delivery Charge: +${formatPrice(deliveryFee)} (plus item price)`);
   }
 
-  lines.push('', 'Please confirm stock availability and pickup/delivery arrangement.');
+  lines.push(
+    '',
+    'Note: Amounts above are unverified estimates — our store staff will confirm live prices, promo eligibility & stock in chat.'
+  );
 
   return lines.join('\n');
 }
@@ -142,7 +177,8 @@ export function buildBasketWhatsAppMessage(
   appliedCoupon?: Coupon | null,
   deliveryMethod: DeliveryMethod = 'store-pickup',
   postOfficeTown?: string,
-  deliveryAddress?: string
+  deliveryAddress?: string,
+  appliedReferral?: PublicReferral | InfluencerReferral | null
 ): string {
   const branchName = getBranchName(branchId);
   const deliveryFee = getDeliveryFee(deliveryMethod);
@@ -159,13 +195,18 @@ export function buildBasketWhatsAppMessage(
     return [
       `${idx + 1}. ${item.productName}${unboxedTag}${specialNote}`,
       `   Brand: ${item.brand}`,
-      `   Details: ${item.size} | Qty: ${item.quantity} | Price: ${formatPrice(lineTotal)}`,
+      `   Details: ${item.size} | Unit: ${formatPrice(item.unitPrice)} | Qty: ${item.quantity} | Est. Line: ${formatPrice(lineTotal)}`,
     ].join('\n');
   });
 
   const itemsAfterCoupon =
     appliedCoupon && couponCalc.valid ? couponCalc.finalTotal : couponCalc.subtotal;
-  const finalTotal = itemsAfterCoupon + deliveryFee;
+  const referralBenefit = calculateReferralBenefit(itemsAfterCoupon, appliedReferral ?? null);
+  const itemsAfterDiscounts =
+    appliedReferral && appliedReferral.active
+      ? referralBenefit.netOrderAmount
+      : itemsAfterCoupon;
+  const finalTotal = itemsAfterDiscounts + deliveryFee;
 
   const lines = [
     siteConfig.whatsapp.defaultGreeting,
@@ -186,23 +227,43 @@ export function buildBasketWhatsAppMessage(
     );
   }
 
+  if (appliedReferral && appliedReferral.active) {
+    const handlePart = appliedReferral.socialHandle
+      ? ` · ${appliedReferral.socialHandle}`
+      : '';
+    lines.push(
+      `Referral Code: ${appliedReferral.code} (${appliedReferral.influencerName}${handlePart})`
+    );
+    if (referralBenefit.discountAmount > 0) {
+      lines.push(
+        `Influencer Follower Perk (${appliedReferral.code}): -${formatPrice(
+          referralBenefit.discountAmount
+        )}`
+      );
+    }
+  }
+
   if (deliveryFee > 0) {
     lines.push(`Driver Delivery Fee: +${formatPrice(deliveryFee)}`);
   }
 
   lines.push(
-    `Total: ${
+    `Estimated Order Quote: ${
       hasUnpricedItem
         ? `${formatPrice(finalTotal)} + items priced on request`
         : formatPrice(finalTotal)
     }`
   );
 
-  if (customerNote && customerNote.trim().length > 0) {
-    lines.push(`Customer Note: ${customerNote.trim()}`);
+  const cleanNote = sanitizeText(customerNote ?? '', 240);
+  if (cleanNote.length > 0) {
+    lines.push(`Customer Note: ${cleanNote}`);
   }
 
-  lines.push('', 'Please confirm availability for this order.');
+  lines.push(
+    '',
+    'Unverified quote estimate — AuraHut Co. staff will verify live prices, promo eligibility & stock before payment.'
+  );
 
   return lines.join('\n');
 }

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, Search, X } from 'lucide-react';
 import { formatPrice } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { FragranceProduct } from '../types/fragrance';
-import { getProductPriceSummary } from '../utils/pricing';
+import { getProductPriceSummary, parseVolumeMl } from '../utils/pricing';
+import { sanitizeSearchQuery } from '../utils/sanitize';
 import { ResilientImage } from './ResilientImage';
 
 interface SearchOverlayProps {
@@ -20,17 +21,19 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
   onSelectProduct,
   onViewAllResults,
 }) => {
-  const { perfumes } = useStore();
+  const { perfumes, ensureAllPerfumesLoaded } = useStore();
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
+      void ensureAllPerfumesLoaded();
       setTimeout(() => inputRef.current?.focus(), 60);
     } else {
       setQuery('');
     }
-  }, [isOpen]);
+  }, [isOpen, ensureAllPerfumesLoaded]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -41,25 +44,27 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
   }, [isOpen, onClose]);
 
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = sanitizeSearchQuery(deferredQuery).trim().toLowerCase();
     if (!q) {
       return perfumes
         .filter((item) => item.availability !== 'Out of Stock')
         .slice(0, 4);
     }
     return perfumes.filter((item) => {
-      const notesText = [...item.notes.top, ...item.notes.heart, ...item.notes.base]
-        .join(' ')
-        .toLowerCase();
-      return (
+      if (
         item.name.toLowerCase().includes(q) ||
         item.brand.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        notesText.includes(q)
-      );
+        item.description.toLowerCase().includes(q)
+      ) {
+        return true;
+      }
+      const notesText = [...item.notes.top, ...item.notes.heart, ...item.notes.base]
+        .join(' ')
+        .toLowerCase();
+      return notesText.includes(q);
     });
-  }, [query, perfumes]);
+  }, [deferredQuery, perfumes]);
 
   return (
     <AnimatePresence>
@@ -90,7 +95,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                   ref={inputRef}
                   type="text"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => setQuery(sanitizeSearchQuery(e.target.value))}
                   placeholder="Search by perfume name, house (e.g. Lattafa, Armaf), note, or category..."
                   className="w-full bg-transparent text-[#0A0A0A] placeholder:text-[#737373] text-base sm:text-lg focus:outline-none"
                 />
@@ -134,6 +139,10 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
                     {matches.slice(0, 24).map((item) => {
                       const { highestEffective, highestSize } = getProductPriceSummary(item);
+                      const availableSizes = [...item.sizes]
+                        .filter((s) => s.available && s.size.trim())
+                        .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size))
+                        .map((s) => s.size.trim());
 
                       return (
                         <button
@@ -150,7 +159,8 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                               src={item.image}
                               alt={item.name}
                               fallbackTitle={item.name}
-                              loading="eager"
+                              loading="lazy"
+                              variant="thumb"
                               className="w-full h-full object-cover"
                             />
                           </div>
@@ -166,13 +176,18 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
                             <p className="text-sm font-semibold text-[#0A0A0A] truncate">
                               {item.name}
                             </p>
-                            <p className="text-xs text-[#525252] tabular-nums mt-0.5">
+                            <p className="text-xs font-medium text-[#0A0A0A] tabular-nums mt-0.5">
                               {highestEffective === null
                                 ? 'Price on Request'
                                 : highestSize
                                 ? `${highestSize} · ${formatPrice(highestEffective)}`
                                 : formatPrice(highestEffective)}
                             </p>
+                            {availableSizes.length > 0 && (
+                              <p className="text-[11px] text-[#737373] tabular-nums mt-0.5">
+                                {availableSizes.join(' · ')}
+                              </p>
+                            )}
                           </div>
                         </button>
                       );

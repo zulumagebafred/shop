@@ -55,7 +55,7 @@ export const siteContent = {
         label: 'Rasasi · Crisp Cedar & Woods',
       },
       {
-        image: '/assets/images/decant_collection_1794676715190.jpg',
+        image: '/assets/aistudio/image_123e2ff5.png',
         alt: '5ml, 10ml, 22ml Travel Decants and Full Bottle',
         label: 'Travel Decants · 5ml to Full Bottle',
       },
@@ -103,7 +103,7 @@ export const siteContent = {
     headline: 'Live With a Scent for Weeks Before Buying the Full Bottle',
     description:
       'True Arabian perfumery unfolds over eight to twelve hours on skin. Every AuraHut Co. decant is measured cleanly from original house bottles into thick glass atomizers—letting a scent become part of your real week before a full flacon sits on your dresser.',
-    image: '/assets/images/decant_collection_1794676715190.jpg',
+    image: '/assets/aistudio/image_123e2ff5.png',
     tiers: [
       {
         size: '5ml',

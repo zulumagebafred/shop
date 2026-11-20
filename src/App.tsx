@@ -5,13 +5,15 @@
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, RefreshCw } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
 import { ToastData, ToastNotification } from './components/ToastNotification';
-import { getPrivatePortalSlug, siteConfig } from './config/siteConfig';
+import { getConfiguredPortalSlug, matchesPrivatePortalSlug, siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { HomePage } from './pages/HomePage';
+import { sanitizeAddress, sanitizePromoCode, sanitizeText } from './utils/sanitize';
 
 const ShopPage = lazy(() =>
   import('./pages/ShopPage').then((m) => ({ default: m.ShopPage }))
@@ -60,7 +62,9 @@ import {
   FragranceCategory,
   FragranceProduct,
   GiftHamper,
+  InfluencerReferral,
   PriceRangeFilter,
+  PublicReferral,
   SeasonFilter,
   WeeklyFiveMlAudience,
   WeeklyFiveMlPackMode,
@@ -71,16 +75,124 @@ const BASKET_STORAGE_KEY = 'aurahut_whatsapp_basket_v1';
 const BRANCH_STORAGE_KEY = 'aurahut_preferred_branch_v1';
 const DELIVERY_METHOD_STORAGE_KEY = 'aurahut_delivery_method_v1';
 const POST_OFFICE_TOWN_STORAGE_KEY = 'aurahut_post_office_town_v1';
+const REFERRAL_STORAGE_KEY = 'aurahut_referral_code_v1';
+const CLIENT_STORAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const PRIVATE_PORTAL_SLUG = getPrivatePortalSlug();
+interface StoredTtlEnvelope<T> {
+  v: 2;
+  expiresAt: number;
+  data: T;
+}
+
+function writeStorageWithTtl<T>(key: string, data: T): void {
+  try {
+    const payload: StoredTtlEnvelope<T> = {
+      v: 2,
+      expiresAt: Date.now() + CLIENT_STORAGE_TTL_MS,
+      data,
+    };
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch {
+    // Ignore storage quota / private-browsing errors
+  }
+}
+
+function readStorageWithTtl<T>(
+  key: string,
+  validate: (raw: unknown) => T | null
+): T | null {
+  try {
+    const rawStr = localStorage.getItem(key);
+    if (!rawStr) return null;
+
+    let parsed: unknown = rawStr;
+    if (rawStr.startsWith('{') || rawStr.startsWith('[') || rawStr.startsWith('"')) {
+      try {
+        parsed = JSON.parse(rawStr);
+      } catch {
+        parsed = rawStr;
+      }
+    }
+
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      (parsed as Partial<StoredTtlEnvelope<unknown>>).v === 2 &&
+      typeof (parsed as Partial<StoredTtlEnvelope<unknown>>).expiresAt === 'number'
+    ) {
+      const env = parsed as StoredTtlEnvelope<unknown>;
+      if (Date.now() > env.expiresAt) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return validate(env.data);
+    }
+
+    // Legacy v1 un-wrapped value: validate and upgrade in-place with 24h TTL
+    const validated = validate(parsed);
+    if (validated !== null) {
+      writeStorageWithTtl(key, validated);
+      return validated;
+    }
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage read/parse errors
+  }
+  return null;
+}
+
+function validateStoredBasket(raw: unknown): BasketItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const clean: BasketItem[] = [];
+  for (const entry of raw.slice(0, 60)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Partial<BasketItem>;
+    const productId = sanitizeText(String(item.productId ?? ''), 120);
+    const productName = sanitizeText(String(item.productName ?? ''), 160);
+    const size = sanitizeText(String(item.size ?? ''), 80);
+    if (!productId || !productName || !size) continue;
+    const qty = Math.min(50, Math.max(1, Math.floor(Number(item.quantity) || 1)));
+    const unitPrice =
+      item.unitPrice === null
+        ? null
+        : typeof item.unitPrice === 'number' &&
+          Number.isFinite(item.unitPrice) &&
+          item.unitPrice >= 0
+        ? item.unitPrice
+        : null;
+    const originalUnitPrice =
+      item.originalUnitPrice === null || item.originalUnitPrice === undefined
+        ? null
+        : typeof item.originalUnitPrice === 'number' &&
+          Number.isFinite(item.originalUnitPrice) &&
+          item.originalUnitPrice >= 0
+        ? item.originalUnitPrice
+        : null;
+    clean.push({
+      productId,
+      productName,
+      brand: sanitizeText(String(item.brand ?? ''), 80),
+      image: sanitizeText(String(item.image ?? ''), 600),
+      size,
+      unitPrice,
+      originalUnitPrice,
+      onSpecial: Boolean(item.onSpecial),
+      specialDiscountPercent:
+        typeof item.specialDiscountPercent === 'number' &&
+        Number.isFinite(item.specialDiscountPercent)
+          ? Math.min(90, Math.max(0, item.specialDiscountPercent))
+          : undefined,
+      isUnboxed: Boolean(item.isUnboxed),
+      quantity: qty,
+      isSampleListing: Boolean(item.isSampleListing),
+    });
+  }
+  return clean;
+}
 
 function isPrivatePortalLocation(pathname: string, hash: string): boolean {
-  const normalizedHash = hash.toLowerCase();
-  const normalizedPath = pathname.toLowerCase().replace(/\/+$/, '') || '/';
-  return (
-    normalizedHash === `#${PRIVATE_PORTAL_SLUG}` ||
-    normalizedPath === `/${PRIVATE_PORTAL_SLUG}`
-  );
+  return matchesPrivatePortalSlug(hash) || matchesPrivatePortalSlug(pathname);
 }
 
 function detectInitialPage(): AppPage {
@@ -92,7 +204,14 @@ function detectInitialPage(): AppPage {
 }
 
 function AppContent() {
-  const { perfumes } = useStore();
+  const {
+    perfumes,
+    lookupReferralByCode,
+    catalogueError,
+    usingSampleFallback,
+    retryCatalogueSync,
+  } = useStore();
+  const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
 
   const [currentPage, setCurrentPage] = useState<AppPage>(detectInitialPage);
   const [selectedProductId, setSelectedProductId] = useState<string>(
@@ -121,86 +240,60 @@ function AppContent() {
   const [basketOpen, setBasketOpen] = useState(false);
   const [quickOrderProduct, setQuickOrderProduct] = useState<FragranceProduct | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [appliedReferral, setAppliedReferral] = useState<
+    PublicReferral | InfluencerReferral | null
+  >(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
 
-  // Basket, Branch & Delivery State
+  // Basket, Branch & Delivery State (24h TTL on shared devices)
   const [selectedBranch, setSelectedBranch] = useState<BranchId>(() => {
-    try {
-      const saved = localStorage.getItem(BRANCH_STORAGE_KEY);
-      if (saved === 'manzini' || saved === 'mbabane') return saved;
-    } catch {
-      // Ignore storage errors
-    }
-    return siteConfig.defaultBranch;
+    return (
+      readStorageWithTtl<BranchId>(BRANCH_STORAGE_KEY, (raw) =>
+        raw === 'manzini' || raw === 'mbabane' ? raw : null
+      ) ?? siteConfig.defaultBranch
+    );
   });
 
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>(() => {
-    try {
-      const saved = localStorage.getItem(DELIVERY_METHOD_STORAGE_KEY);
-      if (saved === 'store-pickup' || saved === 'post-office' || saved === 'driver-delivery') {
-        return saved;
-      }
-    } catch {
-      // Ignore storage errors
-    }
-    return 'store-pickup';
+    return (
+      readStorageWithTtl<DeliveryMethod>(DELIVERY_METHOD_STORAGE_KEY, (raw) =>
+        raw === 'store-pickup' || raw === 'post-office' || raw === 'driver-delivery'
+          ? raw
+          : null
+      ) ?? 'store-pickup'
+    );
   });
 
   const [postOfficeTown, setPostOfficeTown] = useState<string>(() => {
-    try {
-      return localStorage.getItem(POST_OFFICE_TOWN_STORAGE_KEY) ?? '';
-    } catch {
-      return '';
-    }
+    return (
+      readStorageWithTtl<string>(POST_OFFICE_TOWN_STORAGE_KEY, (raw) =>
+        typeof raw === 'string' ? sanitizeText(raw, 80) : null
+      ) ?? ''
+    );
   });
 
   const [deliveryAddress, setDeliveryAddress] = useState<string>('');
 
   const [basketItems, setBasketItems] = useState<BasketItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(BASKET_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // Ignore storage errors
-    }
-    return [];
+    return readStorageWithTtl<BasketItem[]>(BASKET_STORAGE_KEY, validateStoredBasket) ?? [];
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(BASKET_STORAGE_KEY, JSON.stringify(basketItems));
-    } catch {
-      // Ignore storage errors
-    }
+    writeStorageWithTtl(BASKET_STORAGE_KEY, basketItems);
   }, [basketItems]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(BRANCH_STORAGE_KEY, selectedBranch);
-    } catch {
-      // Ignore storage errors
-    }
+    writeStorageWithTtl(BRANCH_STORAGE_KEY, selectedBranch);
   }, [selectedBranch]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(DELIVERY_METHOD_STORAGE_KEY, deliveryMethod);
-    } catch {
-      // Ignore storage errors
-    }
+    writeStorageWithTtl(DELIVERY_METHOD_STORAGE_KEY, deliveryMethod);
   }, [deliveryMethod]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(POST_OFFICE_TOWN_STORAGE_KEY, postOfficeTown);
-    } catch {
-      // Ignore storage errors
-    }
+    writeStorageWithTtl(POST_OFFICE_TOWN_STORAGE_KEY, postOfficeTown);
   }, [postOfficeTown]);
 
   const forceScrollTopInstant = useCallback(() => {
@@ -222,15 +315,23 @@ function AppContent() {
     };
     window.addEventListener('pageshow', onPageShow);
 
-    // Preload high-traffic views shortly after mount so mobile route switches never flash fallback height
-    const preloadTimer = window.setTimeout(() => {
-      void import('./pages/ShopPage');
-      void import('./pages/ProductDetailPage');
-    }, 600);
+    // Preload high-traffic views shortly after mount only on non-constrained connections
+    const conn = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    const constrainedConnection = Boolean(
+      conn?.saveData || conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g'
+    );
+    const preloadTimer = constrainedConnection
+      ? 0
+      : window.setTimeout(() => {
+          void import('./pages/ShopPage');
+          void import('./pages/ProductDetailPage');
+        }, 800);
 
     return () => {
       window.removeEventListener('pageshow', onPageShow);
-      window.clearTimeout(preloadTimer);
+      if (preloadTimer) window.clearTimeout(preloadTimer);
     };
   }, [forceScrollTopInstant]);
 
@@ -304,7 +405,7 @@ function AppContent() {
     }
   }, [currentPage]);
 
-  const showToast = (title: string, subtitle: string) => {
+  const showToast = useCallback((title: string, subtitle: string) => {
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
     }
@@ -312,53 +413,122 @@ function AppContent() {
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
     }, 3600);
-  };
+  }, []);
+
+  const handleApplyReferral = useCallback(
+    (referral: PublicReferral | InfluencerReferral | null) => {
+      setAppliedReferral(referral);
+      try {
+        if (referral) {
+          writeStorageWithTtl(REFERRAL_STORAGE_KEY, referral.code);
+        } else {
+          localStorage.removeItem(REFERRAL_STORAGE_KEY);
+        }
+      } catch {
+        // Ignore storage errors
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(window.location.search);
+    const urlRefCode = params.get('ref')?.trim() ?? '';
+    const storedRefCode =
+      readStorageWithTtl<string>(REFERRAL_STORAGE_KEY, (raw) =>
+        typeof raw === 'string' ? sanitizePromoCode(raw, 32) || null : null
+      ) ?? '';
+
+    const candidateCode = urlRefCode || storedRefCode;
+    if (!candidateCode) return;
+
+    void (async () => {
+      try {
+        const { referral } = await lookupReferralByCode(candidateCode);
+        if (!active) return;
+        if (referral && referral.active) {
+          handleApplyReferral(referral);
+          if (urlRefCode) {
+            const cleanedUrl = new URL(window.location.href);
+            cleanedUrl.searchParams.delete('ref');
+            window.history.replaceState(
+              null,
+              '',
+              `${cleanedUrl.pathname}${cleanedUrl.search}${cleanedUrl.hash}`
+            );
+            showToast(
+              'Influencer Code Applied',
+              `${referral.code} · Referred by ${referral.influencerName}`
+            );
+          }
+        } else if (!urlRefCode && storedRefCode) {
+          localStorage.removeItem(REFERRAL_STORAGE_KEY);
+        }
+      } catch {
+        // Ignore network errors while resolving optional referral code
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [lookupReferralByCode, handleApplyReferral, showToast]);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNavigate = (
-    page: AppPage,
-    options?: {
-      category?: FragranceCategory | 'All';
-      brand?: string;
-      size?: BottleSize | 'All';
-      priceRange?: PriceRangeFilter;
-      season?: SeasonFilter;
-      branchFilter?: BranchStockFilter;
-      query?: string;
-      onlySpecials?: boolean;
-      onlyUnboxed?: boolean;
-    }
-  ) => {
-    if (page === 'shop') {
-      if (options?.category !== undefined) setSelectedCategory(options.category);
-      if (options?.brand !== undefined) setSelectedBrand(options.brand);
-      if (options?.size !== undefined) setSelectedSize(options.size);
-      if (options?.priceRange !== undefined) setSelectedPriceRange(options.priceRange);
-      if (options?.season !== undefined) setSelectedSeason(options.season);
-      if (options?.branchFilter !== undefined) setSelectedBranchFilter(options.branchFilter);
-      if (options?.query !== undefined) setSearchQuery(options.query);
-      if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
-      if (options?.onlyUnboxed !== undefined) setOnlyUnboxed(options.onlyUnboxed);
-    }
-    if (page === 'admin') {
-      window.history.replaceState(null, '', `#${PRIVATE_PORTAL_SLUG}`);
-    } else if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
-      window.history.replaceState(null, '', '/');
-    }
-    setCurrentPage(page);
-    forceScrollTopInstant();
-  };
+  const handleNavigate = useCallback(
+    (
+      page: AppPage,
+      options?: {
+        category?: FragranceCategory | 'All';
+        brand?: string;
+        size?: BottleSize | 'All';
+        priceRange?: PriceRangeFilter;
+        season?: SeasonFilter;
+        branchFilter?: BranchStockFilter;
+        query?: string;
+        onlySpecials?: boolean;
+        onlyUnboxed?: boolean;
+      }
+    ) => {
+      if (page === 'shop') {
+        if (options?.category !== undefined) setSelectedCategory(options.category);
+        if (options?.brand !== undefined) setSelectedBrand(options.brand);
+        if (options?.size !== undefined) setSelectedSize(options.size);
+        if (options?.priceRange !== undefined) setSelectedPriceRange(options.priceRange);
+        if (options?.season !== undefined) setSelectedSeason(options.season);
+        if (options?.branchFilter !== undefined) setSelectedBranchFilter(options.branchFilter);
+        if (options?.query !== undefined) setSearchQuery(options.query);
+        if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
+        if (options?.onlyUnboxed !== undefined) setOnlyUnboxed(options.onlyUnboxed);
+      }
+      if (page === 'admin') {
+        const configured = getConfiguredPortalSlug();
+        if (configured) {
+          window.history.replaceState(null, '', `#${configured}`);
+        }
+      } else if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
+        window.history.replaceState(null, '', '/');
+      }
+      setCurrentPage(page);
+      forceScrollTopInstant();
+    },
+    [forceScrollTopInstant]
+  );
 
-  const handleSelectProduct = (product: FragranceProduct) => {
-    setSelectedProductId(product.id);
-    setCurrentPage('product');
-    forceScrollTopInstant();
-  };
+  const handleSelectProduct = useCallback(
+    (product: FragranceProduct) => {
+      setSelectedProductId(product.id);
+      setCurrentPage('product');
+      forceScrollTopInstant();
+    },
+    [forceScrollTopInstant]
+  );
 
-  const handleResetFilters = () => {
+  const handleResetFilters = useCallback(() => {
     setSelectedCategory('All');
     setSelectedBrand('All');
     setSelectedSize('All');
@@ -369,62 +539,69 @@ function AppContent() {
     setOnlyInStock(false);
     setOnlySpecials(false);
     setOnlyUnboxed(false);
-  };
+  }, []);
 
-  const handleAddToBasket = (
-    product: FragranceProduct,
-    size: BottleSize,
-    quantity: number
-  ) => {
-    const sizeOption = product.sizes.find((s) => s.size === size);
-    const rawPrice = sizeOption?.price ?? null;
-    const unitPrice = getEffectiveUnitPrice(
-      rawPrice,
-      product.onSpecial,
-      product.specialDiscountPercent
-    );
+  const handleQuickWhatsApp = useCallback((p: FragranceProduct) => {
+    setQuickOrderProduct(p);
+  }, []);
 
-    setBasketItems((prev) => {
-      const existingIndex = prev.findIndex(
-        (item) => item.productId === product.id && item.size === size
+  const handleDeliveryAddressChange = useCallback((next: string) => {
+    setDeliveryAddress(sanitizeAddress(next));
+  }, []);
+
+  const handleAddToBasketWrapped = useCallback(
+    (product: FragranceProduct, size: BottleSize, quantity: number) => {
+      const sizeOption = product.sizes.find((s) => s.size === size);
+      const rawPrice = sizeOption?.price ?? null;
+      const unitPrice = getEffectiveUnitPrice(
+        rawPrice,
+        product.onSpecial,
+        product.specialDiscountPercent
       );
-      if (existingIndex >= 0) {
-        const next = [...prev];
-        next[existingIndex] = {
-          ...next[existingIndex],
-          unitPrice,
-          originalUnitPrice: rawPrice,
-          onSpecial: product.onSpecial,
-          specialDiscountPercent: product.specialDiscountPercent,
-          isUnboxed: Boolean(product.isUnboxed),
-          quantity: next[existingIndex].quantity + quantity,
-        };
-        return next;
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          productName: product.name,
-          brand: product.brand,
-          image: product.image,
-          size,
-          unitPrice,
-          originalUnitPrice: rawPrice,
-          onSpecial: product.onSpecial,
-          specialDiscountPercent: product.specialDiscountPercent,
-          isUnboxed: Boolean(product.isUnboxed),
-          quantity,
-          isSampleListing: product.isSampleListing,
-        },
-      ];
-    });
 
-    showToast(
-      `Added ${product.name}`,
-      `${size}${product.isUnboxed ? ' (Unboxed)' : ''} × ${quantity} added to your cart`
-    );
-  };
+      setBasketItems((prev) => {
+        const existingIndex = prev.findIndex(
+          (item) => item.productId === product.id && item.size === size
+        );
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            unitPrice,
+            originalUnitPrice: rawPrice,
+            onSpecial: product.onSpecial,
+            specialDiscountPercent: product.specialDiscountPercent,
+            isUnboxed: Boolean(product.isUnboxed),
+            quantity: next[existingIndex].quantity + quantity,
+          };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            productName: product.name,
+            brand: product.brand,
+            image: product.image,
+            size,
+            unitPrice,
+            originalUnitPrice: rawPrice,
+            onSpecial: product.onSpecial,
+            specialDiscountPercent: product.specialDiscountPercent,
+            isUnboxed: Boolean(product.isUnboxed),
+            quantity,
+            isSampleListing: product.isSampleListing,
+          },
+        ];
+      });
+
+      showToast(
+        `Added ${product.name}`,
+        `${size}${product.isUnboxed ? ' (Unboxed)' : ''} × ${quantity} added to your cart`
+      );
+    },
+    [showToast]
+  );
 
   const handleAddHamperToBasket = (hamper: GiftHamper, customGiftNote?: string) => {
     const hamperProductId = `hamper-${hamper.id}`;
@@ -509,61 +686,64 @@ function AppContent() {
     );
   };
 
-  const handleAddWeeklyPackToBasket = (payload: {
-    audience: WeeklyFiveMlAudience;
-    mode: WeeklyFiveMlPackMode;
-    weekKey: string;
-    products: FragranceProduct[];
-    price: number;
-    regularPrice: number | null;
-  }) => {
-    const productNames = payload.products.map((p) => p.name);
-    const isFourPack = payload.mode === '4-for-100';
-    const audienceTag = `For ${payload.audience}`;
-    const itemId = `weekly-5ml-${payload.weekKey}-${payload.audience.toLowerCase()}-${payload.mode}`;
-    const itemTitle = isFourPack
-      ? `5ml Special · ${audienceTag} (4 × 5ml)`
-      : `5ml Special · ${audienceTag} (2 × 5ml · Under E500)`;
-    const packLabel = `${isFourPack ? '4 × 5ml' : '2 × 5ml (Under E500)'} (${audienceTag}): ${productNames.join(' + ')}`;
-    const primaryImage =
-      payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
+  const handleAddWeeklyPackToBasket = useCallback(
+    (payload: {
+      audience: WeeklyFiveMlAudience;
+      mode: WeeklyFiveMlPackMode;
+      weekKey: string;
+      products: FragranceProduct[];
+      price: number;
+      regularPrice: number | null;
+    }) => {
+      const productNames = payload.products.map((p) => p.name);
+      const isFourPack = payload.mode === '4-for-100';
+      const audienceTag = `For ${payload.audience}`;
+      const itemId = `weekly-5ml-${payload.weekKey}-${payload.audience.toLowerCase()}-${payload.mode}`;
+      const itemTitle = isFourPack
+        ? `5ml Special · ${audienceTag} (4 × 5ml)`
+        : `5ml Special · ${audienceTag} (2 × 5ml · Under E500)`;
+      const packLabel = `${isFourPack ? '4 × 5ml' : '2 × 5ml (Under E500)'} (${audienceTag}): ${productNames.join(' + ')}`;
+      const primaryImage =
+        payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
 
-    setBasketItems((prev) => {
-      const existingIndex = prev.findIndex(
-        (item) => item.productId === itemId && item.size === packLabel
+      setBasketItems((prev) => {
+        const existingIndex = prev.findIndex(
+          (item) => item.productId === itemId && item.size === packLabel
+        );
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            unitPrice: payload.price,
+            originalUnitPrice: payload.regularPrice,
+            quantity: next[existingIndex].quantity + 1,
+          };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            productId: itemId,
+            productName: itemTitle,
+            brand: 'Weekly 5ml Special',
+            image: primaryImage,
+            size: packLabel,
+            unitPrice: payload.price,
+            originalUnitPrice: payload.regularPrice,
+            onSpecial: true,
+            quantity: 1,
+            isSampleListing: false,
+          },
+        ];
+      });
+
+      showToast(
+        `Added ${audienceTag} ${isFourPack ? '4 × 5ml Pack (E' + payload.price + ')' : '2 × 5ml Pack (E' + payload.price + ')'}`,
+        productNames.join(' + ')
       );
-      if (existingIndex >= 0) {
-        const next = [...prev];
-        next[existingIndex] = {
-          ...next[existingIndex],
-          unitPrice: payload.price,
-          originalUnitPrice: payload.regularPrice,
-          quantity: next[existingIndex].quantity + 1,
-        };
-        return next;
-      }
-      return [
-        ...prev,
-        {
-          productId: itemId,
-          productName: itemTitle,
-          brand: 'Weekly 5ml Special',
-          image: primaryImage,
-          size: packLabel,
-          unitPrice: payload.price,
-          originalUnitPrice: payload.regularPrice,
-          onSpecial: true,
-          quantity: 1,
-          isSampleListing: false,
-        },
-      ];
-    });
-
-    showToast(
-      `Added ${audienceTag} ${isFourPack ? '4 × 5ml Pack (E' + payload.price + ')' : '2 × 5ml Pack (E' + payload.price + ')'}`,
-      productNames.join(' + ')
-    );
-  };
+    },
+    [showToast]
+  );
 
   const handleUpdateQuantity = (
     productId: string,
@@ -588,28 +768,30 @@ function AppContent() {
     );
   };
 
-  const handleSelectBranchAndOpenBasket = (branchId: BranchId) => {
+  const handleSelectBranchAndOpenBasket = useCallback((branchId: BranchId) => {
     setSelectedBranch(branchId);
     setBasketOpen(true);
-  };
+  }, []);
 
   const totalBasketCount = basketItems.reduce((sum, i) => sum + i.quantity, 0);
 
   if (currentPage === 'admin') {
     return (
       <>
-        <Suspense
-          fallback={
-            <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
-              Loading Owner Console...
-            </div>
-          }
-        >
-          <AdminDashboardPage
-            onBackToStorefront={() => handleNavigate('home')}
-            onNotify={showToast}
-          />
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
+                Loading Owner Console...
+              </div>
+            }
+          >
+            <AdminDashboardPage
+              onBackToStorefront={() => handleNavigate('home')}
+              onNotify={showToast}
+            />
+          </Suspense>
+        </ErrorBoundary>
 
         <ToastNotification
           toast={toast}
@@ -634,6 +816,32 @@ function AppContent() {
         onOpenBasket={() => setBasketOpen(true)}
       />
 
+      {catalogueError && usingSampleFallback && !syncBannerDismissed && (
+        <div
+          role="status"
+          className="bg-[#FEF9C3] border-b border-[#FDE047] text-[#0A0A0A] px-4 py-2 text-xs flex flex-wrap items-center justify-center gap-3"
+        >
+          <span>
+            Showing offline starter catalogue while reconnecting to live store inventory.
+          </span>
+          <button
+            type="button"
+            onClick={() => void retryCatalogueSync()}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#0A0A0A] text-white font-semibold text-[11px] hover:bg-[#262626]"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Retry Sync</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSyncBannerDismissed(true)}
+            className="text-[11px] underline text-[#525252] hover:text-[#0A0A0A]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <main className="flex-1 [overflow-anchor:none]">
         <motion.div
           key={
@@ -645,110 +853,113 @@ function AppContent() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
         >
-          <Suspense
-            fallback={
-              <div className="min-h-[85dvh] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
-                Loading...
-              </div>
-            }
-          >
-            {currentPage === 'home' && (
-              <HomePage
-                onNavigate={handleNavigate}
-                onSelectProduct={handleSelectProduct}
-                onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
-                onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
-                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
-              />
-            )}
+          <ErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="min-h-[85dvh] flex items-center justify-center text-xs uppercase tracking-[0.2em] text-[#666666]">
+                  Loading...
+                </div>
+              }
+            >
+              {currentPage === 'home' && (
+                <HomePage
+                  onNavigate={handleNavigate}
+                  onSelectProduct={handleSelectProduct}
+                  onQuickWhatsApp={handleQuickWhatsApp}
+                  onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
+                  onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                />
+              )}
 
-            {currentPage === 'shop' && (
-              <ShopPage
-                selectedCategory={selectedCategory}
-                selectedBrand={selectedBrand}
-                selectedSize={selectedSize}
-                selectedPriceRange={selectedPriceRange}
-                selectedSeason={selectedSeason}
-                selectedBranchFilter={selectedBranchFilter}
-                searchQuery={searchQuery}
-                onlyInStock={onlyInStock}
-                onlySpecials={onlySpecials}
-                onlyUnboxed={onlyUnboxed}
-                onCategoryChange={setSelectedCategory}
-                onBrandChange={setSelectedBrand}
-                onSizeChange={setSelectedSize}
-                onPriceRangeChange={setSelectedPriceRange}
-                onSeasonChange={setSelectedSeason}
-                onBranchFilterChange={setSelectedBranchFilter}
-                onSearchChange={setSearchQuery}
-                onOnlyInStockChange={setOnlyInStock}
-                onOnlySpecialsChange={setOnlySpecials}
-                onOnlyUnboxedChange={setOnlyUnboxed}
-                onResetFilters={handleResetFilters}
-                onSelectProduct={handleSelectProduct}
-                onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
-              />
-            )}
+              {currentPage === 'shop' && (
+                <ShopPage
+                  selectedCategory={selectedCategory}
+                  selectedBrand={selectedBrand}
+                  selectedSize={selectedSize}
+                  selectedPriceRange={selectedPriceRange}
+                  selectedSeason={selectedSeason}
+                  selectedBranchFilter={selectedBranchFilter}
+                  searchQuery={searchQuery}
+                  onlyInStock={onlyInStock}
+                  onlySpecials={onlySpecials}
+                  onlyUnboxed={onlyUnboxed}
+                  onCategoryChange={setSelectedCategory}
+                  onBrandChange={setSelectedBrand}
+                  onSizeChange={setSelectedSize}
+                  onPriceRangeChange={setSelectedPriceRange}
+                  onSeasonChange={setSelectedSeason}
+                  onBranchFilterChange={setSelectedBranchFilter}
+                  onSearchChange={setSearchQuery}
+                  onOnlyInStockChange={setOnlyInStock}
+                  onOnlySpecialsChange={setOnlySpecials}
+                  onOnlyUnboxedChange={setOnlyUnboxed}
+                  onResetFilters={handleResetFilters}
+                  onSelectProduct={handleSelectProduct}
+                  onQuickWhatsApp={handleQuickWhatsApp}
+                />
+              )}
 
-            {currentPage === 'product' && selectedProduct && (
-              <ProductDetailPage
-                product={selectedProduct}
-                selectedBranch={selectedBranch}
-                deliveryMethod={deliveryMethod}
-                postOfficeTown={postOfficeTown}
-                deliveryAddress={deliveryAddress}
-                onSelectBranch={setSelectedBranch}
-                onSelectDeliveryMethod={setDeliveryMethod}
-                onPostOfficeTownChange={setPostOfficeTown}
-                onDeliveryAddressChange={setDeliveryAddress}
-                onAddToBasket={handleAddToBasket}
-                onBackToShop={() => handleNavigate('shop')}
-                onSelectProduct={handleSelectProduct}
-                onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
-              />
-            )}
+              {currentPage === 'product' && selectedProduct && (
+                <ProductDetailPage
+                  product={selectedProduct}
+                  selectedBranch={selectedBranch}
+                  deliveryMethod={deliveryMethod}
+                  postOfficeTown={postOfficeTown}
+                  deliveryAddress={deliveryAddress}
+                  appliedReferral={appliedReferral}
+                  onSelectBranch={setSelectedBranch}
+                  onSelectDeliveryMethod={setDeliveryMethod}
+                  onPostOfficeTownChange={setPostOfficeTown}
+                  onDeliveryAddressChange={handleDeliveryAddressChange}
+                  onAddToBasket={handleAddToBasketWrapped}
+                  onBackToShop={() => handleNavigate('shop')}
+                  onSelectProduct={handleSelectProduct}
+                  onQuickWhatsApp={handleQuickWhatsApp}
+                />
+              )}
 
-            {currentPage === 'combos' && (
-              <ComboLayeringPage
-                onSelectProduct={handleSelectProduct}
-                onAddToBasket={handleAddToBasket}
-                onAddComboToBasket={handleAddComboToBasket}
-                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
-                onQuickWhatsApp={(p) => setQuickOrderProduct(p)}
-                onNavigate={(p, opts) => handleNavigate(p, opts)}
-              />
-            )}
+              {currentPage === 'combos' && (
+                <ComboLayeringPage
+                  onSelectProduct={handleSelectProduct}
+                  onAddToBasket={handleAddToBasketWrapped}
+                  onAddComboToBasket={handleAddComboToBasket}
+                  onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                  onQuickWhatsApp={handleQuickWhatsApp}
+                  onNavigate={handleNavigate}
+                />
+              )}
 
-            {currentPage === 'gifts' && (
-              <GiftsHampersPage
-                onAddHamperToBasket={handleAddHamperToBasket}
-                onNavigate={(p, opts) => handleNavigate(p, opts)}
-              />
-            )}
+              {currentPage === 'gifts' && (
+                <GiftsHampersPage
+                  onAddHamperToBasket={handleAddHamperToBasket}
+                  onNavigate={handleNavigate}
+                />
+              )}
 
-            {currentPage === 'decants' && (
-              <DecantsPage
-                onBrowseSize={(size) =>
-                  handleNavigate('shop', { category: 'All', brand: 'All', size })
-                }
-                onExploreShop={() =>
-                  handleNavigate('shop', { category: 'All', brand: 'All', size: 'All' })
-                }
-                onSelectProduct={handleSelectProduct}
-                onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
-              />
-            )}
+              {currentPage === 'decants' && (
+                <DecantsPage
+                  onBrowseSize={(size) =>
+                    handleNavigate('shop', { category: 'All', brand: 'All', size })
+                  }
+                  onExploreShop={() =>
+                    handleNavigate('shop', { category: 'All', brand: 'All', size: 'All' })
+                  }
+                  onSelectProduct={handleSelectProduct}
+                  onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                />
+              )}
 
-            {currentPage === 'stores' && (
-              <StoresPage
-                onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
-              />
-            )}
+              {currentPage === 'stores' && (
+                <StoresPage
+                  onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
+                />
+              )}
 
-            {currentPage === 'about' && (
-              <AboutPage onNavigate={(p) => handleNavigate(p)} />
-            )}
-          </Suspense>
+              {currentPage === 'about' && (
+                <AboutPage onNavigate={(p) => handleNavigate(p)} />
+              )}
+            </Suspense>
+          </ErrorBoundary>
         </motion.div>
       </main>
 
@@ -780,13 +991,16 @@ function AppContent() {
           postOfficeTown={postOfficeTown}
           deliveryAddress={deliveryAddress}
           appliedCoupon={appliedCoupon}
+          appliedReferral={appliedReferral}
           onApplyCoupon={setAppliedCoupon}
+          onApplyReferral={handleApplyReferral}
           onSelectBranch={setSelectedBranch}
           onSelectDeliveryMethod={setDeliveryMethod}
           onPostOfficeTownChange={setPostOfficeTown}
-          onDeliveryAddressChange={setDeliveryAddress}
+          onDeliveryAddressChange={handleDeliveryAddressChange}
           onUpdateQuantity={handleUpdateQuantity}
           onRemoveItem={handleRemoveItem}
+          onReplaceBasket={setBasketItems}
           onClearBasket={() => {
             setBasketItems([]);
             setAppliedCoupon(null);
@@ -803,11 +1017,13 @@ function AppContent() {
           deliveryMethod={deliveryMethod}
           postOfficeTown={postOfficeTown}
           deliveryAddress={deliveryAddress}
+          appliedReferral={appliedReferral}
+          onApplyReferral={handleApplyReferral}
           onSelectBranch={setSelectedBranch}
           onSelectDeliveryMethod={setDeliveryMethod}
           onPostOfficeTownChange={setPostOfficeTown}
-          onDeliveryAddressChange={setDeliveryAddress}
-          onAddToBasket={handleAddToBasket}
+          onDeliveryAddressChange={handleDeliveryAddressChange}
+          onAddToBasket={handleAddToBasketWrapped}
           onClose={() => setQuickOrderProduct(null)}
         />
       </Suspense>

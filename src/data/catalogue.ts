@@ -6,7 +6,7 @@ import { FragranceProduct } from '../types/fragrance';
 export const featuredPerfumeHouses: string[] = [
   'Al Haramain Perfumes',
   'Rasasi',
-  'Reef Perfumes',
+  'Inuka',
   'Lattafa Perfumes',
   'Armaf',
   'Afnan',
@@ -39,7 +39,7 @@ export const HOUSE_MATCH_ALIASES: Record<string, string[]> = {
     'qasamat',
     'chastity',
   ],
-  'Reef Perfumes': ['reef'],
+  Inuka: ['inuka'],
   'Lattafa Perfumes': [
     'lattafa',
     'asad',
@@ -171,7 +171,7 @@ export const HOUSE_MATCH_ALIASES: Record<string, string[]> = {
 export const houseImages: Record<string, string> = {
   'Al Haramain Perfumes': '/assets/images/house_al_haramain_1794685068564.jpg',
   Rasasi: '/assets/images/house_rasasi_1794685069093.jpg',
-  'Reef Perfumes': '/assets/images/house_reef_1794685069325.jpg',
+  Inuka: '/assets/images/house_reef_1794685069325.jpg',
   'Lattafa Perfumes': '/assets/images/house_lattafa_1794685069142.jpg',
   Armaf: '/assets/images/house_armaf_1794685069505.jpg',
   Afnan: '/assets/images/house_afnan_1794685070293.jpg',

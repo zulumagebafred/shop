@@ -43,21 +43,31 @@ service cloud.firestore {
 
     // 3. Entity Validation Helpers
     function isValidNoteList(notes) {
-      return notes is list && notes.size() <= 10 && (notes.size() == 0 || (notes[0] is string && notes[0].size() <= 60));
+      return notes is list &&
+        notes.size() <= 10 &&
+        (notes.size() == 0 || (notes[0] is string && notes[0].size() <= 60)) &&
+        (notes.size() <= 1 || (notes[1] is string && notes[1].size() <= 60)) &&
+        (notes.size() <= 2 || (notes[2] is string && notes[2].size() <= 60));
+    }
+
+    function isValidSizeEntry(entry) {
+      return entry is map &&
+        entry.keys().hasAll(['size', 'price', 'available']) &&
+        entry.keys().hasOnly(['size', 'price', 'available']) &&
+        entry.size is string &&
+        entry.size.size() >= 1 &&
+        entry.size.size() <= 24 &&
+        (entry.price == null || (entry.price is number && entry.price >= 0 && entry.price <= 100000)) &&
+        entry.available is bool;
     }
 
     function isValidSizeList(sizes) {
       return sizes is list &&
         sizes.size() >= 1 &&
         sizes.size() <= 12 &&
-        sizes[0] is map &&
-        sizes[0].keys().hasAll(['size', 'price', 'available']) &&
-        sizes[0].keys().hasOnly(['size', 'price', 'available']) &&
-        sizes[0].size is string &&
-        sizes[0].size.size() >= 1 &&
-        sizes[0].size.size() <= 24 &&
-        (sizes[0].price == null || (sizes[0].price is number && sizes[0].price >= 0 && sizes[0].price <= 100000)) &&
-        sizes[0].available is bool;
+        isValidSizeEntry(sizes[0]) &&
+        (sizes.size() <= 1 || isValidSizeEntry(sizes[1])) &&
+        (sizes.size() <= 2 || isValidSizeEntry(sizes[2]));
     }
 
     function isValidBranchList(branches) {
@@ -124,6 +134,8 @@ service cloud.firestore {
       data.subtitle is string && data.subtitle.size() <= 300 &&
       data.itemsIncluded is list && data.itemsIncluded.size() >= 1 && data.itemsIncluded.size() <= 8 &&
       data.itemsIncluded[0] is string && data.itemsIncluded[0].size() >= 1 && data.itemsIncluded[0].size() <= 140 &&
+      (data.itemsIncluded.size() <= 1 || (data.itemsIncluded[1] is string && data.itemsIncluded[1].size() >= 1 && data.itemsIncluded[1].size() <= 140)) &&
+      (data.itemsIncluded.size() <= 2 || (data.itemsIncluded[2] is string && data.itemsIncluded[2].size() >= 1 && data.itemsIncluded[2].size() <= 140)) &&
       data.regularPrice is number && data.regularPrice >= 0 && data.regularPrice <= 100000 &&
       data.hamperPrice is number && data.hamperPrice >= 0 && data.hamperPrice <= 100000 &&
       data.hamperPrice <= data.regularPrice &&
@@ -204,6 +216,7 @@ service cloud.firestore {
       data.perfumeNames is list && data.perfumeNames.size() >= 2 && data.perfumeNames.size() <= 6 &&
       data.perfumeNames[0] is string && data.perfumeNames[0].size() >= 1 && data.perfumeNames[0].size() <= 140 &&
       data.perfumeNames[1] is string && data.perfumeNames[1].size() >= 1 && data.perfumeNames[1].size() <= 140 &&
+      (data.perfumeNames.size() <= 2 || (data.perfumeNames[2] is string && data.perfumeNames[2].size() >= 1 && data.perfumeNames[2].size() <= 140)) &&
       data.sizeLabel is string && data.sizeLabel.size() >= 1 && data.sizeLabel.size() <= 60 &&
       data.regularPrice is number && data.regularPrice >= 0 && data.regularPrice <= 100000 &&
       data.comboPrice is number && data.comboPrice >= 0 && data.comboPrice <= 100000 &&
@@ -278,6 +291,155 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
+    function isValidReferral(data) {
+      return data.keys().hasAll([
+        'code', 'influencerName', 'socialHandle', 'commissionType', 'commissionValue',
+        'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'code', 'influencerName', 'socialHandle', 'commissionType', 'commissionValue',
+        'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.code is string && data.code.size() >= 2 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9_\\-]+$') &&
+      data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
+      data.socialHandle is string && data.socialHandle.size() <= 100 &&
+      data.commissionType in ['percentage', 'fixed'] &&
+      data.commissionValue is number && data.commissionValue >= 0 && data.commissionValue <= 50000 &&
+      (data.commissionType == 'fixed' || data.commissionValue <= 90) &&
+      data.followerDiscountType in ['none', 'percentage', 'fixed'] &&
+      data.followerDiscountValue is number && data.followerDiscountValue >= 0 && data.followerDiscountValue <= 50000 &&
+      (data.followerDiscountType != 'none' || data.followerDiscountValue == 0) &&
+      (data.followerDiscountType != 'percentage' || data.followerDiscountValue <= 95) &&
+      data.payoutNote is string && data.payoutNote.size() <= 200 &&
+      data.active is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPublicReferral(data) {
+      return data.keys().hasAll([
+        'code', 'influencerName', 'socialHandle',
+        'followerDiscountType', 'followerDiscountValue', 'active',
+        'ownerUid', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'code', 'influencerName', 'socialHandle',
+        'followerDiscountType', 'followerDiscountValue', 'active',
+        'ownerUid', 'updatedAt'
+      ]) &&
+      data.code is string && data.code.size() >= 2 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9_\\-]+$') &&
+      data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
+      data.socialHandle is string && data.socialHandle.size() <= 100 &&
+      data.followerDiscountType in ['none', 'percentage', 'fixed'] &&
+      data.followerDiscountValue is number && data.followerDiscountValue >= 0 && data.followerDiscountValue <= 50000 &&
+      (data.followerDiscountType != 'none' || data.followerDiscountValue == 0) &&
+      (data.followerDiscountType != 'percentage' || data.followerDiscountValue <= 95) &&
+      data.active is bool &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidReferralAttribution(data) {
+      return data.keys().hasAll([
+        'referralCode', 'influencerName', 'orderSummary',
+        'reportedSubtotal', 'reportedDiscount', 'customerRef',
+        'status', 'convertedSaleId', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'referralCode', 'influencerName', 'orderSummary',
+        'reportedSubtotal', 'reportedDiscount', 'customerRef',
+        'status', 'convertedSaleId', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.referralCode is string && data.referralCode.size() >= 2 && data.referralCode.size() <= 32 && data.referralCode.matches('^[A-Z0-9_\\-]+$') &&
+      data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
+      data.orderSummary is string && data.orderSummary.size() >= 1 && data.orderSummary.size() <= 240 &&
+      data.reportedSubtotal is number && data.reportedSubtotal >= 0 && data.reportedSubtotal <= 250000 &&
+      data.reportedDiscount is number && data.reportedDiscount >= 0 && data.reportedDiscount <= data.reportedSubtotal &&
+      data.customerRef is string && data.customerRef.size() <= 120 &&
+      data.status in ['pending', 'converted', 'dismissed'] &&
+      data.convertedSaleId is string && data.convertedSaleId.size() <= 128 &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidReferralSale(data) {
+      return data.keys().hasAll([
+        'referralCode', 'influencerName', 'orderSummary', 'orderSubtotal', 'discountAmount',
+        'netOrderAmount', 'commissionAmount', 'commissionStatus', 'source', 'customerRef',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'referralCode', 'influencerName', 'orderSummary', 'orderSubtotal', 'discountAmount',
+        'netOrderAmount', 'commissionAmount', 'commissionStatus', 'source', 'customerRef',
+        'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.referralCode is string && data.referralCode.size() >= 2 && data.referralCode.size() <= 32 && data.referralCode.matches('^[A-Z0-9_\\-]+$') &&
+      data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
+      data.orderSummary is string && data.orderSummary.size() >= 1 && data.orderSummary.size() <= 240 &&
+      data.orderSubtotal is number && data.orderSubtotal >= 0 && data.orderSubtotal <= 250000 &&
+      data.discountAmount is number && data.discountAmount >= 0 && data.discountAmount <= data.orderSubtotal &&
+      data.netOrderAmount is number && data.netOrderAmount >= 0 && data.netOrderAmount <= data.orderSubtotal &&
+      data.commissionAmount is number && data.commissionAmount >= 0 && data.commissionAmount <= 100000 &&
+      data.commissionStatus in ['pending', 'confirmed', 'paid', 'cancelled'] &&
+      data.source in ['checkout', 'manual'] &&
+      data.customerRef is string && data.customerRef.size() <= 120 &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAuditChangesList(changes) {
+      return changes is list &&
+        changes.size() <= 12 &&
+        (changes.size() == 0 || (changes[0] is string && changes[0].size() >= 1 && changes[0].size() <= 220)) &&
+        (changes.size() <= 1 || (changes[1] is string && changes[1].size() >= 1 && changes[1].size() <= 220)) &&
+        (changes.size() <= 2 || (changes[2] is string && changes[2].size() >= 1 && changes[2].size() <= 220));
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll([
+        'actorEmail', 'actorUsername', 'action', 'section',
+        'targetId', 'targetLabel', 'summary', 'changes',
+        'ownerUid', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'actorEmail', 'actorUsername', 'action', 'section',
+        'targetId', 'targetLabel', 'summary', 'changes',
+        'ownerUid', 'createdAt'
+      ]) &&
+      data.actorEmail is string && data.actorEmail.size() >= 3 && data.actorEmail.size() <= 160 &&
+      data.actorUsername is string && data.actorUsername.size() >= 1 && data.actorUsername.size() <= 80 &&
+      data.action in ['create', 'update', 'delete', 'import'] &&
+      data.section in [
+        'perfume', 'specials', 'weekly-special', 'coupon',
+        'combo', 'layering', 'hamper', 'referral', 'referral-sale', 'referral-attribution'
+      ] &&
+      data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 160 &&
+      data.targetLabel is string && data.targetLabel.size() >= 1 && data.targetLabel.size() <= 160 &&
+      data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 300 &&
+      isValidAuditChangesList(data.changes) &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidCatalogueSnapshot(data) {
+      return data.keys().hasAll([
+        'version', 'totalCount', 'itemsJson', 'ownerUid', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'version', 'totalCount', 'itemsJson', 'ownerUid', 'updatedAt'
+      ]) &&
+      data.version is number && data.version >= 1 && data.version <= 100 &&
+      data.totalCount is number && data.totalCount >= 0 && data.totalCount <= 5000 &&
+      data.itemsJson is string && data.itemsJson.size() >= 2 && data.itemsJson.size() <= 900000 &&
+      data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.updatedAt is timestamp;
+    }
+
     // 4. Collection Rules
     match /test/{docId} {
       allow get: if docId == 'connection';
@@ -347,7 +509,7 @@ service cloud.firestore {
     }
 
     match /coupons/{couponId} {
-      allow get: if isValidId(couponId);
+      allow get: if isValidId(couponId) && (isOwnerEmail() || (resource != null && existing().active == true));
       allow list: if isOwnerEmail();
       allow create: if isAdmin() &&
         isValidId(couponId) &&
@@ -455,6 +617,144 @@ service cloud.firestore {
           'fourPackPrice', 'twoPackPrice', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(specialId);
+    }
+
+    // Private admin-only influencer referral configuration (commission rates & payout notes protected)
+    match /referrals/{referralId} {
+      allow get: if isOwnerEmail();
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(referralId) &&
+        isValidReferral(incoming()) &&
+        incoming().code == referralId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(referralId) &&
+        isValidReferral(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'influencerName', 'socialHandle', 'commissionType', 'commissionValue',
+          'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(referralId);
+    }
+
+    // Public active-only referral projection for storefront follower benefit lookups (zero commission/payout fields)
+    match /publicReferrals/{referralId} {
+      allow get: if isValidId(referralId) && (isOwnerEmail() || (resource != null && existing().active == true));
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(referralId) &&
+        isValidPublicReferral(incoming()) &&
+        incoming().code == referralId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(referralId) &&
+        isValidPublicReferral(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'influencerName', 'socialHandle',
+          'followerDiscountType', 'followerDiscountValue', 'active', 'ownerUid', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(referralId);
+    }
+
+    // Write-once checkout attributions submitted at WhatsApp handoff; no trusted commission fields
+    match /referralAttributions/{attributionId} {
+      allow get: if isOwnerEmail();
+      allow list: if isOwnerEmail();
+      allow create: if isValidId(attributionId) &&
+        !exists(/databases/$(database)/documents/referralAttributions/$(attributionId)) &&
+        isValidReferralAttribution(incoming()) &&
+        incoming().status == 'pending' &&
+        incoming().convertedSaleId == '' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/publicReferrals/$(incoming().referralCode)) &&
+        get(/databases/$(database)/documents/publicReferrals/$(incoming().referralCode)).data.active == true &&
+        (
+          (isAdmin() && incoming().ownerUid == request.auth.uid) ||
+          incoming().ownerUid == 'guest-checkout'
+        );
+      allow update: if isAdmin() &&
+        isValidId(attributionId) &&
+        isValidReferralAttribution(incoming()) &&
+        incoming().referralCode == existing().referralCode &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'convertedSaleId', 'reportedSubtotal', 'reportedDiscount', 'customerRef', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(attributionId);
+    }
+
+    // Authoritative commission ledger locked strictly to verified store admins
+    match /referralSales/{saleId} {
+      allow get: if isOwnerEmail();
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(saleId) &&
+        isValidReferralSale(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/referrals/$(incoming().referralCode));
+      allow update: if isAdmin() &&
+        isValidId(saleId) &&
+        isValidReferralSale(incoming()) &&
+        incoming().referralCode == existing().referralCode &&
+        incoming().source == existing().source &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'influencerName', 'orderSummary', 'orderSubtotal', 'discountAmount',
+          'netOrderAmount', 'commissionAmount', 'commissionStatus', 'customerRef', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(saleId);
+    }
+
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isOwnerEmail();
+      allow list: if isOwnerEmail();
+      allow create: if isAdmin() &&
+        isValidId(logId) &&
+        isValidAuditLog(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().actorEmail.lower() == request.auth.token.email.lower() &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /catalogueSnapshots/{snapshotId} {
+      allow get: if isValidId(snapshotId) && snapshotId == 'public';
+      allow list: if false;
+      allow create: if isAdmin() &&
+        isValidId(snapshotId) &&
+        snapshotId == 'public' &&
+        isValidCatalogueSnapshot(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() &&
+        isValidId(snapshotId) &&
+        snapshotId == 'public' &&
+        isValidCatalogueSnapshot(incoming()) &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'version', 'totalCount', 'itemsJson', 'ownerUid', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(snapshotId) && snapshotId == 'public';
     }
   }
 }

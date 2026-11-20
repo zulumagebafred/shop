@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { ShoppingBag } from 'lucide-react';
+import { MapPin, ShoppingBag } from 'lucide-react';
 import { formatPrice } from '../config/siteConfig';
-import { FragranceProduct, PriceRangeFilter } from '../types/fragrance';
-import { formatBranchName, getSingleBranchExclusive } from '../utils/branches';
+import { BottleSize, FragranceProduct, PriceRangeFilter } from '../types/fragrance';
+import {
+  formatBranchName,
+  getAvailableBranches,
+  getBranchAvailabilityLabel,
+} from '../utils/branches';
 import {
   getBestPriceOptionForRange,
   getEffectiveUnitPrice,
@@ -21,6 +25,7 @@ interface ProductCardProps {
   imageLoading?: 'eager' | 'lazy';
   fetchPriority?: 'high' | 'low' | 'auto';
   priceRange?: PriceRangeFilter;
+  selectedSize?: BottleSize | 'All';
 }
 
 function getScentPreview(product: FragranceProduct): string {
@@ -36,7 +41,7 @@ function getScentPreview(product: FragranceProduct): string {
   return product.concentration || 'Eau de Parfum';
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   product,
   onViewDetails,
   onQuickWhatsApp,
@@ -45,24 +50,62 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   imageLoading = 'lazy',
   fetchPriority = 'auto',
   priceRange = 'all',
+  selectedSize = 'All',
 }) => {
-  const availableSizes = [...product.sizes]
-    .filter((s) => s.available)
-    .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
+  const availableSizes = useMemo(
+    () =>
+      [...product.sizes]
+        .filter((s) => s.available)
+        .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size)),
+    [product.sizes]
+  );
 
-  const singleBranch = getSingleBranchExclusive(product);
-  const summary = getProductPriceSummary(product);
+  const stockedBranches = getAvailableBranches(product);
+  const branchTagLabel = getBranchAvailabilityLabel(product);
+  const isSingleBranch = stockedBranches.length === 1;
+  const summary = useMemo(() => getProductPriceSummary(product), [product]);
   const rangedMatch =
     priceRange !== 'all' ? getBestPriceOptionForRange(product, priceRange) : null;
+  const selectedSizeOption =
+    selectedSize !== 'All'
+      ? availableSizes.find((s) => s.size.trim() === selectedSize) ?? null
+      : null;
+  const selectedOriginal = selectedSizeOption?.price ?? null;
+  const selectedEffective = selectedSizeOption
+    ? getEffectiveUnitPrice(
+        selectedOriginal,
+        product.onSpecial,
+        product.specialDiscountPercent
+      )
+    : null;
+  const selectedHasDiscount =
+    Boolean(selectedSizeOption) &&
+    Boolean(product.onSpecial) &&
+    Boolean(product.specialDiscountPercent && product.specialDiscountPercent > 0) &&
+    selectedOriginal !== null &&
+    selectedEffective !== null &&
+    selectedEffective < selectedOriginal;
 
-  const displayOriginal = rangedMatch
+  const displayOriginal = selectedSizeOption
+    ? selectedOriginal
+    : rangedMatch
     ? rangedMatch.originalPrice
     : summary.highestOriginal;
-  const displayEffective = rangedMatch
+  const displayEffective = selectedSizeOption
+    ? selectedEffective
+    : rangedMatch
     ? rangedMatch.effectivePrice
     : summary.highestEffective;
-  const displaySize = rangedMatch ? rangedMatch.size : summary.highestSize;
-  const hasDiscount = rangedMatch ? rangedMatch.hasDiscount : summary.hasDiscount;
+  const displaySize = selectedSizeOption
+    ? selectedSizeOption.size
+    : rangedMatch
+    ? rangedMatch.size
+    : summary.highestSize;
+  const hasDiscount = selectedSizeOption
+    ? selectedHasDiscount
+    : rangedMatch
+    ? rangedMatch.hasDiscount
+    : summary.hasDiscount;
 
   const priceDisplay =
     displayEffective !== null ? formatPrice(displayEffective) : 'Price on Request';
@@ -102,9 +145,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           fallbackTitle={product.name}
           loading={imageLoading}
           fetchPriority={fetchPriority}
+          variant="card"
           className="w-full h-full object-cover saturate-[1.12] contrast-[1.03] transition-transform duration-400 ease-out group-hover:scale-[1.03]"
         />
-        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial || singleBranch) && (
+        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial) && (
           <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
             {product.availability === 'Out of Stock' ? (
               <span className="bg-white/95 text-[#991B1B] border border-[#FCA5A5] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
@@ -140,15 +184,26 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <span className="text-[#0A0A0A] font-semibold">Unboxed</span>
               </>
             )}
-            {singleBranch && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-[#0A0A0A] font-semibold">
-                  {formatBranchName(singleBranch)} Only
-                </span>
-              </>
-            )}
           </div>
+
+          {stockedBranches.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide border ${
+                  isSingleBranch
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]'
+                    : 'bg-[#F4F4F5] text-[#0A0A0A] border-[#D4D4D4]'
+                }`}
+              >
+                <MapPin className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                <span>
+                  {stockedBranches.length === 2
+                    ? branchTagLabel
+                    : `${formatBranchName(stockedBranches[0])} Only`}
+                </span>
+              </span>
+            </div>
+          )}
 
           <button
             type="button"
@@ -250,5 +305,5 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
     </motion.article>
   );
-};
+});
 

@@ -133,7 +133,7 @@ export const AboutPage: React.FC<AboutPageProps> = ({ onNavigate }) => {
               src={siteContent.decantsSection.image}
               alt="5ml, 10ml, and 22ml glass decants at the AuraHut Co. Discovery Scent Bar"
               fallbackTitle="Discovery Scent Bar"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-center"
             />
           </div>
 

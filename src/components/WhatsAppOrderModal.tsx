@@ -21,6 +21,8 @@ import {
   DeliveryMethod,
   DRIVER_DELIVERY_FEE,
   FragranceProduct,
+  InfluencerReferral,
+  PublicReferral,
 } from '../types/fragrance';
 import {
   formatBranchName,
@@ -30,6 +32,7 @@ import {
 } from '../utils/branches';
 import {
   calculateCouponDiscount,
+  calculateReferralBenefit,
   getEffectiveUnitPrice,
   getHighestAvailableSize,
   getSizeEffectivePrice,
@@ -49,6 +52,8 @@ interface WhatsAppOrderModalProps {
   deliveryMethod: DeliveryMethod;
   postOfficeTown: string;
   deliveryAddress: string;
+  appliedReferral: PublicReferral | InfluencerReferral | null;
+  onApplyReferral: (referral: PublicReferral | InfluencerReferral | null) => void;
   onSelectBranch: (branch: BranchId) => void;
   onSelectDeliveryMethod: (method: DeliveryMethod) => void;
   onPostOfficeTownChange: (town: string) => void;
@@ -67,6 +72,8 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
   deliveryMethod,
   postOfficeTown,
   deliveryAddress,
+  appliedReferral,
+  onApplyReferral,
   onSelectBranch,
   onSelectDeliveryMethod,
   onPostOfficeTownChange,
@@ -74,7 +81,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
   onAddToBasket,
   onClose,
 }) => {
-  const { lookupCouponByCode } = useStore();
+  const { lookupCouponByCode, lookupReferralByCode, recordCheckoutReferralSale } = useStore();
   const availableSizes = useMemo(
     () => (product ? product.sizes.filter((s) => s.available) : []),
     [product]
@@ -91,8 +98,9 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
   const [showConfigHint, setShowConfigHint] = useState(false);
   const [postOfficeError, setPostOfficeError] = useState(false);
   const [deliveryAddressError, setDeliveryAddressError] = useState(false);
-  const townInputRef = React.useRef<HTMLInputElement | null>(null);
+  const townInputRef = React.useRef<HTMLSelectElement | null>(null);
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const lastWhatsAppLaunchRef = React.useRef<number>(0);
 
   const activeBranch = useMemo(
     () =>
@@ -150,13 +158,21 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
   }, [product, appliedCoupon, effectiveSize, sizePricing, quantity]);
 
   const validCoupon = couponCalc?.valid ? appliedCoupon : null;
+  const activeReferral = appliedReferral?.active ? appliedReferral : null;
   const deliveryFee = getDeliveryFee(deliveryMethod);
+  const rawLineTotal =
+    sizePricing.effectivePrice !== null ? sizePricing.effectivePrice * quantity : null;
+  const itemsAfterCoupon =
+    validCoupon && couponCalc ? couponCalc.finalTotal : rawLineTotal;
+  const referralBenefit = useMemo(
+    () =>
+      itemsAfterCoupon !== null
+        ? calculateReferralBenefit(itemsAfterCoupon, activeReferral)
+        : null,
+    [itemsAfterCoupon, activeReferral]
+  );
   const itemsSubtotal =
-    validCoupon && couponCalc
-      ? couponCalc.finalTotal
-      : sizePricing.effectivePrice !== null
-      ? sizePricing.effectivePrice * quantity
-      : null;
+    referralBenefit !== null ? referralBenefit.netOrderAmount : itemsAfterCoupon;
   const finalPayable = itemsSubtotal !== null ? itemsSubtotal + deliveryFee : null;
 
   const message = useMemo(() => {
@@ -169,6 +185,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
       unitPrice: sizePricing.effectivePrice,
       originalUnitPrice: sizePricing.originalPrice,
       appliedCoupon: validCoupon,
+      appliedReferral: activeReferral,
       deliveryMethod,
       postOfficeTown,
       deliveryAddress,
@@ -180,6 +197,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
     selectedBranch,
     sizePricing,
     validCoupon,
+    activeReferral,
     deliveryMethod,
     postOfficeTown,
     deliveryAddress,
@@ -193,33 +211,43 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
     setCouponError(null);
     setCheckingCoupon(true);
     try {
-      const { coupon, error } = await lookupCouponByCode(couponInput);
-      if (!coupon) {
-        setCouponError(error ?? 'Invalid coupon code.');
+      const { coupon } = await lookupCouponByCode(couponInput);
+      if (coupon) {
+        const syntheticItem: BasketItem = {
+          productId: product.id,
+          productName: product.name,
+          brand: product.brand,
+          image: product.image,
+          size: effectiveSize,
+          unitPrice: sizePricing.effectivePrice,
+          originalUnitPrice: sizePricing.originalPrice,
+          onSpecial: product.onSpecial,
+          specialDiscountPercent: product.specialDiscountPercent,
+          quantity,
+          isSampleListing: product.isSampleListing,
+        };
+        const check = calculateCouponDiscount([syntheticItem], coupon);
+        if (!check.valid) {
+          setCouponError(check.errorReason ?? 'Coupon does not apply to this selection.');
+          return;
+        }
+        setAppliedCoupon(coupon);
+        setCouponInput('');
         return;
       }
-      const syntheticItem: BasketItem = {
-        productId: product.id,
-        productName: product.name,
-        brand: product.brand,
-        image: product.image,
-        size: effectiveSize,
-        unitPrice: sizePricing.effectivePrice,
-        originalUnitPrice: sizePricing.originalPrice,
-        onSpecial: product.onSpecial,
-        specialDiscountPercent: product.specialDiscountPercent,
-        quantity,
-        isSampleListing: product.isSampleListing,
-      };
-      const check = calculateCouponDiscount([syntheticItem], coupon);
-      if (!check.valid) {
-        setCouponError(check.errorReason ?? 'Coupon does not apply to this selection.');
+
+      const { referral, error: referralError } = await lookupReferralByCode(couponInput);
+      if (referral) {
+        onApplyReferral(referral);
+        setCouponInput('');
         return;
       }
-      setAppliedCoupon(coupon);
-      setCouponInput('');
+
+      setCouponError(
+        referralError ?? `Code "${couponInput.trim().toUpperCase()}" was not found.`
+      );
     } catch {
-      setCouponError('Unable to verify coupon right now.');
+      setCouponError('Unable to verify code right now.');
     } finally {
       setCheckingCoupon(false);
     }
@@ -236,6 +264,10 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
   };
 
   const handleWhatsAppLaunch = () => {
+    const now = Date.now();
+    if (now - lastWhatsAppLaunchRef.current < 2500) {
+      return;
+    }
     if (deliveryMethod === 'post-office' && !postOfficeTown.trim()) {
       setPostOfficeError(true);
       townInputRef.current?.focus();
@@ -248,7 +280,25 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
       addressInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+
+    if (product && activeReferral && itemsAfterCoupon !== null && referralBenefit) {
+      const customerRef =
+        deliveryMethod === 'post-office'
+          ? `Post Office · ${postOfficeTown.trim()}`
+          : deliveryMethod === 'driver-delivery'
+          ? `Driver Delivery (${activeBranch?.city})`
+          : `${activeBranch?.city} Store Pickup`;
+      void recordCheckoutReferralSale({
+        referral: activeReferral,
+        orderSummary: `${product.name} (${effectiveSize} × ${quantity})`,
+        reportedSubtotal: itemsAfterCoupon,
+        reportedDiscount: referralBenefit.discountAmount,
+        customerRef,
+      });
+    }
+
     if (whatsappUrl) {
+      lastWhatsAppLaunchRef.current = now;
       openExternalUrl(whatsappUrl);
     } else {
       setShowConfigHint(true);
@@ -286,6 +336,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                       src={product.image}
                       alt={product.name}
                       fallbackTitle={product.name}
+                      variant="thumb"
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -443,12 +494,31 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                   );
                 })()}
 
-                {/* Coupon Input */}
-                <div className="space-y-1.5">
+                {/* Promo or Influencer Referral Code Input */}
+                <div className="space-y-2">
                   <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
                     <Tag className="w-3.5 h-3.5 text-[#0A0A0A]" />
-                    <span>Coupon Code (Optional)</span>
+                    <span>Promo or Influencer Code (Optional)</span>
                   </span>
+
+                  {activeReferral && (
+                    <div className="bg-white border border-[#0A0A0A] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate">
+                        Referral <strong className="font-mono">{activeReferral.code}</strong> ({activeReferral.influencerName}
+                        {referralBenefit && referralBenefit.discountAmount > 0
+                          ? ` · -${formatPrice(referralBenefit.discountAmount)}`
+                          : ''}
+                        )
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onApplyReferral(null)}
+                        className="underline text-[#525252] hover:text-[#0A0A0A] shrink-0"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
 
                   {validCoupon && couponCalc ? (
                     <div className="bg-white border border-[#0A0A0A] rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs">
@@ -473,7 +543,7 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                           setCouponInput(e.target.value.toUpperCase());
                           setCouponError(null);
                         }}
-                        placeholder="Enter coupon code..."
+                        placeholder="Enter coupon or influencer code..."
                         className="flex-1 px-3.5 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-mono uppercase focus:outline-none focus:border-[#0A0A0A]"
                       />
                       <button

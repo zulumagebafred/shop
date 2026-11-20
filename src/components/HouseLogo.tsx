@@ -29,7 +29,7 @@ export const HouseLogo: React.FC<HouseLogoProps> = React.memo(({ brand, classNam
         <img
           src={logoUrl}
           alt={`${brand} logo`}
-          loading="eager"
+          loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailedUrl(logoUrl)}

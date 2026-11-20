@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   EmailAuthProvider,
   User,
@@ -12,14 +20,19 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import {
+  DocumentData,
+  QueryDocumentSnapshot,
   collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -30,7 +43,6 @@ import {
 } from '../data/combosAndLayering';
 import { DEFAULT_HAMPER_IMAGE, starterHampers } from '../data/hampers';
 import {
-  OWNER_EMAIL,
   OperationType,
   auth,
   db,
@@ -39,11 +51,20 @@ import {
   isAuthorizedAdminEmail,
 } from '../lib/firebase';
 import {
+  AuditAction,
+  AuditLogEntry,
+  AuditSection,
   ComboDeal,
   Coupon,
   FragranceProduct,
   GiftHamper,
+  InfluencerReferral,
   LayeringIdea,
+  PublicReferral,
+  ReferralAttribution,
+  ReferralAttributionStatus,
+  ReferralSale,
+  ReferralSaleStatus,
   SpecialCampaign,
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
@@ -51,7 +72,24 @@ import {
   DEFAULT_WEEKLY_FIVE_ML_SPECIAL,
   getWeekWindowBounds,
 } from '../utils/weeklySpecial';
+import { calculateReferralCommission } from '../utils/pricing';
 import { normalizeBranches } from '../utils/branches';
+import {
+  buildCampaignDiff,
+  buildComboDiff,
+  buildCouponDiff,
+  buildHamperDiff,
+  buildLayeringDiff,
+  buildPerfumeDiff,
+  buildReferralDiff,
+  buildWeeklySpecialDiff,
+  deriveAdminUsername,
+  sanitizeAuditChanges,
+} from '../utils/auditDiff';
+import { sha256Hex } from '../utils/hash';
+import { withRetry } from '../utils/retry';
+import { recordFirestoreRead } from '../utils/perfMonitor';
+import { sanitizePromoCode, sanitizeText } from '../utils/sanitize';
 
 export const DEFAULT_CAMPAIGN: SpecialCampaign = {
   title: 'Black Friday Specials',
@@ -71,9 +109,31 @@ export type PerfumeInput = Omit<FragranceProduct, 'id' | 'slug'> & {
 };
 
 export type CouponInput = Omit<Coupon, 'id'>;
+export type ReferralInput = Omit<InfluencerReferral, 'id'>;
+export type ManualReferralSaleInput = {
+  referralCode: string;
+  orderSummary: string;
+  orderSubtotal: number;
+  discountAmount?: number;
+  customerRef?: string;
+  commissionStatus?: ReferralSaleStatus;
+};
+export type CheckoutReferralSaleInput = {
+  referral: PublicReferral | InfluencerReferral;
+  orderSummary: string;
+  reportedSubtotal: number;
+  reportedDiscount: number;
+  customerRef: string;
+};
 export type ComboInput = Omit<ComboDeal, 'id'>;
 export type LayeringIdeaInput = Omit<LayeringIdea, 'id'>;
 export type GiftHamperInput = Omit<GiftHamper, 'id'>;
+
+export interface SnapshotStatusInfo {
+  count: number;
+  updatedAtMs: number | null;
+  bytes: number;
+}
 
 interface StoreContextValue {
   // Auth
@@ -93,11 +153,22 @@ interface StoreContextValue {
   livePerfumes: FragranceProduct[];
   usingSampleFallback: boolean;
   catalogueLoading: boolean;
+  catalogueComplete: boolean;
+  catalogueHasMore: boolean;
   catalogueError: string | null;
   campaign: SpecialCampaign;
   campaignLoading: boolean;
   coupons: Coupon[];
   couponsLoading: boolean;
+  referrals: InfluencerReferral[];
+  referralsLoading: boolean;
+  referralAttributions: ReferralAttribution[];
+  referralAttributionsLoading: boolean;
+  referralSales: ReferralSale[];
+  referralSalesLoading: boolean;
+  auditLogs: AuditLogEntry[];
+  auditLogsLoading: boolean;
+  snapshotStatus: SnapshotStatusInfo | null;
 
   // Combos & Layering
   combos: ComboDeal[];
@@ -119,10 +190,24 @@ interface StoreContextValue {
   weeklySpecial: WeeklyFiveMlSpecial;
   weeklySpecialLoading: boolean;
 
-  // Storefront Coupon Validation
+  // On-Demand Loading, Pagination & Portal Scoping
+  loadMorePerfumes: () => Promise<void>;
+  ensureAllPerfumesLoaded: () => Promise<void>;
+  ensureSecondaryLoaded: (section: 'combos' | 'layering' | 'hampers') => Promise<void>;
+  retryCatalogueSync: () => Promise<void>;
+  setAdminConsoleActive: (active: boolean) => void;
+  publishCatalogueSnapshot: (
+    overrideList?: FragranceProduct[]
+  ) => Promise<{ ok: boolean; count: number; bytes: number }>;
+
+  // Storefront Coupon & Referral Validation
   lookupCouponByCode: (
     rawCode: string
   ) => Promise<{ coupon: Coupon | null; error?: string }>;
+  lookupReferralByCode: (
+    rawCode: string
+  ) => Promise<{ referral: PublicReferral | null; error?: string }>;
+  recordCheckoutReferralSale: (input: CheckoutReferralSaleInput) => Promise<void>;
 
   // Owner CRUD Actions
   savePerfume: (input: PerfumeInput, existingId?: string) => Promise<string>;
@@ -137,6 +222,21 @@ interface StoreContextValue {
   saveCoupon: (input: CouponInput, isEdit?: boolean) => Promise<void>;
   toggleCouponActive: (coupon: Coupon) => Promise<void>;
   deleteCoupon: (code: string) => Promise<void>;
+  saveReferral: (input: ReferralInput, isEdit?: boolean) => Promise<void>;
+  toggleReferralActive: (referral: InfluencerReferral) => Promise<void>;
+  deleteReferral: (code: string) => Promise<void>;
+  approveReferralAttribution: (
+    attribution: ReferralAttribution,
+    verifiedSubtotal: number,
+    verifiedDiscount: number
+  ) => Promise<string>;
+  dismissReferralAttribution: (attributionId: string) => Promise<void>;
+  logManualReferralSale: (input: ManualReferralSaleInput) => Promise<string>;
+  updateReferralSaleStatus: (
+    saleId: string,
+    status: ReferralSaleStatus
+  ) => Promise<void>;
+  deleteReferralSale: (saleId: string) => Promise<void>;
   saveCampaign: (campaign: SpecialCampaign) => Promise<void>;
   saveWeeklySpecial: (next: WeeklyFiveMlSpecial) => Promise<void>;
   saveComboDeal: (input: ComboInput, existingId?: string) => Promise<string>;
@@ -161,29 +261,245 @@ function slugifyId(input: string): string {
   return cleaned || `perfume-${Date.now()}`;
 }
 
-function sanitizeCouponCode(raw: string): string {
-  return raw
-    .toUpperCase()
-    .trim()
-    .replace(/[^A-Z0-9_-]/g, '')
-    .slice(0, 32);
-}
-
-export function resolveAdminLoginEmail(loginInput: string): string {
+function normalizeAdminEmailInput(loginInput: string): string {
   const cleaned = loginInput.trim().toLowerCase();
-  if (!cleaned) return OWNER_EMAIL;
-  if (cleaned.includes('@')) return cleaned;
-  if (cleaned === 'zulumageba' || cleaned === 'zulumagebafred') return OWNER_EMAIL;
-  if (cleaned === 'tese' || cleaned === 'tese.khumalo') return 'tese.khumalo@gmail.com';
-  return `${cleaned}@gmail.com`;
+  if (!cleaned || !cleaned.includes('@')) {
+    throw new Error('Enter your full admin email address.');
+  }
+  return cleaned;
 }
 
+function isPermissionDeniedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    code === 'permission-denied' ||
+    msg.includes('permission-denied') ||
+    msg.includes('Missing or insufficient permissions')
+  );
+}
+
+// Cache Keys & TTLs engineered to stay comfortably under Spark 50k reads/day
 const CAMPAIGN_CACHE_KEY = 'aurahut_campaign_cache_v1';
 const PERFUMES_CACHE_KEY = 'aurahut_perfumes_cache_v1';
+const PERFUMES_META_KEY = 'aurahut_perfumes_meta_v2';
 const COMBOS_CACHE_KEY = 'aurahut_combos_cache_v1';
 const LAYERING_CACHE_KEY = 'aurahut_layering_cache_v1';
 const WEEKLY_5ML_CACHE_KEY = 'aurahut_weekly_5ml_cache_v1';
 const HAMPERS_CACHE_KEY = 'aurahut_hampers_cache_v1';
+const CACHE_TS_KEY = 'aurahut_cache_timestamps_v1';
+const COUPON_LOOKUP_CACHE_KEY = 'aurahut_coupon_lookup_v1';
+const REFERRAL_LOOKUP_CACHE_KEY = 'aurahut_referral_lookup_v1';
+
+const CATALOGUE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const PROMO_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SECONDARY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const LOOKUP_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const DUPLICATE_REFERRAL_WINDOW_MS = 12_000;
+const INITIAL_PAGE_SIZE = 60;
+const INCREMENTAL_PAGE_SIZE = 140;
+const SNAPSHOT_DOC_ID = 'public';
+const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_MAX_BYTES = 890_000;
+const PUBLIC_AVAILABILITIES = ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'] as const;
+
+type CompactPerfumeTuple = {
+  i: string;
+  sl: string;
+  sm?: 1;
+  n: string;
+  b: string;
+  c: 'M' | 'W' | 'U';
+  cn: string;
+  d: string;
+  im: string;
+  nt: [string[], string[], string[]];
+  sz: [string, number | null, 0 | 1][];
+  av: FragranceProduct['availability'];
+  ab?: ('mz' | 'mb')[];
+  f?: 1;
+  bs?: 1;
+  ub?: 1;
+  sp?: 1;
+  spl?: string;
+  spd?: number;
+};
+
+function getCacheTimestamp(section: string): number {
+  try {
+    const raw = localStorage.getItem(CACHE_TS_KEY);
+    if (!raw) return 0;
+    const map = JSON.parse(raw) as Record<string, number>;
+    return typeof map[section] === 'number' ? map[section] : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setCacheTimestamp(section: string, ts = Date.now()): void {
+  try {
+    const raw = localStorage.getItem(CACHE_TS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    map[section] = ts;
+    localStorage.setItem(CACHE_TS_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function isCacheFresh(section: string, ttlMs: number): boolean {
+  const ts = getCacheTimestamp(section);
+  return ts > 0 && Date.now() - ts < ttlMs;
+}
+
+function encodeCompactPerfumes(items: FragranceProduct[]): string {
+  const packed: CompactPerfumeTuple[] = items.map((p) => {
+    const catChar: 'M' | 'W' | 'U' =
+      p.category === 'Men' ? 'M' : p.category === 'Women' ? 'W' : 'U';
+    const obj: CompactPerfumeTuple = {
+      i: p.id,
+      sl: p.slug,
+      n: p.name,
+      b: p.brand,
+      c: catChar,
+      cn: p.concentration,
+      d: p.description,
+      im: p.image,
+      nt: [p.notes.top, p.notes.heart, p.notes.base],
+      sz: p.sizes.map((s) => [s.size, s.price, s.available ? 1 : 0]),
+      av: p.availability,
+    };
+    if (p.isSampleListing) obj.sm = 1;
+    if (p.availableBranches && p.availableBranches.length > 0) {
+      obj.ab = p.availableBranches.map((br) => (br === 'mbabane' ? 'mb' : 'mz'));
+    }
+    if (p.featured) obj.f = 1;
+    if (p.bestseller) obj.bs = 1;
+    if (p.isUnboxed) obj.ub = 1;
+    if (p.onSpecial) obj.sp = 1;
+    if (p.specialLabel) obj.spl = p.specialLabel;
+    if (p.specialDiscountPercent) obj.spd = p.specialDiscountPercent;
+    return obj;
+  });
+  return JSON.stringify(packed);
+}
+
+function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
+  const rawList = JSON.parse(jsonStr) as CompactPerfumeTuple[];
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((row) => ({
+    id: String(row.i ?? ''),
+    slug: String(row.sl ?? row.i ?? ''),
+    isSampleListing: Boolean(row.sm),
+    name: String(row.n ?? ''),
+    brand: String(row.b ?? ''),
+    category: row.c === 'M' ? 'Men' : row.c === 'W' ? 'Women' : 'Unisex',
+    concentration: String(row.cn ?? 'Eau de Parfum'),
+    description: String(row.d ?? ''),
+    image: String(row.im ?? ''),
+    notes: {
+      top: Array.isArray(row.nt?.[0]) ? row.nt[0].map(String) : [],
+      heart: Array.isArray(row.nt?.[1]) ? row.nt[1].map(String) : [],
+      base: Array.isArray(row.nt?.[2]) ? row.nt[2].map(String) : [],
+    },
+    sizes: normalizeAndDedupeSizes(
+      Array.isArray(row.sz)
+        ? row.sz.map((tuple) => ({
+            size: tuple[0],
+            price: tuple[1],
+            available: Boolean(tuple[2]),
+          }))
+        : []
+    ),
+    availability: row.av ?? 'In Stock',
+    availableBranches: Array.isArray(row.ab)
+      ? normalizeBranches(row.ab.map((b) => (b === 'mb' ? 'mbabane' : 'manzini')))
+      : undefined,
+    featured: Boolean(row.f),
+    bestseller: Boolean(row.bs),
+    isUnboxed: Boolean(row.ub),
+    onSpecial: Boolean(row.sp),
+    specialLabel: row.spl ? String(row.spl) : '',
+    specialDiscountPercent:
+      typeof row.spd === 'number' ? row.spd : 0,
+  }));
+}
+
+function normalizeAndDedupeSizes(
+  rawSizes: unknown
+): { size: string; price: number | null; available: boolean }[] {
+  if (!Array.isArray(rawSizes)) return [];
+  const byKey = new Map<
+    string,
+    { size: string; price: number | null; available: boolean }
+  >();
+
+  for (const entry of rawSizes) {
+    if (!entry || typeof entry !== 'object') continue;
+    const s = entry as { size?: unknown; price?: unknown; available?: unknown };
+    const cleanSize = String(s.size ?? '').trim().slice(0, 24);
+    if (!cleanSize) continue;
+    const parsedPrice =
+      s.price !== null &&
+      s.price !== undefined &&
+      Number.isFinite(Number(s.price)) &&
+      Number(s.price) >= 0
+        ? Math.min(100000, Number(s.price))
+        : null;
+    const available = Boolean(s.available);
+    const dedupeKey = cleanSize.toLowerCase();
+    const existing = byKey.get(dedupeKey);
+
+    if (!existing) {
+      byKey.set(dedupeKey, { size: cleanSize, price: parsedPrice, available });
+    } else {
+      const nextAvailable = existing.available || available;
+      const nextPrice =
+        parsedPrice !== null && (available || existing.price === null)
+          ? parsedPrice
+          : existing.price;
+      byKey.set(dedupeKey, {
+        size: existing.size,
+        price: nextPrice,
+        available: nextAvailable,
+      });
+    }
+  }
+
+  return Array.from(byKey.values());
+}
+
+function mapPerfumeDoc(id: string, d: DocumentData): FragranceProduct {
+  return {
+    id,
+    slug: typeof d.slug === 'string' ? d.slug : id,
+    isSampleListing: Boolean(d.isSampleListing),
+    name: String(d.name ?? ''),
+    brand: String(d.brand ?? ''),
+    category: d.category === 'Men' || d.category === 'Women' ? d.category : 'Unisex',
+    concentration: String(d.concentration ?? 'Eau de Parfum'),
+    description: String(d.description ?? ''),
+    image: String(d.image ?? ''),
+    notes: {
+      top: Array.isArray(d.notes?.top) ? d.notes.top.map(String) : [],
+      heart: Array.isArray(d.notes?.heart) ? d.notes.heart.map(String) : [],
+      base: Array.isArray(d.notes?.base) ? d.notes.base.map(String) : [],
+    },
+    sizes: normalizeAndDedupeSizes(d.sizes),
+    availability: d.availability ?? 'In Stock',
+    availableBranches: Array.isArray(d.availableBranches)
+      ? normalizeBranches(d.availableBranches)
+      : undefined,
+    featured: Boolean(d.featured),
+    bestseller: Boolean(d.bestseller),
+    isUnboxed: Boolean(d.isUnboxed),
+    onSpecial: Boolean(d.onSpecial),
+    specialLabel: typeof d.specialLabel === 'string' ? d.specialLabel : '',
+    specialDiscountPercent:
+      typeof d.specialDiscountPercent === 'number' ? d.specialDiscountPercent : 0,
+  };
+}
 
 function readCachedWeeklySpecial(): WeeklyFiveMlSpecial | null {
   try {
@@ -242,65 +558,48 @@ function readCachedCampaign(): SpecialCampaign | null {
   }
 }
 
-function normalizeAndDedupeSizes(
-  rawSizes: unknown
-): { size: string; price: number | null; available: boolean }[] {
-  if (!Array.isArray(rawSizes)) return [];
-  const byKey = new Map<
-    string,
-    { size: string; price: number | null; available: boolean }
-  >();
-
-  for (const entry of rawSizes) {
-    if (!entry || typeof entry !== 'object') continue;
-    const s = entry as { size?: unknown; price?: unknown; available?: unknown };
-    const cleanSize = String(s.size ?? '').trim().slice(0, 24);
-    if (!cleanSize) continue;
-    const parsedPrice =
-      s.price !== null &&
-      s.price !== undefined &&
-      Number.isFinite(Number(s.price)) &&
-      Number(s.price) >= 0
-        ? Math.min(100000, Number(s.price))
-        : null;
-    const available = Boolean(s.available);
-    const dedupeKey = cleanSize.toLowerCase();
-    const existing = byKey.get(dedupeKey);
-
-    if (!existing) {
-      byKey.set(dedupeKey, { size: cleanSize, price: parsedPrice, available });
-    } else {
-      const nextAvailable = existing.available || available;
-      const nextPrice =
-        parsedPrice !== null && (available || existing.price === null)
-          ? parsedPrice
-          : existing.price;
-      byKey.set(dedupeKey, {
-        size: existing.size,
-        price: nextPrice,
-        available: nextAvailable,
-      });
-    }
-  }
-
-  return Array.from(byKey.values());
-}
-
-function readCachedPerfumes(): FragranceProduct[] {
+function readCachedPerfumes(): {
+  items: FragranceProduct[];
+  complete: boolean;
+} {
   try {
     const raw = localStorage.getItem(PERFUMES_CACHE_KEY);
-    if (!raw) return [];
+    if (!raw) return { items: [], complete: false };
     const parsed = JSON.parse(raw);
+    const metaRaw = localStorage.getItem(PERFUMES_META_KEY);
+    const meta = metaRaw ? (JSON.parse(metaRaw) as { complete?: boolean }) : {};
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return (parsed as FragranceProduct[]).map((item) => ({
-        ...item,
-        sizes: normalizeAndDedupeSizes(item.sizes),
-      }));
+      // Support both compact tuple format and legacy object format seamlessly
+      const items =
+        'i' in parsed[0]
+          ? decodeCompactPerfumes(raw)
+          : (parsed as FragranceProduct[]).map((item) => ({
+              ...item,
+              sizes: normalizeAndDedupeSizes(item.sizes),
+            }));
+      return { items, complete: Boolean(meta.complete ?? true) };
     }
   } catch {
     // Ignore cache parse errors
   }
-  return [];
+  return { items: [], complete: false };
+}
+
+function writePerfumesCache(items: FragranceProduct[], complete: boolean): void {
+  try {
+    if (items.length > 0) {
+      localStorage.setItem(PERFUMES_CACHE_KEY, encodeCompactPerfumes(items));
+      localStorage.setItem(PERFUMES_META_KEY, JSON.stringify({ complete }));
+      if (complete) {
+        setCacheTimestamp('perfumes');
+      }
+    } else {
+      localStorage.removeItem(PERFUMES_CACHE_KEY);
+      localStorage.removeItem(PERFUMES_META_KEY);
+    }
+  } catch {
+    // Ignore storage quota errors in restricted browsers
+  }
 }
 
 function readCachedCombos(): ComboDeal[] {
@@ -339,10 +638,61 @@ function readCachedHampers(): GiftHamper[] {
   return [];
 }
 
+function readSessionLookupCache<T>(storageKey: string, code: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, { ts: number; data: T }>;
+    const entry = map[code];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > LOOKUP_TTL_MS) return null;
+    return entry.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionLookupCache<T>(storageKey: string, code: string, data: T): void {
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    const map = raw ? (JSON.parse(raw) as Record<string, { ts: number; data: T }>) : {};
+    map[code] = { ts: Date.now(), data };
+    sessionStorage.setItem(storageKey, JSON.stringify(map));
+  } catch {
+    // Ignore session storage errors
+  }
+}
+
+function clearSessionLookupCache(storageKey: string, code?: string): void {
+  try {
+    if (!code) {
+      sessionStorage.removeItem(storageKey);
+      return;
+    }
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, unknown>;
+    delete map[code];
+    sessionStorage.setItem(storageKey, JSON.stringify(map));
+  } catch {
+    // Ignore session storage errors
+  }
+}
+
+function mergePerfumeLists(
+  existing: FragranceProduct[],
+  incomingList: FragranceProduct[]
+): FragranceProduct[] {
+  const byId = new Map<string, FragranceProduct>();
+  for (const item of existing) byId.set(item.id, item);
+  for (const item of incomingList) byId.set(item.id, item);
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const initialCachedPerfumes = useMemo(() => readCachedPerfumes(), []);
+  const initialPerfumeCache = useMemo(() => readCachedPerfumes(), []);
   const initialCachedCampaign = useMemo(() => readCachedCampaign(), []);
   const initialCachedCombos = useMemo(() => readCachedCombos(), []);
   const initialCachedLayering = useMemo(() => readCachedLayering(), []);
@@ -352,10 +702,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
+  const [adminConsoleActive, setAdminConsoleActive] = useState(false);
 
-  const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>(initialCachedPerfumes);
-  const [catalogueLoading, setCatalogueLoading] = useState(initialCachedPerfumes.length === 0);
+  const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>(
+    initialPerfumeCache.items
+  );
+  const [catalogueLoading, setCatalogueLoading] = useState(
+    initialPerfumeCache.items.length === 0
+  );
+  const [catalogueComplete, setCatalogueComplete] = useState(
+    initialPerfumeCache.items.length > 0 && initialPerfumeCache.complete
+  );
+  const [catalogueHasMore, setCatalogueHasMore] = useState(
+    initialPerfumeCache.items.length > 0 && !initialPerfumeCache.complete
+  );
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
+  const [snapshotStatus, setSnapshotStatus] = useState<SnapshotStatusInfo | null>(null);
+
   const [campaign, setCampaign] = useState<SpecialCampaign>(
     initialCachedCampaign ?? DEFAULT_CAMPAIGN
   );
@@ -366,24 +729,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [weeklySpecialLoading, setWeeklySpecialLoading] = useState(
     initialCachedWeeklySpecial === null
   );
+
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [couponsLoading, setCouponsLoading] = useState(false);
+  const [referrals, setReferrals] = useState<InfluencerReferral[]>([]);
+  const [referralsLoading, setReferralsLoading] = useState(false);
+  const [referralAttributions, setReferralAttributions] = useState<ReferralAttribution[]>([]);
+  const [referralAttributionsLoading, setReferralAttributionsLoading] = useState(false);
+  const [referralSales, setReferralSales] = useState<ReferralSale[]>([]);
+  const [referralSalesLoading, setReferralSalesLoading] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
 
   const [liveCombos, setLiveCombos] = useState<ComboDeal[]>(initialCachedCombos);
-  const [combosLoading, setCombosLoading] = useState(initialCachedCombos.length === 0);
-  const [liveLayeringIdeas, setLiveLayeringIdeas] = useState<LayeringIdea[]>(initialCachedLayering);
-  const [layeringLoading, setLayeringLoading] = useState(initialCachedLayering.length === 0);
+  const [combosLoading, setCombosLoading] = useState(false);
+  const [liveLayeringIdeas, setLiveLayeringIdeas] = useState<LayeringIdea[]>(
+    initialCachedLayering
+  );
+  const [layeringLoading, setLayeringLoading] = useState(false);
   const [liveHampers, setLiveHampers] = useState<GiftHamper[]>(initialCachedHampers);
-  const [hampersLoading, setHampersLoading] = useState(initialCachedHampers.length === 0);
+  const [hampersLoading, setHampersLoading] = useState(false);
 
   const isOwner = useMemo(() => {
     void authRevision;
-    return Boolean(
-      user &&
-        user.emailVerified &&
-        isAuthorizedAdminEmail(user.email)
-    );
+    return Boolean(user && user.emailVerified && isAuthorizedAdminEmail(user.email));
   }, [user, authRevision]);
+
+  // Refs for deduplicating in-flight network requests, pagination cursor & referral double-submits
+  const lastPerfumeCursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const catalogueSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const loadMorePromiseRef = useRef<Promise<void> | null>(null);
+  const loadAllPromiseRef = useRef<Promise<void> | null>(null);
+  const promoFetchPromiseRef = useRef<Promise<void> | null>(null);
+  const secondaryInFlightRef = useRef<Record<string, Promise<void> | undefined>>({});
+  const promoLookupInFlightRef = useRef<Record<string, Promise<unknown> | undefined>>({});
+  const recentReferralSalesRef = useRef<Map<string, number>>(new Map());
+  const publicReferralsSyncedRef = useRef(false);
+  const livePerfumesRef = useRef<FragranceProduct[]>(livePerfumes);
+  livePerfumesRef.current = livePerfumes;
 
   // 1. Auth Listener
   useEffect(() => {
@@ -395,206 +778,442 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     return unsubscribe;
   }, []);
 
-  // 2. Public Perfumes Listener
+  // Helper: fetch first page (60 items) or next cursor pages (zero composite indexes!)
+  const fetchCataloguePage = useCallback(
+    async (cursor: QueryDocumentSnapshot<DocumentData> | null, pageSize: number) => {
+      const started = performance.now();
+      const q = cursor
+        ? query(
+            collection(db, 'perfumes'),
+            where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
+            startAfter(cursor),
+            limit(pageSize)
+          )
+        : query(
+            collection(db, 'perfumes'),
+            where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
+            limit(pageSize)
+          );
+      const snapshot = await withRetry(() => getDocs(q), { maxAttempts: 3 });
+      recordFirestoreRead(
+        cursor ? 'perfumes:page-next' : 'perfumes:page-init',
+        snapshot.docs.length,
+        performance.now() - started
+      );
+      const items = snapshot.docs.map((docSnap) => mapPerfumeDoc(docSnap.id, docSnap.data()));
+      const nextCursor =
+        snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      const hasMore = snapshot.docs.length === pageSize;
+      return { items, nextCursor, hasMore };
+    },
+    []
+  );
+
+  // 2. Cost-Engineered Public Catalogue Loader (1-Read Snapshot -> TTL Cache -> Paginated Fallback)
+  const syncPublicCatalogue = useCallback(
+    async (force = false) => {
+      if (catalogueSyncPromiseRef.current && !force) {
+        return catalogueSyncPromiseRef.current;
+      }
+      if (
+        !force &&
+        livePerfumesRef.current.length > 0 &&
+        catalogueComplete &&
+        isCacheFresh('perfumes', CATALOGUE_TTL_MS)
+      ) {
+        recordFirestoreRead('perfumes:cache-hit', 0, 0, true);
+        setCatalogueLoading(false);
+        return;
+      }
+
+      const task = (async () => {
+        if (livePerfumesRef.current.length === 0) {
+          setCatalogueLoading(true);
+        }
+        try {
+          const started = performance.now();
+          const snapDoc = await withRetry(
+            () => getDoc(doc(db, 'catalogueSnapshots', SNAPSHOT_DOC_ID)),
+            { maxAttempts: 2 }
+          );
+          if (snapDoc.exists()) {
+            const data = snapDoc.data();
+            const rawJson = typeof data.itemsJson === 'string' ? data.itemsJson : '';
+            if (rawJson.length >= 2) {
+              const decoded = decodeCompactPerfumes(rawJson);
+              decoded.sort((a, b) => a.name.localeCompare(b.name));
+              const updatedAtTs = data.updatedAt as { toMillis?: () => number } | undefined;
+              const updatedAtMs =
+                updatedAtTs && typeof updatedAtTs.toMillis === 'function'
+                  ? updatedAtTs.toMillis()
+                  : Date.now();
+              setSnapshotStatus({
+                count: decoded.length,
+                updatedAtMs,
+                bytes: rawJson.length,
+              });
+              recordFirestoreRead(
+                'catalogueSnapshots/public',
+                1,
+                performance.now() - started
+              );
+              setLivePerfumes(decoded);
+              setCatalogueComplete(true);
+              setCatalogueHasMore(false);
+              setCatalogueError(null);
+              setCatalogueLoading(false);
+              writePerfumesCache(decoded, true);
+              return;
+            }
+          }
+
+          // Snapshot doc doesn't exist yet -> paginated first batch (0 composite indexes)
+          const page = await fetchCataloguePage(null, INITIAL_PAGE_SIZE);
+          lastPerfumeCursorRef.current = page.nextCursor;
+          const sorted = [...page.items].sort((a, b) => a.name.localeCompare(b.name));
+          if (sorted.length > 0) {
+            setLivePerfumes(sorted);
+            writePerfumesCache(sorted, !page.hasMore);
+          }
+          setCatalogueComplete(!page.hasMore);
+          setCatalogueHasMore(page.hasMore);
+          setCatalogueError(null);
+        } catch (error) {
+          setCatalogueError(
+            error instanceof Error ? error.message : 'Unable to sync live catalogue.'
+          );
+        } finally {
+          setCatalogueLoading(false);
+          catalogueSyncPromiseRef.current = null;
+        }
+      })();
+
+      catalogueSyncPromiseRef.current = task;
+      return task;
+    },
+    [catalogueComplete, fetchCataloguePage]
+  );
+
+  // Trigger initial storefront catalogue load when NOT in real-time admin mode
   useEffect(() => {
-    const q = query(
-      collection(db, 'perfumes'),
-      where('availability', 'in', ['In Stock', 'Low Stock', 'Out of Stock', 'Pre-Order'])
-    );
+    if (isOwner && adminConsoleActive) return;
+    void syncPublicCatalogue(false);
+  }, [isOwner, adminConsoleActive, syncPublicCatalogue]);
+
+  const loadMorePerfumes = useCallback(async () => {
+    if (catalogueComplete || !catalogueHasMore) return;
+    if (loadMorePromiseRef.current) return loadMorePromiseRef.current;
+
+    const task = (async () => {
+      try {
+        const page = await fetchCataloguePage(
+          lastPerfumeCursorRef.current,
+          INCREMENTAL_PAGE_SIZE
+        );
+        lastPerfumeCursorRef.current = page.nextCursor;
+        const merged = mergePerfumeLists(livePerfumesRef.current, page.items);
+        setLivePerfumes(merged);
+        setCatalogueHasMore(page.hasMore);
+        setCatalogueComplete(!page.hasMore);
+        writePerfumesCache(merged, !page.hasMore);
+      } catch (error) {
+        setCatalogueError(
+          error instanceof Error ? error.message : 'Unable to load additional fragrances.'
+        );
+      } finally {
+        loadMorePromiseRef.current = null;
+      }
+    })();
+
+    loadMorePromiseRef.current = task;
+    return task;
+  }, [catalogueComplete, catalogueHasMore, fetchCataloguePage]);
+
+  const ensureAllPerfumesLoaded = useCallback(async () => {
+    if (catalogueComplete || !catalogueHasMore) return;
+    if (loadAllPromiseRef.current) return loadAllPromiseRef.current;
+
+    const task = (async () => {
+      try {
+        let cursor = lastPerfumeCursorRef.current;
+        let hasMore: boolean = catalogueHasMore;
+        let accumulated = [...livePerfumesRef.current];
+        let safetyPages = 0;
+
+        while (hasMore && safetyPages < 12) {
+          safetyPages += 1;
+          const page = await fetchCataloguePage(cursor, INCREMENTAL_PAGE_SIZE);
+          cursor = page.nextCursor;
+          hasMore = page.hasMore;
+          accumulated = mergePerfumeLists(accumulated, page.items);
+          setLivePerfumes(accumulated);
+          setCatalogueHasMore(hasMore);
+          if (!hasMore) {
+            setCatalogueComplete(true);
+            writePerfumesCache(accumulated, true);
+          }
+        }
+        lastPerfumeCursorRef.current = cursor;
+      } catch (error) {
+        setCatalogueError(
+          error instanceof Error ? error.message : 'Unable to finish loading catalogue.'
+        );
+      } finally {
+        loadAllPromiseRef.current = null;
+      }
+    })();
+
+    loadAllPromiseRef.current = task;
+    return task;
+  }, [catalogueComplete, catalogueHasMore, fetchCataloguePage]);
+
+  const retryCatalogueSync = useCallback(async () => {
+    await syncPublicCatalogue(true);
+  }, [syncPublicCatalogue]);
+
+  // 2b. Admin-Only Live Perfumes Listener (only active inside Admin Dashboard!)
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) return;
+
+    setCatalogueLoading(livePerfumesRef.current.length === 0);
+    const q = query(collection(db, 'perfumes'));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const items: FragranceProduct[] = snapshot.docs.map((docSnap) => {
-          const d = docSnap.data();
-          return {
-            id: docSnap.id,
-            slug: typeof d.slug === 'string' ? d.slug : docSnap.id,
-            isSampleListing: Boolean(d.isSampleListing),
-            name: String(d.name ?? ''),
-            brand: String(d.brand ?? ''),
-            category: d.category === 'Men' || d.category === 'Women' ? d.category : 'Unisex',
-            concentration: String(d.concentration ?? 'Eau de Parfum'),
-            description: String(d.description ?? ''),
-            image: String(d.image ?? ''),
-            notes: {
-              top: Array.isArray(d.notes?.top) ? d.notes.top.map(String) : [],
-              heart: Array.isArray(d.notes?.heart) ? d.notes.heart.map(String) : [],
-              base: Array.isArray(d.notes?.base) ? d.notes.base.map(String) : [],
-            },
-            sizes: normalizeAndDedupeSizes(d.sizes),
-            availability: d.availability ?? 'In Stock',
-            availableBranches: Array.isArray(d.availableBranches)
-              ? normalizeBranches(d.availableBranches)
-              : undefined,
-            featured: Boolean(d.featured),
-            bestseller: Boolean(d.bestseller),
-            isUnboxed: Boolean(d.isUnboxed),
-            onSpecial: Boolean(d.onSpecial),
-            specialLabel: typeof d.specialLabel === 'string' ? d.specialLabel : '',
-            specialDiscountPercent:
-              typeof d.specialDiscountPercent === 'number'
-                ? d.specialDiscountPercent
-                : 0,
-          };
-        });
+        const items = snapshot.docs.map((docSnap) =>
+          mapPerfumeDoc(docSnap.id, docSnap.data())
+        );
         items.sort((a, b) => a.name.localeCompare(b.name));
+        recordFirestoreRead('admin:perfumes-snapshot', items.length, 0);
         setLivePerfumes(items);
+        setCatalogueComplete(true);
+        setCatalogueHasMore(false);
         setCatalogueError(null);
         setCatalogueLoading(false);
-        try {
-          if (items.length > 0) {
-            localStorage.setItem(PERFUMES_CACHE_KEY, JSON.stringify(items));
-          } else {
-            localStorage.removeItem(PERFUMES_CACHE_KEY);
-          }
-        } catch {
-          // Ignore storage quota errors
-        }
+        writePerfumesCache(items, true);
       },
       (error) => {
         setCatalogueLoading(false);
         setCatalogueError(
-          error instanceof Error ? error.message : 'Unable to sync live catalogue.'
+          error instanceof Error ? error.message : 'Unable to sync admin catalogue.'
         );
         try {
           handleFirestoreError(error, OperationType.LIST, 'perfumes');
         } catch {
-          // Diagnostic error already logged inside handleFirestoreError
+          // Diagnostic error already logged
         }
       }
     );
-    const safetyTimer = window.setTimeout(() => {
-      setCatalogueLoading(false);
-    }, 2500);
-    return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
-    };
-  }, [isOwner]);
 
-  // 3. Public Campaign Listener (Black Friday / Seasonal Special)
-  useEffect(() => {
-    const ref = doc(db, 'campaigns', 'active-special');
-    const unsubscribe = onSnapshot(
-      ref,
-      (snap) => {
-        const nextCampaign: SpecialCampaign = snap.exists()
-          ? (() => {
-              const d = snap.data();
-              return {
-                title: String(d.title ?? DEFAULT_CAMPAIGN.title),
-                badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
-                subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
-                announcementText: String(d.announcementText ?? ''),
-                promoCodeHint: String(d.promoCodeHint ?? ''),
-                endsAt: String(d.endsAt ?? ''),
-                enabled: Boolean(d.enabled),
-              };
-            })()
-          : DEFAULT_CAMPAIGN;
-        setCampaign(nextCampaign);
-        setCampaignLoading(false);
-        try {
-          localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(nextCampaign));
-        } catch {
-          // Ignore storage quota errors
-        }
-      },
-      (error) => {
-        setCampaignLoading(false);
-        try {
-          handleFirestoreError(error, OperationType.GET, 'campaigns/active-special');
-        } catch {
-          // Diagnostic error already logged inside handleFirestoreError
-        }
+    return unsubscribe;
+  }, [authReady, isOwner, adminConsoleActive]);
+
+  // Helper: Publish Compact 1-Read Public Snapshot Document
+  const publishCatalogueSnapshot = useCallback(
+    async (
+      overrideList?: FragranceProduct[]
+    ): Promise<{ ok: boolean; count: number; bytes: number }> => {
+      const uid = auth.currentUser?.uid;
+      if (!uid || !isOwner) {
+        return { ok: false, count: 0, bytes: 0 };
       }
-    );
-    const safetyTimer = window.setTimeout(() => {
+
+      const sourceList = overrideList ?? livePerfumesRef.current;
+      if (sourceList.length === 0) {
+        return { ok: false, count: 0, bytes: 0 };
+      }
+
+      const sorted = [...sourceList].sort((a, b) => a.name.localeCompare(b.name));
+      const itemsJson = encodeCompactPerfumes(sorted);
+      const byteLength = new TextEncoder().encode(itemsJson).length;
+      if (byteLength > SNAPSHOT_MAX_BYTES) {
+        return { ok: false, count: sorted.length, bytes: byteLength };
+      }
+
+      try {
+        await withRetry(
+          () =>
+            setDoc(doc(db, 'catalogueSnapshots', SNAPSHOT_DOC_ID), {
+              version: SNAPSHOT_VERSION,
+              totalCount: sorted.length,
+              itemsJson,
+              ownerUid: uid,
+              updatedAt: serverTimestamp(),
+            }),
+          { maxAttempts: 2 }
+        );
+        setSnapshotStatus({
+          count: sorted.length,
+          updatedAtMs: Date.now(),
+          bytes: byteLength,
+        });
+        writePerfumesCache(sorted, true);
+        return { ok: true, count: sorted.length, bytes: byteLength };
+      } catch {
+        return { ok: false, count: sorted.length, bytes: byteLength };
+      }
+    },
+    [isOwner]
+  );
+
+  // Auto-seed or refresh 1-read public snapshot when Admin opens Admin Console and count differs
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) return;
+    if (!catalogueComplete || livePerfumes.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'catalogueSnapshots', SNAPSHOT_DOC_ID));
+        if (cancelled) return;
+        const remoteCount = snap.exists() ? Number(snap.data().totalCount ?? -1) : -1;
+        if (!snap.exists() || remoteCount !== livePerfumes.length) {
+          await publishCatalogueSnapshot(livePerfumes);
+        } else {
+          const ts = snap.data().updatedAt as { toMillis?: () => number } | undefined;
+          setSnapshotStatus({
+            count: remoteCount,
+            updatedAtMs: ts && typeof ts.toMillis === 'function' ? ts.toMillis() : null,
+            bytes:
+              typeof snap.data().itemsJson === 'string'
+                ? snap.data().itemsJson.length
+                : 0,
+          });
+        }
+      } catch {
+        // Non-blocking auto-sync
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, isOwner, adminConsoleActive, catalogueComplete, livePerfumes, publishCatalogueSnapshot]);
+
+  // 3. Cached One-Shot Promos (Campaign & Weekly 5ml Special — Replaces 2 Continuous Listeners!)
+  useEffect(() => {
+    const campaignFresh = isCacheFresh('campaign', PROMO_TTL_MS) && initialCachedCampaign !== null;
+    const weeklyFresh = isCacheFresh('weeklySpecial', PROMO_TTL_MS) && initialCachedWeeklySpecial !== null;
+
+    if (campaignFresh && weeklyFresh && !adminConsoleActive) {
+      recordFirestoreRead('promos:cache-hit', 0, 0, true);
       setCampaignLoading(false);
-    }, 2500);
-    return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
-    };
-  }, []);
-
-  // 3b. Public Weekly 5ml Special Listener
-  useEffect(() => {
-    const ref = doc(db, 'weeklySpecials', 'active-5ml');
-    const unsubscribe = onSnapshot(
-      ref,
-      (snap) => {
-        const nextWeekly: WeeklyFiveMlSpecial = snap.exists()
-          ? (() => {
-              const d = snap.data();
-              const fourPrice = Number(d.fourPackPrice ?? 100);
-              const twoPrice = Number(d.twoPackPrice ?? 50);
-              return {
-                enabled: Boolean(d.enabled),
-                autoRotateWeekly: d.autoRotateWeekly !== false,
-                weekKey: String(d.weekKey ?? ''),
-                seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
-                under500Ids: Array.isArray(d.under500Ids)
-                  ? d.under500Ids.map(String).slice(0, 2)
-                  : [],
-                under800Ids: Array.isArray(d.under800Ids)
-                  ? d.under800Ids.map(String).slice(0, 2)
-                  : [],
-                womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
-                  ? d.womenUnder500Ids.map(String).slice(0, 2)
-                  : [],
-                womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
-                  ? d.womenUnder800Ids.map(String).slice(0, 2)
-                  : [],
-                menUnder500Ids: Array.isArray(d.menUnder500Ids)
-                  ? d.menUnder500Ids.map(String).slice(0, 2)
-                  : [],
-                menUnder800Ids: Array.isArray(d.menUnder800Ids)
-                  ? d.menUnder800Ids.map(String).slice(0, 2)
-                  : [],
-                fourPackPrice: Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
-                twoPackPrice: Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
-              };
-            })()
-          : DEFAULT_WEEKLY_FIVE_ML_SPECIAL;
-        setWeeklySpecial(nextWeekly);
-        setWeeklySpecialLoading(false);
-        try {
-          localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(nextWeekly));
-        } catch {
-          // Ignore storage quota errors
-        }
-      },
-      (error) => {
-        setWeeklySpecialLoading(false);
-        try {
-          handleFirestoreError(error, OperationType.GET, 'weeklySpecials/active-5ml');
-        } catch {
-          // Diagnostic error logged inside handleFirestoreError
-        }
-      }
-    );
-    const safetyTimer = window.setTimeout(() => {
       setWeeklySpecialLoading(false);
-    }, 2500);
-    return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
-    };
-  }, []);
+      return;
+    }
 
-  // 4. Owner-Only Coupons Listener
+    if (promoFetchPromiseRef.current) return;
+
+    const task = (async () => {
+      const started = performance.now();
+      try {
+        const [campSnap, weeklySnap] = await Promise.all([
+          campaignFresh && !adminConsoleActive
+            ? Promise.resolve(null)
+            : withRetry(() => getDoc(doc(db, 'campaigns', 'active-special')), { maxAttempts: 2 }),
+          weeklyFresh && !adminConsoleActive
+            ? Promise.resolve(null)
+            : withRetry(() => getDoc(doc(db, 'weeklySpecials', 'active-5ml')), { maxAttempts: 2 }),
+        ]);
+
+        let reads = 0;
+        if (campSnap) {
+          reads += 1;
+          const nextCampaign: SpecialCampaign = campSnap.exists()
+            ? (() => {
+                const d = campSnap.data();
+                return {
+                  title: String(d.title ?? DEFAULT_CAMPAIGN.title),
+                  badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
+                  subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
+                  announcementText: String(d.announcementText ?? ''),
+                  promoCodeHint: String(d.promoCodeHint ?? ''),
+                  endsAt: String(d.endsAt ?? ''),
+                  enabled: Boolean(d.enabled),
+                };
+              })()
+            : DEFAULT_CAMPAIGN;
+          setCampaign(nextCampaign);
+          try {
+            localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(nextCampaign));
+            setCacheTimestamp('campaign');
+          } catch {
+            // Ignore storage errors
+          }
+        }
+
+        if (weeklySnap) {
+          reads += 1;
+          const nextWeekly: WeeklyFiveMlSpecial = weeklySnap.exists()
+            ? (() => {
+                const d = weeklySnap.data();
+                const fourPrice = Number(d.fourPackPrice ?? 100);
+                const twoPrice = Number(d.twoPackPrice ?? 50);
+                return {
+                  enabled: Boolean(d.enabled),
+                  autoRotateWeekly: d.autoRotateWeekly !== false,
+                  weekKey: String(d.weekKey ?? ''),
+                  seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
+                  under500Ids: Array.isArray(d.under500Ids)
+                    ? d.under500Ids.map(String).slice(0, 2)
+                    : [],
+                  under800Ids: Array.isArray(d.under800Ids)
+                    ? d.under800Ids.map(String).slice(0, 2)
+                    : [],
+                  womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
+                    ? d.womenUnder500Ids.map(String).slice(0, 2)
+                    : [],
+                  womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
+                    ? d.womenUnder800Ids.map(String).slice(0, 2)
+                    : [],
+                  menUnder500Ids: Array.isArray(d.menUnder500Ids)
+                    ? d.menUnder500Ids.map(String).slice(0, 2)
+                    : [],
+                  menUnder800Ids: Array.isArray(d.menUnder800Ids)
+                    ? d.menUnder800Ids.map(String).slice(0, 2)
+                    : [],
+                  fourPackPrice:
+                    Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
+                  twoPackPrice:
+                    Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
+                };
+              })()
+            : DEFAULT_WEEKLY_FIVE_ML_SPECIAL;
+          setWeeklySpecial(nextWeekly);
+          try {
+            localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(nextWeekly));
+            setCacheTimestamp('weeklySpecial');
+          } catch {
+            // Ignore storage errors
+          }
+        }
+
+        if (reads > 0) {
+          recordFirestoreRead('promos:getDoc', reads, performance.now() - started);
+        }
+      } catch {
+        // Fallback gracefully to cached/default campaign values
+      } finally {
+        setCampaignLoading(false);
+        setWeeklySpecialLoading(false);
+        promoFetchPromiseRef.current = null;
+      }
+    })();
+
+    promoFetchPromiseRef.current = task;
+  }, [adminConsoleActive, initialCachedCampaign, initialCachedWeeklySpecial]);
+
+  // 4. Owner-Only Admin Console Listeners (strictly gated on authReady + isOwner + adminConsoleActive!)
   useEffect(() => {
-    if (!authReady || !isOwner) {
+    if (!authReady || !isOwner || !adminConsoleActive) {
       setCoupons([]);
       setCouponsLoading(false);
       return;
     }
 
     setCouponsLoading(true);
-    const q = query(collection(db, 'coupons'));
-    const unsubscribe = onSnapshot(
-      q,
+    const unsub = onSnapshot(
+      query(collection(db, 'coupons')),
       (snapshot) => {
         const items: Coupon[] = snapshot.docs.map((docSnap) => {
           const d = docSnap.data();
@@ -621,189 +1240,509 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         try {
           handleFirestoreError(error, OperationType.LIST, 'coupons');
         } catch {
-          // Diagnostic error already logged inside handleFirestoreError
+          // Diagnostic error logged
         }
       }
     );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
 
-    return unsubscribe;
-  }, [authReady, isOwner]);
-
-  // 5. Public Combos Listener
   useEffect(() => {
-    const combosQuery = isOwner
-      ? query(collection(db, 'combos'))
-      : query(collection(db, 'combos'), where('active', '==', true));
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      setReferrals([]);
+      setReferralsLoading(false);
+      return;
+    }
 
-    const unsubscribe = onSnapshot(
-      combosQuery,
+    setReferralsLoading(true);
+    const unsub = onSnapshot(
+      query(collection(db, 'referrals')),
       (snapshot) => {
-        const items: ComboDeal[] = snapshot.docs.map((docSnap) => {
+        const items: InfluencerReferral[] = snapshot.docs.map((docSnap) => {
           const d = docSnap.data();
           return {
             id: docSnap.id,
-            title: String(d.title ?? ''),
-            subtitle: String(d.subtitle ?? ''),
-            perfumeNames: Array.isArray(d.perfumeNames)
-              ? d.perfumeNames.map(String)
-              : [],
-            sizeLabel: String(d.sizeLabel ?? ''),
-            regularPrice: Number(d.regularPrice ?? 0),
-            comboPrice: Number(d.comboPrice ?? 0),
-            tag: String(d.tag ?? ''),
-            featured: Boolean(d.featured),
+            code: String(d.code ?? docSnap.id),
+            influencerName: String(d.influencerName ?? ''),
+            socialHandle: String(d.socialHandle ?? ''),
+            commissionType: d.commissionType === 'fixed' ? 'fixed' : 'percentage',
+            commissionValue: Number(d.commissionValue ?? 0),
+            followerDiscountType:
+              d.followerDiscountType === 'percentage' || d.followerDiscountType === 'fixed'
+                ? d.followerDiscountType
+                : 'none',
+            followerDiscountValue: Number(d.followerDiscountValue ?? 0),
+            payoutNote: String(d.payoutNote ?? ''),
             active: Boolean(d.active),
           };
         });
-        items.sort((a, b) => Number(b.featured) - Number(a.featured));
-        setLiveCombos(items);
-        setCombosLoading(false);
-        try {
-          if (items.length > 0) {
-            localStorage.setItem(COMBOS_CACHE_KEY, JSON.stringify(items));
-          } else {
-            localStorage.removeItem(COMBOS_CACHE_KEY);
-          }
-        } catch {
-          // Ignore storage quota errors
+        items.sort((a, b) => a.code.localeCompare(b.code));
+        setReferrals(items);
+        setReferralsLoading(false);
+
+        // One-time per session sync: mirror legacy referrals into publicReferrals safely
+        const currentUid = auth.currentUser?.uid;
+        if (!publicReferralsSyncedRef.current && currentUid && items.length > 0) {
+          publicReferralsSyncedRef.current = true;
+          void (async () => {
+            try {
+              const pubSnap = await getDocs(collection(db, 'publicReferrals'));
+              const existingMap = new Map(pubSnap.docs.map((p) => [p.id, p.data()]));
+              const batch = writeBatch(db);
+              let dirty = 0;
+              for (const r of items) {
+                const pub = existingMap.get(r.code);
+                const needsSync =
+                  !pub ||
+                  String(pub.influencerName ?? '') !== r.influencerName ||
+                  String(pub.socialHandle ?? '') !== r.socialHandle ||
+                  String(pub.followerDiscountType ?? 'none') !== r.followerDiscountType ||
+                  Number(pub.followerDiscountValue ?? 0) !== r.followerDiscountValue ||
+                  Boolean(pub.active) !== r.active;
+                if (needsSync) {
+                  batch.set(doc(db, 'publicReferrals', r.code), {
+                    code: r.code,
+                    influencerName: r.influencerName,
+                    socialHandle: r.socialHandle,
+                    followerDiscountType: r.followerDiscountType,
+                    followerDiscountValue: r.followerDiscountValue,
+                    active: r.active,
+                    ownerUid: currentUid,
+                    updatedAt: serverTimestamp(),
+                  });
+                  dirty += 1;
+                }
+              }
+              if (dirty > 0) {
+                await batch.commit();
+              }
+            } catch {
+              // Non-blocking sync retry on next admin open if offline
+              publicReferralsSyncedRef.current = false;
+            }
+          })();
         }
       },
       (error) => {
-        setCombosLoading(false);
+        setReferralsLoading(false);
         try {
-          handleFirestoreError(error, OperationType.LIST, 'combos');
+          handleFirestoreError(error, OperationType.LIST, 'referrals');
         } catch {
           // Diagnostic error logged
         }
       }
     );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
 
-    const safetyTimer = window.setTimeout(() => {
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      setReferralAttributions([]);
+      setReferralAttributionsLoading(false);
+      return;
+    }
+
+    setReferralAttributionsLoading(true);
+    const unsub = onSnapshot(
+      query(collection(db, 'referralAttributions')),
+      (snapshot) => {
+        const items: ReferralAttribution[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+          const createdAtMs =
+            rawCreated && typeof rawCreated.toMillis === 'function'
+              ? rawCreated.toMillis()
+              : Date.now();
+          const status: ReferralAttributionStatus =
+            d.status === 'converted' || d.status === 'dismissed' ? d.status : 'pending';
+          return {
+            id: docSnap.id,
+            referralCode: String(d.referralCode ?? ''),
+            influencerName: String(d.influencerName ?? ''),
+            orderSummary: String(d.orderSummary ?? ''),
+            reportedSubtotal: Number(d.reportedSubtotal ?? 0),
+            reportedDiscount: Number(d.reportedDiscount ?? 0),
+            customerRef: String(d.customerRef ?? ''),
+            status,
+            convertedSaleId: String(d.convertedSaleId ?? ''),
+            createdAtMs,
+          };
+        });
+        items.sort((a, b) => b.createdAtMs - a.createdAtMs);
+        setReferralAttributions(items);
+        setReferralAttributionsLoading(false);
+      },
+      (error) => {
+        setReferralAttributionsLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'referralAttributions');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
+
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      setReferralSales([]);
+      setReferralSalesLoading(false);
+      return;
+    }
+
+    setReferralSalesLoading(true);
+    const unsub = onSnapshot(
+      query(collection(db, 'referralSales')),
+      (snapshot) => {
+        const items: ReferralSale[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+          const createdAtMs =
+            rawCreated && typeof rawCreated.toMillis === 'function'
+              ? rawCreated.toMillis()
+              : Date.now();
+          const status: ReferralSaleStatus =
+            d.commissionStatus === 'confirmed' ||
+            d.commissionStatus === 'paid' ||
+            d.commissionStatus === 'cancelled'
+              ? d.commissionStatus
+              : 'pending';
+          return {
+            id: docSnap.id,
+            referralCode: String(d.referralCode ?? ''),
+            influencerName: String(d.influencerName ?? ''),
+            orderSummary: String(d.orderSummary ?? ''),
+            orderSubtotal: Number(d.orderSubtotal ?? 0),
+            discountAmount: Number(d.discountAmount ?? 0),
+            netOrderAmount: Number(d.netOrderAmount ?? 0),
+            commissionAmount: Number(d.commissionAmount ?? 0),
+            commissionStatus: status,
+            source: d.source === 'manual' ? 'manual' : 'checkout',
+            customerRef: String(d.customerRef ?? ''),
+            createdAtMs,
+          };
+        });
+        items.sort((a, b) => b.createdAtMs - a.createdAtMs);
+        setReferralSales(items);
+        setReferralSalesLoading(false);
+      },
+      (error) => {
+        setReferralSalesLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'referralSales');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
+
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      setAuditLogs([]);
+      setAuditLogsLoading(false);
+      return;
+    }
+
+    setAuditLogsLoading(true);
+    const unsub = onSnapshot(
+      query(collection(db, 'auditLogs')),
+      (snapshot) => {
+        const items: AuditLogEntry[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+          const createdAtMs =
+            rawCreated && typeof rawCreated.toMillis === 'function'
+              ? rawCreated.toMillis()
+              : Date.now();
+          const action: AuditAction =
+            d.action === 'create' ||
+            d.action === 'update' ||
+            d.action === 'delete' ||
+            d.action === 'import'
+              ? d.action
+              : 'update';
+          const section: AuditSection =
+            d.section === 'perfume' ||
+            d.section === 'specials' ||
+            d.section === 'weekly-special' ||
+            d.section === 'coupon' ||
+            d.section === 'combo' ||
+            d.section === 'layering' ||
+            d.section === 'hamper' ||
+            d.section === 'referral' ||
+            d.section === 'referral-sale' ||
+            d.section === 'referral-attribution'
+              ? d.section
+              : 'perfume';
+
+          return {
+            id: docSnap.id,
+            actorEmail: String(d.actorEmail ?? ''),
+            actorUsername: String(d.actorUsername ?? 'admin'),
+            action,
+            section,
+            targetId: String(d.targetId ?? docSnap.id),
+            targetLabel: String(d.targetLabel ?? ''),
+            summary: String(d.summary ?? ''),
+            changes: Array.isArray(d.changes) ? d.changes.map(String).filter(Boolean) : [],
+            ownerUid: String(d.ownerUid ?? ''),
+            createdAtMs,
+          };
+        });
+        items.sort((a, b) => b.createdAtMs - a.createdAtMs);
+        setAuditLogs(items);
+        setAuditLogsLoading(false);
+      },
+      (error) => {
+        setAuditLogsLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'auditLogs');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
+
+  // 5. Lazy On-Demand Loader for Secondary Collections (Combos, Layering Ideas, Hampers)
+  const ensureSecondaryLoaded = useCallback(
+    async (section: 'combos' | 'layering' | 'hampers') => {
+      const existingPromise = secondaryInFlightRef.current[section];
+      if (existingPromise) return existingPromise;
+
+      if (!adminConsoleActive && isCacheFresh(section, SECONDARY_TTL_MS)) {
+        const hasCached =
+          (section === 'combos' && liveCombos.length > 0) ||
+          (section === 'layering' && liveLayeringIdeas.length > 0) ||
+          (section === 'hampers' && liveHampers.length > 0);
+        if (hasCached) {
+          recordFirestoreRead(`${section}:cache-hit`, 0, 0, true);
+          return;
+        }
+      }
+
+      const task = (async () => {
+        const started = performance.now();
+        try {
+          if (section === 'combos') {
+            setCombosLoading(true);
+            const q = isOwner
+              ? query(collection(db, 'combos'))
+              : query(collection(db, 'combos'), where('active', '==', true));
+            const snap = await withRetry(() => getDocs(q), { maxAttempts: 2 });
+            recordFirestoreRead('combos:getDocs', snap.docs.length, performance.now() - started);
+            const items: ComboDeal[] = snap.docs.map((docSnap) => {
+              const d = docSnap.data();
+              return {
+                id: docSnap.id,
+                title: String(d.title ?? ''),
+                subtitle: String(d.subtitle ?? ''),
+                perfumeNames: Array.isArray(d.perfumeNames)
+                  ? d.perfumeNames.map(String)
+                  : [],
+                sizeLabel: String(d.sizeLabel ?? ''),
+                regularPrice: Number(d.regularPrice ?? 0),
+                comboPrice: Number(d.comboPrice ?? 0),
+                tag: String(d.tag ?? ''),
+                featured: Boolean(d.featured),
+                active: Boolean(d.active),
+              };
+            });
+            items.sort((a, b) => Number(b.featured) - Number(a.featured));
+            setLiveCombos(items);
+            try {
+              if (items.length > 0) {
+                localStorage.setItem(COMBOS_CACHE_KEY, JSON.stringify(items));
+                setCacheTimestamp('combos');
+              } else {
+                localStorage.removeItem(COMBOS_CACHE_KEY);
+              }
+            } catch {
+              // Ignore storage errors
+            }
+          } else if (section === 'layering') {
+            setLayeringLoading(true);
+            const q = isOwner
+              ? query(collection(db, 'layeringIdeas'))
+              : query(collection(db, 'layeringIdeas'), where('active', '==', true));
+            const snap = await withRetry(() => getDocs(q), { maxAttempts: 2 });
+            recordFirestoreRead(
+              'layeringIdeas:getDocs',
+              snap.docs.length,
+              performance.now() - started
+            );
+            const items: LayeringIdea[] = snap.docs.map((docSnap) => {
+              const d = docSnap.data();
+              return {
+                id: docSnap.id,
+                title: String(d.title ?? ''),
+                vibe: String(d.vibe ?? ''),
+                basePerfumeName: String(d.basePerfumeName ?? ''),
+                topPerfumeName: String(d.topPerfumeName ?? ''),
+                sprayRatio: String(d.sprayRatio ?? ''),
+                occasion: String(d.occasion ?? ''),
+                whyItWorks: String(d.whyItWorks ?? ''),
+                active: Boolean(d.active),
+              };
+            });
+            items.sort((a, b) => a.title.localeCompare(b.title));
+            setLiveLayeringIdeas(items);
+            try {
+              if (items.length > 0) {
+                localStorage.setItem(LAYERING_CACHE_KEY, JSON.stringify(items));
+                setCacheTimestamp('layering');
+              } else {
+                localStorage.removeItem(LAYERING_CACHE_KEY);
+              }
+            } catch {
+              // Ignore storage errors
+            }
+          } else {
+            setHampersLoading(true);
+            const q = isOwner
+              ? query(collection(db, 'hampers'))
+              : query(collection(db, 'hampers'), where('active', '==', true));
+            const snap = await withRetry(() => getDocs(q), { maxAttempts: 2 });
+            recordFirestoreRead('hampers:getDocs', snap.docs.length, performance.now() - started);
+            const items: GiftHamper[] = snap.docs.map((docSnap) => {
+              const d = docSnap.data();
+              return {
+                id: docSnap.id,
+                title: String(d.title ?? ''),
+                occasion: String(d.occasion ?? 'For Her'),
+                subtitle: String(d.subtitle ?? ''),
+                itemsIncluded: Array.isArray(d.itemsIncluded)
+                  ? d.itemsIncluded.map(String).filter(Boolean)
+                  : [],
+                regularPrice: Number(d.regularPrice ?? 0),
+                hamperPrice: Number(d.hamperPrice ?? 0),
+                image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
+                giftWrapNote: String(d.giftWrapNote ?? ''),
+                availability: d.availability ?? 'In Stock',
+                featured: Boolean(d.featured),
+                active: Boolean(d.active),
+              };
+            });
+            items.sort(
+              (a, b) =>
+                Number(b.featured) - Number(a.featured) || a.title.localeCompare(b.title)
+            );
+            setLiveHampers(items);
+            try {
+              if (items.length > 0) {
+                localStorage.setItem(HAMPERS_CACHE_KEY, JSON.stringify(items));
+                setCacheTimestamp('hampers');
+              } else {
+                localStorage.removeItem(HAMPERS_CACHE_KEY);
+              }
+            } catch {
+              // Ignore storage errors
+            }
+          }
+        } catch {
+          // Graceful fallback to starter items
+        } finally {
+          if (section === 'combos') setCombosLoading(false);
+          else if (section === 'layering') setLayeringLoading(false);
+          else setHampersLoading(false);
+          secondaryInFlightRef.current[section] = undefined;
+        }
+      })();
+
+      secondaryInFlightRef.current[section] = task;
+      return task;
+    },
+    [
+      adminConsoleActive,
+      isOwner,
+      liveCombos.length,
+      liveLayeringIdeas.length,
+      liveHampers.length,
+    ]
+  );
+
+  // Admin-only real-time listeners for combos, layering, hampers when Admin Console is active
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) return;
+
+    const unsubCombos = onSnapshot(query(collection(db, 'combos')), (snap) => {
+      const items: ComboDeal[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: String(d.title ?? ''),
+          subtitle: String(d.subtitle ?? ''),
+          perfumeNames: Array.isArray(d.perfumeNames) ? d.perfumeNames.map(String) : [],
+          sizeLabel: String(d.sizeLabel ?? ''),
+          regularPrice: Number(d.regularPrice ?? 0),
+          comboPrice: Number(d.comboPrice ?? 0),
+          tag: String(d.tag ?? ''),
+          featured: Boolean(d.featured),
+          active: Boolean(d.active),
+        };
+      });
+      items.sort((a, b) => Number(b.featured) - Number(a.featured));
+      setLiveCombos(items);
       setCombosLoading(false);
-    }, 2500);
+    });
 
-    return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
-    };
-  }, [isOwner]);
-
-  // 6. Public Layering Ideas Listener
-  useEffect(() => {
-    const layeringQuery = isOwner
-      ? query(collection(db, 'layeringIdeas'))
-      : query(collection(db, 'layeringIdeas'), where('active', '==', true));
-
-    const unsubscribe = onSnapshot(
-      layeringQuery,
-      (snapshot) => {
-        const items: LayeringIdea[] = snapshot.docs.map((docSnap) => {
-          const d = docSnap.data();
-          return {
-            id: docSnap.id,
-            title: String(d.title ?? ''),
-            vibe: String(d.vibe ?? ''),
-            basePerfumeName: String(d.basePerfumeName ?? ''),
-            topPerfumeName: String(d.topPerfumeName ?? ''),
-            sprayRatio: String(d.sprayRatio ?? ''),
-            occasion: String(d.occasion ?? ''),
-            whyItWorks: String(d.whyItWorks ?? ''),
-            active: Boolean(d.active),
-          };
-        });
-        items.sort((a, b) => a.title.localeCompare(b.title));
-        setLiveLayeringIdeas(items);
-        setLayeringLoading(false);
-        try {
-          if (items.length > 0) {
-            localStorage.setItem(LAYERING_CACHE_KEY, JSON.stringify(items));
-          } else {
-            localStorage.removeItem(LAYERING_CACHE_KEY);
-          }
-        } catch {
-          // Ignore storage quota errors
-        }
-      },
-      (error) => {
-        setLayeringLoading(false);
-        try {
-          handleFirestoreError(error, OperationType.LIST, 'layeringIdeas');
-        } catch {
-          // Diagnostic error logged
-        }
-      }
-    );
-
-    const safetyTimer = window.setTimeout(() => {
+    const unsubLayer = onSnapshot(query(collection(db, 'layeringIdeas')), (snap) => {
+      const items: LayeringIdea[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: String(d.title ?? ''),
+          vibe: String(d.vibe ?? ''),
+          basePerfumeName: String(d.basePerfumeName ?? ''),
+          topPerfumeName: String(d.topPerfumeName ?? ''),
+          sprayRatio: String(d.sprayRatio ?? ''),
+          occasion: String(d.occasion ?? ''),
+          whyItWorks: String(d.whyItWorks ?? ''),
+          active: Boolean(d.active),
+        };
+      });
+      items.sort((a, b) => a.title.localeCompare(b.title));
+      setLiveLayeringIdeas(items);
       setLayeringLoading(false);
-    }, 2500);
+    });
 
-    return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
-    };
-  }, [isOwner]);
-
-  // 7. Public Gift Hampers Listener
-  useEffect(() => {
-    const hampersQuery = isOwner
-      ? query(collection(db, 'hampers'))
-      : query(collection(db, 'hampers'), where('active', '==', true));
-
-    const unsubscribe = onSnapshot(
-      hampersQuery,
-      (snapshot) => {
-        const items: GiftHamper[] = snapshot.docs.map((docSnap) => {
-          const d = docSnap.data();
-          return {
-            id: docSnap.id,
-            title: String(d.title ?? ''),
-            occasion: String(d.occasion ?? 'For Her'),
-            subtitle: String(d.subtitle ?? ''),
-            itemsIncluded: Array.isArray(d.itemsIncluded)
-              ? d.itemsIncluded.map(String).filter(Boolean)
-              : [],
-            regularPrice: Number(d.regularPrice ?? 0),
-            hamperPrice: Number(d.hamperPrice ?? 0),
-            image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
-            giftWrapNote: String(d.giftWrapNote ?? ''),
-            availability: d.availability ?? 'In Stock',
-            featured: Boolean(d.featured),
-            active: Boolean(d.active),
-          };
-        });
-        items.sort((a, b) => Number(b.featured) - Number(a.featured) || a.title.localeCompare(b.title));
-        setLiveHampers(items);
-        setHampersLoading(false);
-        try {
-          if (items.length > 0) {
-            localStorage.setItem(HAMPERS_CACHE_KEY, JSON.stringify(items));
-          } else {
-            localStorage.removeItem(HAMPERS_CACHE_KEY);
-          }
-        } catch {
-          // Ignore storage quota errors
-        }
-      },
-      (error) => {
-        setHampersLoading(false);
-        try {
-          handleFirestoreError(error, OperationType.LIST, 'hampers');
-        } catch {
-          // Diagnostic error logged
-        }
-      }
-    );
-
-    const safetyTimer = window.setTimeout(() => {
+    const unsubHampers = onSnapshot(query(collection(db, 'hampers')), (snap) => {
+      const items: GiftHamper[] = snap.docs.map((docSnap) => {
+        const d = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: String(d.title ?? ''),
+          occasion: String(d.occasion ?? 'For Her'),
+          subtitle: String(d.subtitle ?? ''),
+          itemsIncluded: Array.isArray(d.itemsIncluded)
+            ? d.itemsIncluded.map(String).filter(Boolean)
+            : [],
+          regularPrice: Number(d.regularPrice ?? 0),
+          hamperPrice: Number(d.hamperPrice ?? 0),
+          image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
+          giftWrapNote: String(d.giftWrapNote ?? ''),
+          availability: d.availability ?? 'In Stock',
+          featured: Boolean(d.featured),
+          active: Boolean(d.active),
+        };
+      });
+      items.sort(
+        (a, b) => Number(b.featured) - Number(a.featured) || a.title.localeCompare(b.title)
+      );
+      setLiveHampers(items);
       setHampersLoading(false);
-    }, 2500);
+    });
 
     return () => {
-      unsubscribe();
-      window.clearTimeout(safetyTimer);
+      unsubCombos();
+      unsubLayer();
+      unsubHampers();
     };
-  }, [isOwner]);
+  }, [authReady, isOwner, adminConsoleActive]);
 
   const usingSampleFallback = !catalogueLoading && livePerfumes.length === 0;
   const perfumes = livePerfumes.length > 0 ? livePerfumes : fragranceCatalogue;
@@ -815,41 +1754,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const usingSampleHampers = !hampersLoading && liveHampers.length === 0;
   const hampers = liveHampers.length > 0 ? liveHampers : starterHampers;
 
-  const signInOwnerWithGoogle = async () => {
+  const signInOwnerWithGoogle = useCallback(async () => {
     await signInWithPopup(auth, googleProvider);
-  };
+  }, []);
 
-  const signInOwnerWithPassword = async (loginInput: string, password: string) => {
-    const email = resolveAdminLoginEmail(loginInput);
-    if (!password) {
-      throw new Error('Please enter your admin password.');
-    }
-    await signInWithEmailAndPassword(auth, email, password);
-  };
+  const signInOwnerWithPassword = useCallback(
+    async (loginInput: string, password: string) => {
+      const email = normalizeAdminEmailInput(loginInput);
+      if (!password) {
+        throw new Error('Please enter your admin password.');
+      }
+      await signInWithEmailAndPassword(auth, email, password);
+    },
+    []
+  );
 
-  const sendOwnerPasswordReset = async (loginInput: string): Promise<string> => {
-    const email = resolveAdminLoginEmail(loginInput);
+  const sendOwnerPasswordReset = useCallback(async (loginInput: string): Promise<string> => {
+    const email = normalizeAdminEmailInput(loginInput);
     await sendPasswordResetEmail(auth, email);
     return email;
-  };
+  }, []);
 
-  const resendOwnerVerificationEmail = async () => {
+  const resendOwnerVerificationEmail = useCallback(async () => {
     if (!auth.currentUser) {
       throw new Error('Sign in first before sending verification email.');
     }
     await sendEmailVerification(auth.currentUser);
-  };
+  }, []);
 
-  const refreshAuthUser = async (): Promise<boolean> => {
+  const refreshAuthUser = useCallback(async (): Promise<boolean> => {
     if (!auth.currentUser) return false;
     await auth.currentUser.reload();
     await auth.currentUser.getIdToken(true);
     setUser(auth.currentUser);
     setAuthRevision((r) => r + 1);
     return Boolean(auth.currentUser.emailVerified);
-  };
+  }, []);
 
-  const setOwnerPasswordCredential = async (newPassword: string) => {
+  const setOwnerPasswordCredential = useCallback(async (newPassword: string) => {
     const current = auth.currentUser;
     if (!current || !current.email) {
       throw new Error('You must be signed in as the store owner.');
@@ -867,197 +1809,493 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       await linkWithCredential(current, cred);
     }
     setAuthRevision((r) => r + 1);
-  };
+  }, []);
 
-  const signOutOwner = async () => {
+  const signOutOwner = useCallback(async () => {
     await signOut(auth);
-  };
+  }, []);
 
-  const lookupCouponByCode = async (
-    rawCode: string
-  ): Promise<{ coupon: Coupon | null; error?: string }> => {
-    const code = sanitizeCouponCode(rawCode);
-    if (code.length < 2) {
-      return { coupon: null, error: 'Enter a valid coupon code (letters/numbers).' };
-    }
-    const path = `coupons/${code}`;
-    try {
-      const snap = await getDoc(doc(db, 'coupons', code));
-      if (!snap.exists()) {
-        return { coupon: null, error: `Coupon code "${code}" was not found.` };
+  const lookupCouponByCode = useCallback(
+    async (rawCode: string): Promise<{ coupon: Coupon | null; error?: string }> => {
+      const code = sanitizePromoCode(rawCode);
+      if (code.length < 2) {
+        return { coupon: null, error: 'Enter a valid coupon code (letters/numbers).' };
       }
-      const d = snap.data();
-      const coupon: Coupon = {
-        id: snap.id,
-        code: String(d.code ?? snap.id),
-        description: String(d.description ?? ''),
-        discountType: d.discountType === 'fixed' ? 'fixed' : 'percentage',
-        discountValue: Number(d.discountValue ?? 0),
-        minOrderAmount: Number(d.minOrderAmount ?? 0),
-        appliesTo:
-          d.appliesTo === 'specials' || d.appliesTo === 'full-bottles'
-            ? d.appliesTo
-            : 'all',
-        active: Boolean(d.active),
-      };
-      if (!coupon.active) {
-        return { coupon: null, error: `Coupon "${code}" is not active right now.` };
-      }
-      return { coupon };
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
-    }
-  };
 
-  const requireOwnerUid = (): string => {
+      const cached = readSessionLookupCache<{ coupon: Coupon | null; error?: string }>(
+        COUPON_LOOKUP_CACHE_KEY,
+        code
+      );
+      if (cached) {
+        recordFirestoreRead(`coupon:${code}:cache`, 0, 0, true);
+        return cached;
+      }
+
+      const flightKey = `coupon:${code}`;
+      const inFlight = promoLookupInFlightRef.current[flightKey] as
+        | Promise<{ coupon: Coupon | null; error?: string }>
+        | undefined;
+      if (inFlight) return inFlight;
+
+      const task = (async () => {
+        const started = performance.now();
+        const path = `coupons/${code}`;
+        try {
+          const snap = await withRetry(() => getDoc(doc(db, 'coupons', code)), {
+            maxAttempts: 2,
+          });
+          recordFirestoreRead(path, 1, performance.now() - started);
+          if (!snap.exists()) {
+            const res = { coupon: null, error: `Coupon code "${code}" was not found or is inactive.` };
+            writeSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, code, res);
+            return res;
+          }
+          const d = snap.data();
+          const coupon: Coupon = {
+            id: snap.id,
+            code: String(d.code ?? snap.id),
+            description: String(d.description ?? ''),
+            discountType: d.discountType === 'fixed' ? 'fixed' : 'percentage',
+            discountValue: Number(d.discountValue ?? 0),
+            minOrderAmount: Number(d.minOrderAmount ?? 0),
+            appliesTo:
+              d.appliesTo === 'specials' || d.appliesTo === 'full-bottles'
+                ? d.appliesTo
+                : 'all',
+            active: Boolean(d.active),
+          };
+          const res = !coupon.active
+            ? { coupon: null, error: `Coupon "${code}" is not active right now.` }
+            : { coupon };
+          writeSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, code, res);
+          return res;
+        } catch (error) {
+          if (isPermissionDeniedError(error)) {
+            const res = { coupon: null, error: `Coupon "${code}" is invalid or currently paused.` };
+            writeSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, code, res);
+            return res;
+          }
+          handleFirestoreError(error, OperationType.GET, path);
+        } finally {
+          promoLookupInFlightRef.current[flightKey] = undefined;
+        }
+      })();
+
+      promoLookupInFlightRef.current[flightKey] = task;
+      return task;
+    },
+    []
+  );
+
+  const lookupReferralByCode = useCallback(
+    async (
+      rawCode: string
+    ): Promise<{ referral: PublicReferral | null; error?: string }> => {
+      const code = sanitizePromoCode(rawCode);
+      if (code.length < 2) {
+        return {
+          referral: null,
+          error: 'Enter a valid referral code (letters/numbers).',
+        };
+      }
+
+      const cached = readSessionLookupCache<{
+        referral: PublicReferral | null;
+        error?: string;
+      }>(REFERRAL_LOOKUP_CACHE_KEY, code);
+      if (cached) {
+        recordFirestoreRead(`publicReferral:${code}:cache`, 0, 0, true);
+        return cached;
+      }
+
+      const flightKey = `referral:${code}`;
+      const inFlight = promoLookupInFlightRef.current[flightKey] as
+        | Promise<{ referral: PublicReferral | null; error?: string }>
+        | undefined;
+      if (inFlight) return inFlight;
+
+      const task = (async () => {
+        const started = performance.now();
+        const path = `publicReferrals/${code}`;
+        try {
+          const snap = await withRetry(() => getDoc(doc(db, 'publicReferrals', code)), {
+            maxAttempts: 2,
+          });
+          recordFirestoreRead(path, 1, performance.now() - started);
+          if (!snap.exists()) {
+            const res = {
+              referral: null,
+              error: `Referral code "${code}" was not found or is inactive.`,
+            };
+            writeSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, code, res);
+            return res;
+          }
+          const d = snap.data();
+          const referral: PublicReferral = {
+            id: snap.id,
+            code: String(d.code ?? snap.id),
+            influencerName: String(d.influencerName ?? ''),
+            socialHandle: String(d.socialHandle ?? ''),
+            followerDiscountType:
+              d.followerDiscountType === 'percentage' ||
+              d.followerDiscountType === 'fixed'
+                ? d.followerDiscountType
+                : 'none',
+            followerDiscountValue: Number(d.followerDiscountValue ?? 0),
+            active: Boolean(d.active),
+          };
+          const res = !referral.active
+            ? { referral: null, error: `Referral code "${code}" is currently paused.` }
+            : { referral };
+          writeSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, code, res);
+          return res;
+        } catch (error) {
+          if (isPermissionDeniedError(error)) {
+            const res = {
+              referral: null,
+              error: `Referral code "${code}" is invalid or currently paused.`,
+            };
+            writeSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, code, res);
+            return res;
+          }
+          handleFirestoreError(error, OperationType.GET, path);
+        } finally {
+          promoLookupInFlightRef.current[flightKey] = undefined;
+        }
+      })();
+
+      promoLookupInFlightRef.current[flightKey] = task;
+      return task;
+    },
+    []
+  );
+
+  const recordCheckoutReferralSale = useCallback(
+    async (input: CheckoutReferralSaleInput): Promise<void> => {
+      const code = sanitizePromoCode(input.referral.code);
+      if (code.length < 2 || !input.referral.active) return;
+
+      const reportedSubtotal = Math.min(
+        250000,
+        Math.max(0, Math.round(input.reportedSubtotal * 100) / 100)
+      );
+      const reportedDiscount = Math.min(
+        reportedSubtotal,
+        Math.max(0, Math.round(input.reportedDiscount * 100) / 100)
+      );
+
+      const cleanSummary = sanitizeText(input.orderSummary || 'WhatsApp Order', 240);
+      const cleanRef = sanitizeText(input.customerRef, 120);
+      const fingerprint = `${code}|${reportedSubtotal}|${cleanRef}|${cleanSummary.slice(0, 80)}`;
+      const now = Date.now();
+      const lastLoggedAt = recentReferralSalesRef.current.get(fingerprint) ?? 0;
+      if (now - lastLoggedAt < DUPLICATE_REFERRAL_WINDOW_MS) {
+        return;
+      }
+      recentReferralSalesRef.current.set(fingerprint, now);
+
+      // 5-minute deterministic attribution ID to mitigate accidental double-taps / replay duplicates
+      const bucket5m = Math.floor(now / 300_000).toString(36);
+      const fpHash = sha256Hex(fingerprint).slice(0, 10);
+      const attrId = `ra-${code.toLowerCase().slice(0, 16)}-${bucket5m}-${fpHash}`;
+
+      try {
+        await withRetry(
+          () =>
+            setDoc(doc(db, 'referralAttributions', attrId), {
+              referralCode: code,
+              influencerName:
+                sanitizeText(input.referral.influencerName, 120) || code,
+              orderSummary: cleanSummary || 'WhatsApp Order',
+              reportedSubtotal,
+              reportedDiscount,
+              customerRef: cleanRef,
+              status: 'pending',
+              convertedSaleId: '',
+              ownerUid:
+                auth.currentUser?.uid && isOwner ? auth.currentUser.uid : 'guest-checkout',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }),
+          { maxAttempts: 2 }
+        );
+      } catch {
+        // Non-blocking: duplicate bucket collisions (!exists guard) or offline state never break WhatsApp handoff
+      }
+    },
+    [isOwner]
+  );
+
+  const requireOwnerUid = useCallback((): string => {
     const uid = auth.currentUser?.uid;
     if (!uid || !isOwner) {
       throw new Error('Owner authorization required.');
     }
     return uid;
-  };
+  }, [isOwner]);
 
-  const savePerfume = async (
-    input: PerfumeInput,
-    existingId?: string
-  ): Promise<string> => {
-    const ownerUid = requireOwnerUid();
-    const id = existingId || `${slugifyId(input.name)}-${Date.now().toString(36)}`;
-    const slug = (input.slug?.trim() || slugifyId(`${input.brand}-${input.name}`)).slice(0, 160);
+  const writeAuditLog = useCallback(
+    async (entry: {
+      action: AuditAction;
+      section: AuditSection;
+      targetId: string;
+      targetLabel: string;
+      summary: string;
+      changes: string[];
+    }): Promise<void> => {
+      const currentUser = auth.currentUser;
+      const actorEmail = (currentUser?.email ?? '').trim().slice(0, 160);
+      if (!currentUser?.uid || !isOwner || actorEmail.length < 3) return;
 
-    const cleanName = input.name.trim().slice(0, 140);
-    const cleanBrand = input.brand.trim().slice(0, 100);
-    if (!cleanName) {
-      throw new Error('Perfume name is required.');
-    }
-    if (!cleanBrand) {
-      throw new Error('Perfume house / brand is required.');
-    }
+      const actorUsername = deriveAdminUsername(actorEmail, currentUser.displayName);
+      const auditId = `audit-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 7)}`;
 
-    const sanitizedSizes = normalizeAndDedupeSizes(input.sizes.slice(0, 12));
-
-    if (sanitizedSizes.length === 0) {
-      throw new Error('At least one bottle size must be configured.');
-    }
-
-    const cleanNotes = (arr: string[]) =>
-      arr
-        .map((n) => n.trim().slice(0, 60))
-        .filter(Boolean)
-        .slice(0, 10);
-
-    const parsedDiscount = Number(input.specialDiscountPercent ?? 0);
-    const safeDiscount = Number.isFinite(parsedDiscount)
-      ? Math.min(90, Math.max(0, parsedDiscount))
-      : 0;
-
-    const cleanDescription = (
-      input.description.trim() ||
-      `${cleanName} by ${cleanBrand} — curated Arabian fragrance.`
-    ).slice(0, 2000);
-
-    const ref = doc(db, 'perfumes', id);
-    const path = `perfumes/${id}`;
-
-    const cleanBranches =
-      input.availability === 'Out of Stock'
-        ? []
-        : normalizeBranches(input.availableBranches ?? ['manzini', 'mbabane']);
-
-    const basePayload = {
-      slug,
-      isSampleListing: Boolean(input.isSampleListing),
-      name: cleanName,
-      brand: cleanBrand,
-      category: input.category,
-      concentration: (input.concentration.trim() || 'Eau de Parfum').slice(0, 100),
-      description: cleanDescription,
-      image: input.image.trim().slice(0, 500),
-      notes: {
-        top: cleanNotes(input.notes.top),
-        heart: cleanNotes(input.notes.heart),
-        base: cleanNotes(input.notes.base),
-      },
-      sizes: sanitizedSizes,
-      availability: input.availability,
-      availableBranches: cleanBranches,
-      featured: Boolean(input.featured),
-      bestseller: Boolean(input.bestseller),
-      isUnboxed: Boolean(input.isUnboxed),
-      onSpecial: Boolean(input.onSpecial),
-      specialLabel: (input.specialLabel ?? '').trim().slice(0, 60),
-      specialDiscountPercent: safeDiscount,
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      if (existingId) {
-        await setDoc(ref, basePayload, { merge: true });
-      } else {
-        await setDoc(ref, {
-          ...basePayload,
-          ownerUid,
-          createdAt: serverTimestamp(),
-        });
+      try {
+        await withRetry(
+          () =>
+            setDoc(doc(db, 'auditLogs', auditId), {
+              actorEmail,
+              actorUsername: actorUsername.slice(0, 80) || 'admin',
+              action: entry.action,
+              section: entry.section,
+              targetId: (entry.targetId.trim() || 'item').slice(0, 160),
+              targetLabel: (entry.targetLabel.trim() || 'Store Item').slice(0, 160),
+              summary: (entry.summary.trim() || 'Updated record').slice(0, 300),
+              changes: sanitizeAuditChanges(entry.changes),
+              ownerUid: currentUser.uid,
+              createdAt: serverTimestamp(),
+            }),
+          { maxAttempts: 2 }
+        );
+      } catch {
+        console.warn('Audit log write skipped due to network or permission failure.');
       }
-      return id;
-    } catch (error) {
-      handleFirestoreError(
-        error,
-        existingId ? OperationType.UPDATE : OperationType.CREATE,
-        path
-      );
-    }
-  };
+    },
+    [isOwner]
+  );
 
-  const togglePerfumeSpecial = async (
-    perfume: FragranceProduct,
-    onSpecial: boolean,
-    specialDiscountPercent?: number,
-    specialLabel?: string
-  ): Promise<void> => {
-    requireOwnerUid();
-    const path = `perfumes/${perfume.id}`;
-    try {
-      await setDoc(
-        doc(db, 'perfumes', perfume.id),
-        {
-          onSpecial,
-          specialDiscountPercent: Math.min(
-            90,
-            Math.max(
-              0,
-              specialDiscountPercent ?? perfume.specialDiscountPercent ?? 0
-            )
-          ),
-          specialLabel: (
-            specialLabel ??
-            perfume.specialLabel ??
-            campaign.badgeText ??
-            'Special Offer'
-          )
-            .trim()
-            .slice(0, 60),
-          updatedAt: serverTimestamp(),
+  const savePerfume = useCallback(
+    async (input: PerfumeInput, existingId?: string): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const id = existingId || `${slugifyId(input.name)}-${Date.now().toString(36)}`;
+      const slug = (input.slug?.trim() || slugifyId(`${input.brand}-${input.name}`)).slice(
+        0,
+        160
+      );
+
+      const cleanName = sanitizeText(input.name, 140);
+      const cleanBrand = sanitizeText(input.brand, 100);
+      if (!cleanName) throw new Error('Perfume name is required.');
+      if (!cleanBrand) throw new Error('Perfume house / brand is required.');
+
+      const sanitizedSizes = normalizeAndDedupeSizes(input.sizes.slice(0, 12));
+      if (sanitizedSizes.length === 0) {
+        throw new Error('At least one bottle size must be configured.');
+      }
+
+      const cleanNotes = (arr: string[]) =>
+        arr.map((n) => sanitizeText(n, 60)).filter(Boolean).slice(0, 10);
+
+      const parsedDiscount = Number(input.specialDiscountPercent ?? 0);
+      const safeDiscount = Number.isFinite(parsedDiscount)
+        ? Math.min(90, Math.max(0, parsedDiscount))
+        : 0;
+
+      const cleanDescription = (
+        sanitizeText(input.description, 2000) ||
+        `${cleanName} by ${cleanBrand} — curated Arabian fragrance.`
+      ).slice(0, 2000);
+
+      const ref = doc(db, 'perfumes', id);
+      const path = `perfumes/${id}`;
+
+      const cleanBranches =
+        input.availability === 'Out of Stock'
+          ? []
+          : normalizeBranches(input.availableBranches ?? ['manzini', 'mbabane']);
+
+      const cleanImage = input.image.trim().slice(0, 500);
+      const basePayload = {
+        slug,
+        isSampleListing: Boolean(input.isSampleListing),
+        name: cleanName,
+        brand: cleanBrand,
+        category: input.category,
+        concentration: sanitizeText(input.concentration, 100) || 'Eau de Parfum',
+        description: cleanDescription,
+        image: cleanImage,
+        notes: {
+          top: cleanNotes(input.notes.top),
+          heart: cleanNotes(input.notes.heart),
+          base: cleanNotes(input.notes.base),
         },
-        { merge: true }
+        sizes: sanitizedSizes,
+        availability: input.availability,
+        availableBranches: cleanBranches,
+        featured: Boolean(input.featured),
+        bestseller: Boolean(input.bestseller),
+        isUnboxed: Boolean(input.isUnboxed),
+        onSpecial: Boolean(input.onSpecial),
+        specialLabel: sanitizeText(input.specialLabel ?? '', 60),
+        specialDiscountPercent: safeDiscount,
+        updatedAt: serverTimestamp(),
+      };
+
+      try {
+        const prevPerfume = existingId
+          ? livePerfumesRef.current.find((p) => p.id === existingId)
+          : undefined;
+        if (existingId) {
+          await setDoc(ref, basePayload, { merge: true });
+        } else {
+          await setDoc(ref, {
+            ...basePayload,
+            ownerUid,
+            createdAt: serverTimestamp(),
+          });
+        }
+        await writeAuditLog({
+          action: existingId ? 'update' : 'create',
+          section: 'perfume',
+          targetId: id,
+          targetLabel: `${cleanName} (${cleanBrand})`,
+          summary: existingId
+            ? `Updated perfume "${cleanName}"`
+            : `Added new perfume "${cleanName}"`,
+          changes: buildPerfumeDiff(prevPerfume, basePayload),
+        });
+
+        const updatedProduct: FragranceProduct = {
+          id,
+          slug,
+          isSampleListing: basePayload.isSampleListing,
+          name: cleanName,
+          brand: cleanBrand,
+          category: input.category,
+          concentration: basePayload.concentration,
+          description: cleanDescription,
+          image: cleanImage,
+          notes: basePayload.notes,
+          sizes: sanitizedSizes,
+          availability: input.availability,
+          availableBranches: cleanBranches,
+          featured: basePayload.featured,
+          bestseller: basePayload.bestseller,
+          isUnboxed: basePayload.isUnboxed,
+          onSpecial: basePayload.onSpecial,
+          specialLabel: basePayload.specialLabel,
+          specialDiscountPercent: safeDiscount,
+        };
+        const nextList = mergePerfumeLists(livePerfumesRef.current, [updatedProduct]);
+        void publishCatalogueSnapshot(nextList);
+        return id;
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          existingId ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+  );
+
+  const togglePerfumeSpecial = useCallback(
+    async (
+      perfume: FragranceProduct,
+      onSpecial: boolean,
+      specialDiscountPercent?: number,
+      specialLabel?: string
+    ): Promise<void> => {
+      requireOwnerUid();
+      const path = `perfumes/${perfume.id}`;
+      const safeDiscount = Math.min(
+        90,
+        Math.max(0, specialDiscountPercent ?? perfume.specialDiscountPercent ?? 0)
       );
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
+      const cleanLabel = sanitizeText(
+        specialLabel ?? perfume.specialLabel ?? campaign.badgeText ?? 'Special Offer',
+        60
+      );
 
-  const deletePerfume = async (perfumeId: string): Promise<void> => {
-    requireOwnerUid();
-    const path = `perfumes/${perfumeId}`;
-    try {
-      await deleteDoc(doc(db, 'perfumes', perfumeId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
+      try {
+        await setDoc(
+          doc(db, 'perfumes', perfume.id),
+          {
+            onSpecial,
+            specialDiscountPercent: safeDiscount,
+            specialLabel: cleanLabel,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        await writeAuditLog({
+          action: 'update',
+          section: 'perfume',
+          targetId: perfume.id,
+          targetLabel: `${perfume.name} (${perfume.brand})`,
+          summary: onSpecial
+            ? `Marked "${perfume.name}" on special (${safeDiscount}% Off)`
+            : `Removed "${perfume.name}" from specials`,
+          changes: [
+            `On Special: ${perfume.onSpecial ? 'Yes' : 'No'} → ${onSpecial ? 'Yes' : 'No'}`,
+            onSpecial
+              ? `Special Discount: ${safeDiscount}% Off · Label: ${cleanLabel || 'None'}`
+              : 'Special offer deactivated',
+          ],
+        });
+        const nextList = livePerfumesRef.current.map((p) =>
+          p.id === perfume.id
+            ? {
+                ...p,
+                onSpecial,
+                specialDiscountPercent: safeDiscount,
+                specialLabel: cleanLabel,
+              }
+            : p
+        );
+        void publishCatalogueSnapshot(nextList);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [campaign.badgeText, publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+  );
 
-  const importStarterCatalogue = async (): Promise<number> => {
+  const deletePerfume = useCallback(
+    async (perfumeId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `perfumes/${perfumeId}`;
+      const existing = livePerfumesRef.current.find((p) => p.id === perfumeId);
+      try {
+        await deleteDoc(doc(db, 'perfumes', perfumeId));
+        await writeAuditLog({
+          action: 'delete',
+          section: 'perfume',
+          targetId: perfumeId,
+          targetLabel: existing ? `${existing.name} (${existing.brand})` : perfumeId,
+          summary: existing
+            ? `Deleted perfume "${existing.name}"`
+            : `Deleted perfume (${perfumeId})`,
+          changes: existing
+            ? [
+                `Removed ${existing.name} by ${existing.brand} (${existing.category})`,
+                `Previous availability: ${existing.availability}`,
+              ]
+            : [`Deleted perfume document ${perfumeId}`],
+        });
+        const nextList = livePerfumesRef.current.filter((p) => p.id !== perfumeId);
+        void publishCatalogueSnapshot(nextList);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+  );
+
+  const importStarterCatalogue = useCallback(async (): Promise<number> => {
     const ownerUid = requireOwnerUid();
     const batch = writeBatch(db);
     try {
@@ -1095,321 +2333,965 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
       await batch.commit();
+      await writeAuditLog({
+        action: 'import',
+        section: 'perfume',
+        targetId: 'starter-catalogue',
+        targetLabel: `Starter Catalogue (${fragranceCatalogue.length} SKUs)`,
+        summary: `Imported ${fragranceCatalogue.length} starter perfumes into Firestore`,
+        changes: [`Published ${fragranceCatalogue.length} catalogue items`],
+      });
+      const merged = mergePerfumeLists(livePerfumesRef.current, fragranceCatalogue);
+      void publishCatalogueSnapshot(merged);
       return fragranceCatalogue.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'perfumes');
     }
-  };
+  }, [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]);
 
-  const saveCoupon = async (input: CouponInput, isEdit = false): Promise<void> => {
-    const ownerUid = requireOwnerUid();
-    const code = sanitizeCouponCode(input.code);
-    if (code.length < 2) {
-      throw new Error('Coupon code must be at least 2 characters (A-Z, 0-9, -, _).');
-    }
-    const maxVal = input.discountType === 'percentage' ? 95 : 50000;
-    const discountValue = Math.min(maxVal, Math.max(1, Number(input.discountValue)));
-    const minOrderAmount = Math.min(100000, Math.max(0, Number(input.minOrderAmount || 0)));
+  const saveCoupon = useCallback(
+    async (input: CouponInput, isEdit = false): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const code = sanitizePromoCode(input.code);
+      if (code.length < 2) {
+        throw new Error('Coupon code must be at least 2 characters (A-Z, 0-9, -, _).');
+      }
+      const maxVal = input.discountType === 'percentage' ? 95 : 50000;
+      const discountValue = Math.min(maxVal, Math.max(1, Number(input.discountValue)));
+      const minOrderAmount = Math.min(
+        100000,
+        Math.max(0, Number(input.minOrderAmount || 0))
+      );
 
-    const ref = doc(db, 'coupons', code);
-    const path = `coupons/${code}`;
-    const existingSnap = isEdit ? await getDoc(ref) : null;
+      const ref = doc(db, 'coupons', code);
+      const path = `coupons/${code}`;
+      const existingSnap = isEdit ? await getDoc(ref) : null;
+      const prevCoupon = coupons.find((c) => c.code === code);
 
-    try {
-      if (isEdit && existingSnap?.exists()) {
-        await setDoc(
-          ref,
-          {
-            description: input.description.trim().slice(0, 200),
-            discountType: input.discountType,
+      const cleanPayload: CouponInput = {
+        code,
+        description: sanitizeText(input.description, 200),
+        discountType: input.discountType,
+        discountValue,
+        minOrderAmount,
+        appliesTo: input.appliesTo,
+        active: Boolean(input.active),
+      };
+
+      try {
+        if (isEdit && existingSnap?.exists()) {
+          await setDoc(
+            ref,
+            {
+              description: cleanPayload.description,
+              discountType: cleanPayload.discountType,
+              discountValue,
+              minOrderAmount,
+              appliesTo: cleanPayload.appliesTo,
+              active: cleanPayload.active,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } else {
+          await setDoc(ref, {
+            code,
+            description: cleanPayload.description,
+            discountType: cleanPayload.discountType,
             discountValue,
             minOrderAmount,
-            appliesTo: input.appliesTo,
-            active: Boolean(input.active),
+            appliesTo: cleanPayload.appliesTo,
+            active: cleanPayload.active,
+            ownerUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        clearSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, code);
+        await writeAuditLog({
+          action: isEdit && prevCoupon ? 'update' : 'create',
+          section: 'coupon',
+          targetId: code,
+          targetLabel: `Coupon ${code}`,
+          summary:
+            isEdit && prevCoupon
+              ? `Updated coupon code ${code}`
+              : `Created coupon code ${code}`,
+          changes: buildCouponDiff(prevCoupon, cleanPayload),
+        });
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          isEdit ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [coupons, requireOwnerUid, writeAuditLog]
+  );
+
+  const toggleCouponActive = useCallback(
+    async (coupon: Coupon): Promise<void> => {
+      requireOwnerUid();
+      const path = `coupons/${coupon.code}`;
+      const nextActive = !coupon.active;
+      try {
+        await setDoc(
+          doc(db, 'coupons', coupon.code),
+          { active: nextActive, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        clearSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, coupon.code);
+        await writeAuditLog({
+          action: 'update',
+          section: 'coupon',
+          targetId: coupon.code,
+          targetLabel: `Coupon ${coupon.code}`,
+          summary: `${nextActive ? 'Activated' : 'Paused'} coupon ${coupon.code}`,
+          changes: [
+            `Status: ${coupon.active ? 'Active' : 'Paused'} → ${
+              nextActive ? 'Active' : 'Paused'
+            }`,
+          ],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [requireOwnerUid, writeAuditLog]
+  );
+
+  const deleteCoupon = useCallback(
+    async (code: string): Promise<void> => {
+      requireOwnerUid();
+      const clean = sanitizePromoCode(code);
+      const path = `coupons/${clean}`;
+      const existing = coupons.find((c) => c.code === clean);
+      try {
+        await deleteDoc(doc(db, 'coupons', clean));
+        clearSessionLookupCache(COUPON_LOOKUP_CACHE_KEY, clean);
+        await writeAuditLog({
+          action: 'delete',
+          section: 'coupon',
+          targetId: clean,
+          targetLabel: `Coupon ${clean}`,
+          summary: `Deleted coupon code ${clean}`,
+          changes: existing
+            ? [
+                `Removed ${existing.discountValue}${
+                  existing.discountType === 'percentage' ? '%' : ' SZL'
+                } coupon (${existing.appliesTo})`,
+              ]
+            : [`Deleted coupon ${clean}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [coupons, requireOwnerUid, writeAuditLog]
+  );
+
+  const saveReferral = useCallback(
+    async (input: ReferralInput, isEdit = false): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const code = sanitizePromoCode(input.code);
+      if (code.length < 2) {
+        throw new Error('Referral code must be at least 2 characters (A-Z, 0-9, -, _).');
+      }
+      const influencerName = sanitizeText(input.influencerName, 120);
+      if (!influencerName) {
+        throw new Error('Influencer name is required.');
+      }
+      const maxComm = input.commissionType === 'percentage' ? 90 : 50000;
+      const commissionValue = Math.min(
+        maxComm,
+        Math.max(0, Math.round(Number(input.commissionValue || 0) * 100) / 100)
+      );
+
+      const followerDiscountType = input.followerDiscountType;
+      const maxFollowerDisc = followerDiscountType === 'percentage' ? 95 : 50000;
+      const followerDiscountValue =
+        followerDiscountType === 'none'
+          ? 0
+          : Math.min(
+              maxFollowerDisc,
+              Math.max(0, Math.round(Number(input.followerDiscountValue || 0) * 100) / 100)
+            );
+
+      const ref = doc(db, 'referrals', code);
+      const pubRef = doc(db, 'publicReferrals', code);
+      const path = `referrals/${code}`;
+      const existingSnap = isEdit ? await getDoc(ref) : null;
+      const prevReferral = referrals.find((r) => r.code === code);
+
+      const cleanReferral: ReferralInput = {
+        code,
+        influencerName,
+        socialHandle: sanitizeText(input.socialHandle, 100),
+        commissionType: input.commissionType,
+        commissionValue,
+        followerDiscountType,
+        followerDiscountValue,
+        payoutNote: sanitizeText(input.payoutNote, 200),
+        active: Boolean(input.active),
+      };
+
+      const mutablePayload = {
+        influencerName: cleanReferral.influencerName,
+        socialHandle: cleanReferral.socialHandle,
+        commissionType: cleanReferral.commissionType,
+        commissionValue,
+        followerDiscountType,
+        followerDiscountValue,
+        payoutNote: cleanReferral.payoutNote,
+        active: cleanReferral.active,
+        updatedAt: serverTimestamp(),
+      };
+
+      const publicPayload = {
+        code,
+        influencerName: cleanReferral.influencerName,
+        socialHandle: cleanReferral.socialHandle,
+        followerDiscountType,
+        followerDiscountValue,
+        active: cleanReferral.active,
+        ownerUid,
+        updatedAt: serverTimestamp(),
+      };
+
+      try {
+        const batch = writeBatch(db);
+        if (isEdit && existingSnap?.exists()) {
+          batch.set(ref, mutablePayload, { merge: true });
+        } else {
+          batch.set(ref, {
+            code,
+            ...mutablePayload,
+            ownerUid,
+            createdAt: serverTimestamp(),
+          });
+        }
+        batch.set(pubRef, publicPayload);
+        await batch.commit();
+
+        clearSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, code);
+        await writeAuditLog({
+          action: isEdit && prevReferral ? 'update' : 'create',
+          section: 'referral',
+          targetId: code,
+          targetLabel: `${code} · ${influencerName}`,
+          summary:
+            isEdit && prevReferral
+              ? `Updated influencer partner ${code} (${influencerName})`
+              : `Added influencer partner ${code} (${influencerName})`,
+          changes: buildReferralDiff(prevReferral, cleanReferral),
+        });
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          isEdit ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [referrals, requireOwnerUid, writeAuditLog]
+  );
+
+  const toggleReferralActive = useCallback(
+    async (referral: InfluencerReferral): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const path = `referrals/${referral.code}`;
+      const nextActive = !referral.active;
+      try {
+        const batch = writeBatch(db);
+        batch.set(
+          doc(db, 'referrals', referral.code),
+          { active: nextActive, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        batch.set(doc(db, 'publicReferrals', referral.code), {
+          code: referral.code,
+          influencerName: referral.influencerName,
+          socialHandle: referral.socialHandle,
+          followerDiscountType: referral.followerDiscountType,
+          followerDiscountValue: referral.followerDiscountValue,
+          active: nextActive,
+          ownerUid,
+          updatedAt: serverTimestamp(),
+        });
+        await batch.commit();
+        clearSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, referral.code);
+        await writeAuditLog({
+          action: 'update',
+          section: 'referral',
+          targetId: referral.code,
+          targetLabel: `${referral.code} · ${referral.influencerName}`,
+          summary: `${nextActive ? 'Activated' : 'Paused'} influencer code ${referral.code}`,
+          changes: [
+            `Status: ${referral.active ? 'Active' : 'Paused'} → ${
+              nextActive ? 'Active' : 'Paused'
+            }`,
+          ],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [requireOwnerUid, writeAuditLog]
+  );
+
+  const deleteReferral = useCallback(
+    async (code: string): Promise<void> => {
+      requireOwnerUid();
+      const clean = sanitizePromoCode(code);
+      const path = `referrals/${clean}`;
+      const existing = referrals.find((r) => r.code === clean);
+      try {
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'referrals', clean));
+        batch.delete(doc(db, 'publicReferrals', clean));
+        await batch.commit();
+        clearSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, clean);
+        await writeAuditLog({
+          action: 'delete',
+          section: 'referral',
+          targetId: clean,
+          targetLabel: existing ? `${clean} · ${existing.influencerName}` : clean,
+          summary: `Deleted influencer referral code ${clean}`,
+          changes: existing
+            ? [`Removed partner ${existing.influencerName} (${clean})`]
+            : [`Deleted referral code ${clean}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [referrals, requireOwnerUid, writeAuditLog]
+  );
+
+  const approveReferralAttribution = useCallback(
+    async (
+      attribution: ReferralAttribution,
+      verifiedSubtotal: number,
+      verifiedDiscount: number
+    ): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const code = sanitizePromoCode(attribution.referralCode);
+      let targetReferral = referrals.find((r) => r.code === code) ?? null;
+      if (!targetReferral) {
+        const snap = await getDoc(doc(db, 'referrals', code));
+        if (!snap.exists()) {
+          throw new Error(`Referral profile "${code}" does not exist.`);
+        }
+        const d = snap.data();
+        targetReferral = {
+          id: snap.id,
+          code: String(d.code ?? snap.id),
+          influencerName: String(d.influencerName ?? code),
+          socialHandle: String(d.socialHandle ?? ''),
+          commissionType: d.commissionType === 'fixed' ? 'fixed' : 'percentage',
+          commissionValue: Number(d.commissionValue ?? 0),
+          followerDiscountType:
+            d.followerDiscountType === 'percentage' || d.followerDiscountType === 'fixed'
+              ? d.followerDiscountType
+              : 'none',
+          followerDiscountValue: Number(d.followerDiscountValue ?? 0),
+          payoutNote: String(d.payoutNote ?? ''),
+          active: Boolean(d.active),
+        };
+      }
+
+      const orderSubtotal = Math.min(
+        250000,
+        Math.max(0, Math.round(Number(verifiedSubtotal || 0) * 100) / 100)
+      );
+      const discountAmount = Math.min(
+        orderSubtotal,
+        Math.max(0, Math.round(Number(verifiedDiscount || 0) * 100) / 100)
+      );
+      const netOrderAmount = Math.max(
+        0,
+        Math.round((orderSubtotal - discountAmount) * 100) / 100
+      );
+      const commissionAmount = calculateReferralCommission(netOrderAmount, targetReferral);
+
+      const saleId = `rs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const path = `referralAttributions/${attribution.id}`;
+
+      try {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'referralSales', saleId), {
+          referralCode: code,
+          influencerName:
+            sanitizeText(targetReferral.influencerName, 120) || code,
+          orderSummary: sanitizeText(attribution.orderSummary, 240) || 'WhatsApp Order',
+          orderSubtotal,
+          discountAmount,
+          netOrderAmount,
+          commissionAmount,
+          commissionStatus: 'confirmed',
+          source: 'checkout',
+          customerRef: sanitizeText(attribution.customerRef, 120),
+          ownerUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        batch.set(
+          doc(db, 'referralAttributions', attribution.id),
+          {
+            status: 'converted',
+            convertedSaleId: saleId,
+            reportedSubtotal: orderSubtotal,
+            reportedDiscount: discountAmount,
             updatedAt: serverTimestamp(),
           },
           { merge: true }
         );
-      } else {
-        await setDoc(ref, {
-          code,
-          description: input.description.trim().slice(0, 200),
-          discountType: input.discountType,
-          discountValue,
-          minOrderAmount,
-          appliesTo: input.appliesTo,
-          active: Boolean(input.active),
+        await batch.commit();
+
+        await writeAuditLog({
+          action: 'create',
+          section: 'referral-attribution',
+          targetId: attribution.id,
+          targetLabel: `${code} · ${attribution.orderSummary.slice(0, 60)}`,
+          summary: `Verified attribution and created E${commissionAmount.toFixed(2)} commission for ${code}`,
+          changes: [
+            `Verified Order Net: E${netOrderAmount.toFixed(2)}`,
+            `Commission: E${commissionAmount.toFixed(2)} (confirmed)`,
+            `Sale Ledger ID: ${saleId}`,
+          ],
+        });
+        return saleId;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [referrals, requireOwnerUid, writeAuditLog]
+  );
+
+  const dismissReferralAttribution = useCallback(
+    async (attributionId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `referralAttributions/${attributionId}`;
+      const target = referralAttributions.find((a) => a.id === attributionId);
+      try {
+        await setDoc(
+          doc(db, 'referralAttributions', attributionId),
+          {
+            status: 'dismissed',
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        await writeAuditLog({
+          action: 'update',
+          section: 'referral-attribution',
+          targetId: attributionId,
+          targetLabel: target
+            ? `${target.referralCode} · ${target.orderSummary.slice(0, 60)}`
+            : attributionId,
+          summary: `Dismissed checkout attribution ${target?.referralCode ?? attributionId}`,
+          changes: ['Attribution Status: pending → dismissed'],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [referralAttributions, requireOwnerUid, writeAuditLog]
+  );
+
+  const logManualReferralSale = useCallback(
+    async (input: ManualReferralSaleInput): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const code = sanitizePromoCode(input.referralCode);
+      if (code.length < 2) {
+        throw new Error('Select a valid influencer referral code.');
+      }
+
+      let targetReferral = referrals.find((r) => r.code === code) ?? null;
+      if (!targetReferral) {
+        const snap = await getDoc(doc(db, 'referrals', code));
+        if (!snap.exists()) {
+          throw new Error(`Referral code "${code}" does not exist.`);
+        }
+        const d = snap.data();
+        targetReferral = {
+          id: snap.id,
+          code: String(d.code ?? snap.id),
+          influencerName: String(d.influencerName ?? code),
+          socialHandle: String(d.socialHandle ?? ''),
+          commissionType: d.commissionType === 'fixed' ? 'fixed' : 'percentage',
+          commissionValue: Number(d.commissionValue ?? 0),
+          followerDiscountType: 'none',
+          followerDiscountValue: 0,
+          payoutNote: String(d.payoutNote ?? ''),
+          active: Boolean(d.active),
+        };
+      }
+
+      const orderSummary = sanitizeText(input.orderSummary, 240);
+      if (!orderSummary) {
+        throw new Error('Enter a short summary of the perfume(s) sold.');
+      }
+
+      const orderSubtotal = Math.min(
+        250000,
+        Math.max(0, Math.round(Number(input.orderSubtotal || 0) * 100) / 100)
+      );
+      const discountAmount = Math.min(
+        orderSubtotal,
+        Math.max(0, Math.round(Number(input.discountAmount || 0) * 100) / 100)
+      );
+      const netOrderAmount = Math.max(
+        0,
+        Math.round((orderSubtotal - discountAmount) * 100) / 100
+      );
+      const commissionAmount = calculateReferralCommission(netOrderAmount, targetReferral);
+      const status: ReferralSaleStatus = input.commissionStatus ?? 'confirmed';
+
+      const saleId = `rs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const path = `referralSales/${saleId}`;
+
+      try {
+        await setDoc(doc(db, 'referralSales', saleId), {
+          referralCode: code,
+          influencerName: sanitizeText(targetReferral.influencerName, 120) || code,
+          orderSummary,
+          orderSubtotal,
+          discountAmount,
+          netOrderAmount,
+          commissionAmount,
+          commissionStatus: status,
+          source: 'manual',
+          customerRef: sanitizeText(input.customerRef ?? '', 120),
           ownerUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-      }
-    } catch (error) {
-      handleFirestoreError(
-        error,
-        isEdit ? OperationType.UPDATE : OperationType.CREATE,
-        path
-      );
-    }
-  };
-
-  const toggleCouponActive = async (coupon: Coupon): Promise<void> => {
-    requireOwnerUid();
-    const path = `coupons/${coupon.code}`;
-    try {
-      await setDoc(
-        doc(db, 'coupons', coupon.code),
-        {
-          active: !coupon.active,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
-  };
-
-  const deleteCoupon = async (code: string): Promise<void> => {
-    requireOwnerUid();
-    const clean = sanitizeCouponCode(code);
-    const path = `coupons/${clean}`;
-    try {
-      await deleteDoc(doc(db, 'coupons', clean));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const saveCampaign = async (next: SpecialCampaign): Promise<void> => {
-    const ownerUid = requireOwnerUid();
-    const ref = doc(db, 'campaigns', 'active-special');
-    const path = 'campaigns/active-special';
-    try {
-      const existing = await getDoc(ref);
-      const rawEndsAt = String(next.endsAt ?? '').trim();
-      const parsedEnd = rawEndsAt ? new Date(rawEndsAt) : null;
-      const cleanEndsAt =
-        parsedEnd && !Number.isNaN(parsedEnd.getTime())
-          ? parsedEnd.toISOString().slice(0, 64)
-          : '';
-
-      const payload = {
-        title: (next.title.trim() || 'Special Offers').slice(0, 100),
-        badgeText: (next.badgeText.trim() || 'SPECIAL').slice(0, 40),
-        subtitle: next.subtitle.trim().slice(0, 400),
-        announcementText: next.announcementText.trim().slice(0, 240),
-        promoCodeHint: sanitizeCouponCode(next.promoCodeHint).slice(0, 32),
-        endsAt: cleanEndsAt,
-        enabled: Boolean(next.enabled),
-        updatedAt: serverTimestamp(),
-      };
-      if (existing.exists()) {
-        await setDoc(ref, payload, { merge: true });
-      } else {
-        await setDoc(ref, { ...payload, ownerUid });
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-  };
-
-  const saveWeeklySpecial = async (next: WeeklyFiveMlSpecial): Promise<void> => {
-    const ownerUid = requireOwnerUid();
-    const ref = doc(db, 'weeklySpecials', 'active-5ml');
-    const path = 'weeklySpecials/active-5ml';
-    try {
-      const existingSnap = await getDoc(ref);
-      const safeId = (val: string) =>
-        val
-          .trim()
-          .replace(/[^a-zA-Z0-9_-]/g, '')
-          .slice(0, 128);
-      const fourPackPrice = Math.min(10000, Math.max(1, Number(next.fourPackPrice || 100)));
-      const twoPackPrice = Math.min(
-        fourPackPrice,
-        Math.max(1, Number(next.twoPackPrice || 50))
-      );
-      const activeWeek = (next.weekKey.trim() || getWeekWindowBounds().weekKey).slice(0, 24);
-      const sanitizePair = (arr: string[], exclude?: Set<string>) =>
-        arr
-          .map(safeId)
-          .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
-          .slice(0, 2);
-
-      const womenUnder500Ids = sanitizePair(next.womenUnder500Ids ?? []);
-      const womenUnder800Ids = sanitizePair(
-        next.womenUnder800Ids ?? [],
-        new Set(womenUnder500Ids)
-      );
-      const menUnder500Ids = sanitizePair(next.menUnder500Ids ?? []);
-      const menUnder800Ids = sanitizePair(
-        next.menUnder800Ids ?? [],
-        new Set(menUnder500Ids)
-      );
-
-      const under500Ids = sanitizePair(
-        next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids
-      );
-      const under800Ids = sanitizePair(
-        next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
-        new Set(under500Ids)
-      );
-
-      const payload = {
-        enabled: Boolean(next.enabled),
-        autoRotateWeekly: Boolean(next.autoRotateWeekly),
-        weekKey: activeWeek,
-        seedOffset: Math.min(1000000, Math.max(0, Math.floor(Number(next.seedOffset || 0)))),
-        under500Ids,
-        under800Ids,
-        womenUnder500Ids,
-        womenUnder800Ids,
-        menUnder500Ids,
-        menUnder800Ids,
-        fourPackPrice,
-        twoPackPrice,
-        updatedAt: serverTimestamp(),
-      };
-      if (existingSnap.exists()) {
-        await setDoc(ref, payload, { merge: true });
-      } else {
-        await setDoc(ref, { ...payload, ownerUid });
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-  };
-
-  const saveComboDeal = async (
-    input: ComboInput,
-    existingId?: string
-  ): Promise<string> => {
-    const ownerUid = requireOwnerUid();
-    const cleanTitle = input.title.trim().slice(0, 140);
-    if (!cleanTitle) {
-      throw new Error('Combo title is required.');
-    }
-    const cleanNames = input.perfumeNames
-      .map((n) => n.trim().slice(0, 140))
-      .filter(Boolean)
-      .slice(0, 6);
-    if (cleanNames.length < 2) {
-      throw new Error('Include at least 2 perfume names in a combo bundle.');
-    }
-    const cleanSize = (input.sizeLabel.trim() || '2 × Bottles').slice(0, 60);
-    const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
-    const comboPrice = Math.min(regularPrice, Math.max(0, Number(input.comboPrice || 0)));
-
-    const id = existingId || `combo-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
-    const ref = doc(db, 'combos', id);
-    const path = `combos/${id}`;
-
-    const mutablePayload = {
-      title: cleanTitle,
-      subtitle: input.subtitle.trim().slice(0, 300),
-      perfumeNames: cleanNames,
-      sizeLabel: cleanSize,
-      regularPrice,
-      comboPrice,
-      tag: input.tag.trim().slice(0, 40),
-      featured: Boolean(input.featured),
-      active: Boolean(input.active),
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      if (existingId) {
-        await setDoc(ref, mutablePayload, { merge: true });
-      } else {
-        await setDoc(ref, {
-          ...mutablePayload,
-          ownerUid,
-          createdAt: serverTimestamp(),
+        await writeAuditLog({
+          action: 'create',
+          section: 'referral-sale',
+          targetId: saleId,
+          targetLabel: `${code} · ${orderSummary.slice(0, 60)}`,
+          summary: `Logged referral sale for ${code} (E${commissionAmount.toFixed(0)} commission)`,
+          changes: [
+            `Order: ${orderSummary}`,
+            `Net Order: E${netOrderAmount.toFixed(2)} · Commission: E${commissionAmount.toFixed(2)} (${status})`,
+          ],
         });
+        return saleId;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, path);
       }
-      return id;
-    } catch (error) {
-      handleFirestoreError(
-        error,
-        existingId ? OperationType.UPDATE : OperationType.CREATE,
-        path
-      );
-    }
-  };
+    },
+    [referrals, requireOwnerUid, writeAuditLog]
+  );
 
-  const deleteComboDeal = async (comboId: string): Promise<void> => {
-    requireOwnerUid();
-    const path = `combos/${comboId}`;
-    try {
-      await deleteDoc(doc(db, 'combos', comboId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const saveLayeringIdea = async (
-    input: LayeringIdeaInput,
-    existingId?: string
-  ): Promise<string> => {
-    const ownerUid = requireOwnerUid();
-    const cleanTitle = input.title.trim().slice(0, 140);
-    const cleanBase = input.basePerfumeName.trim().slice(0, 140);
-    const cleanTop = input.topPerfumeName.trim().slice(0, 140);
-    if (!cleanTitle || !cleanBase || !cleanTop) {
-      throw new Error('Title, Base Perfume, and Topper Perfume are required.');
-    }
-
-    const id = existingId || `layer-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
-    const ref = doc(db, 'layeringIdeas', id);
-    const path = `layeringIdeas/${id}`;
-
-    const mutablePayload = {
-      title: cleanTitle,
-      vibe: (input.vibe.trim() || 'Signature Blend').slice(0, 60),
-      basePerfumeName: cleanBase,
-      topPerfumeName: cleanTop,
-      sprayRatio: (input.sprayRatio.trim() || '2 sprays base · 2 sprays top').slice(0, 80),
-      occasion: input.occasion.trim().slice(0, 120),
-      whyItWorks: (
-        input.whyItWorks.trim() ||
-        `${cleanBase} anchors the skin while ${cleanTop} adds luminous projection.`
-      ).slice(0, 500),
-      active: Boolean(input.active),
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      if (existingId) {
-        await setDoc(ref, mutablePayload, { merge: true });
-      } else {
-        await setDoc(ref, {
-          ...mutablePayload,
-          ownerUid,
-          createdAt: serverTimestamp(),
+  const updateReferralSaleStatus = useCallback(
+    async (saleId: string, status: ReferralSaleStatus): Promise<void> => {
+      requireOwnerUid();
+      const path = `referralSales/${saleId}`;
+      const prevSale = referralSales.find((s) => s.id === saleId);
+      try {
+        await setDoc(
+          doc(db, 'referralSales', saleId),
+          { commissionStatus: status, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        await writeAuditLog({
+          action: 'update',
+          section: 'referral-sale',
+          targetId: saleId,
+          targetLabel: prevSale
+            ? `${prevSale.referralCode} · ${prevSale.orderSummary.slice(0, 60)}`
+            : saleId,
+          summary: prevSale
+            ? `Changed referral payout status for ${prevSale.referralCode} to "${status}"`
+            : `Updated referral sale status to "${status}"`,
+          changes: [
+            `Commission Status: ${prevSale?.commissionStatus ?? 'unknown'} → ${status}`,
+            prevSale ? `Commission Amount: E${prevSale.commissionAmount.toFixed(2)}` : '',
+          ],
         });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
       }
-      return id;
-    } catch (error) {
-      handleFirestoreError(
-        error,
-        existingId ? OperationType.UPDATE : OperationType.CREATE,
-        path
-      );
-    }
-  };
+    },
+    [referralSales, requireOwnerUid, writeAuditLog]
+  );
 
-  const deleteLayeringIdea = async (ideaId: string): Promise<void> => {
-    requireOwnerUid();
-    const path = `layeringIdeas/${ideaId}`;
-    try {
-      await deleteDoc(doc(db, 'layeringIdeas', ideaId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
+  const deleteReferralSale = useCallback(
+    async (saleId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `referralSales/${saleId}`;
+      const prevSale = referralSales.find((s) => s.id === saleId);
+      try {
+        await deleteDoc(doc(db, 'referralSales', saleId));
+        await writeAuditLog({
+          action: 'delete',
+          section: 'referral-sale',
+          targetId: saleId,
+          targetLabel: prevSale
+            ? `${prevSale.referralCode} · ${prevSale.orderSummary.slice(0, 60)}`
+            : saleId,
+          summary: prevSale
+            ? `Deleted referral sale record for ${prevSale.referralCode}`
+            : `Deleted referral sale (${saleId})`,
+          changes: prevSale
+            ? [
+                `Order: ${prevSale.orderSummary}`,
+                `Previous commission: E${prevSale.commissionAmount.toFixed(2)} (${prevSale.commissionStatus})`,
+              ]
+            : [`Deleted sale record ${saleId}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [referralSales, requireOwnerUid, writeAuditLog]
+  );
 
-  const importStarterCombosAndLayering = async (): Promise<number> => {
+  const saveCampaign = useCallback(
+    async (next: SpecialCampaign): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const ref = doc(db, 'campaigns', 'active-special');
+      const path = 'campaigns/active-special';
+      try {
+        const existing = await getDoc(ref);
+        const rawEndsAt = String(next.endsAt ?? '').trim();
+        const parsedEnd = rawEndsAt ? new Date(rawEndsAt) : null;
+        const cleanEndsAt =
+          parsedEnd && !Number.isNaN(parsedEnd.getTime())
+            ? parsedEnd.toISOString().slice(0, 64)
+            : '';
+
+        const cleanNextCampaign: SpecialCampaign = {
+          title: sanitizeText(next.title, 100) || 'Special Offers',
+          badgeText: sanitizeText(next.badgeText, 40) || 'SPECIAL',
+          subtitle: sanitizeText(next.subtitle, 400),
+          announcementText: sanitizeText(next.announcementText, 240),
+          promoCodeHint: sanitizePromoCode(next.promoCodeHint).slice(0, 32),
+          endsAt: cleanEndsAt,
+          enabled: Boolean(next.enabled),
+        };
+
+        const payload = { ...cleanNextCampaign, updatedAt: serverTimestamp() };
+        if (existing.exists()) {
+          await setDoc(ref, payload, { merge: true });
+        } else {
+          await setDoc(ref, { ...payload, ownerUid });
+        }
+
+        setCampaign(cleanNextCampaign);
+        try {
+          localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(cleanNextCampaign));
+          setCacheTimestamp('campaign');
+        } catch {
+          // Ignore storage quota errors
+        }
+
+        await writeAuditLog({
+          action: 'update',
+          section: 'specials',
+          targetId: 'active-special',
+          targetLabel: cleanNextCampaign.title,
+          summary: `Updated seasonal campaign "${cleanNextCampaign.title}" (${
+            cleanNextCampaign.enabled ? 'Live' : 'Paused'
+          })`,
+          changes: buildCampaignDiff(campaign, cleanNextCampaign),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [campaign, requireOwnerUid, writeAuditLog]
+  );
+
+  const saveWeeklySpecial = useCallback(
+    async (next: WeeklyFiveMlSpecial): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const ref = doc(db, 'weeklySpecials', 'active-5ml');
+      const path = 'weeklySpecials/active-5ml';
+      try {
+        const existingSnap = await getDoc(ref);
+        const safeId = (val: string) =>
+          val.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
+        const fourPackPrice = Math.min(
+          10000,
+          Math.max(1, Number(next.fourPackPrice || 100))
+        );
+        const twoPackPrice = Math.min(
+          fourPackPrice,
+          Math.max(1, Number(next.twoPackPrice || 50))
+        );
+        const activeWeek = (next.weekKey.trim() || getWeekWindowBounds().weekKey).slice(
+          0,
+          24
+        );
+        const sanitizePair = (arr: string[], exclude?: Set<string>) =>
+          arr
+            .map(safeId)
+            .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
+            .slice(0, 2);
+
+        const womenUnder500Ids = sanitizePair(next.womenUnder500Ids ?? []);
+        const womenUnder800Ids = sanitizePair(
+          next.womenUnder800Ids ?? [],
+          new Set(womenUnder500Ids)
+        );
+        const menUnder500Ids = sanitizePair(next.menUnder500Ids ?? []);
+        const menUnder800Ids = sanitizePair(
+          next.menUnder800Ids ?? [],
+          new Set(menUnder500Ids)
+        );
+
+        const under500Ids = sanitizePair(
+          next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids
+        );
+        const under800Ids = sanitizePair(
+          next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
+          new Set(under500Ids)
+        );
+
+        const cleanNextWeekly: WeeklyFiveMlSpecial = {
+          enabled: Boolean(next.enabled),
+          autoRotateWeekly: Boolean(next.autoRotateWeekly),
+          weekKey: activeWeek,
+          seedOffset: Math.min(
+            1000000,
+            Math.max(0, Math.floor(Number(next.seedOffset || 0)))
+          ),
+          under500Ids,
+          under800Ids,
+          womenUnder500Ids,
+          womenUnder800Ids,
+          menUnder500Ids,
+          menUnder800Ids,
+          fourPackPrice,
+          twoPackPrice,
+        };
+
+        const payload = { ...cleanNextWeekly, updatedAt: serverTimestamp() };
+        if (existingSnap.exists()) {
+          await setDoc(ref, payload, { merge: true });
+        } else {
+          await setDoc(ref, { ...payload, ownerUid });
+        }
+
+        setWeeklySpecial(cleanNextWeekly);
+        try {
+          localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(cleanNextWeekly));
+          setCacheTimestamp('weeklySpecial');
+        } catch {
+          // Ignore storage quota errors
+        }
+
+        await writeAuditLog({
+          action: 'update',
+          section: 'weekly-special',
+          targetId: 'active-5ml',
+          targetLabel: `Weekly 5ml Special (${activeWeek})`,
+          summary: `Updated Weekly 5ml Decant Special (${
+            cleanNextWeekly.enabled ? 'Active' : 'Paused'
+          })`,
+          changes: buildWeeklySpecialDiff(
+            weeklySpecial,
+            cleanNextWeekly,
+            (id) => livePerfumesRef.current.find((p) => p.id === id)?.name ?? id
+          ),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      }
+    },
+    [requireOwnerUid, weeklySpecial, writeAuditLog]
+  );
+
+  const saveComboDeal = useCallback(
+    async (input: ComboInput, existingId?: string): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const cleanTitle = sanitizeText(input.title, 140);
+      if (!cleanTitle) throw new Error('Combo title is required.');
+      const cleanNames = input.perfumeNames
+        .map((n) => sanitizeText(n, 140))
+        .filter(Boolean)
+        .slice(0, 6);
+      if (cleanNames.length < 2) {
+        throw new Error('Include at least 2 perfume names in a combo bundle.');
+      }
+      const cleanSize = sanitizeText(input.sizeLabel, 60) || '2 × Bottles';
+      const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
+      const comboPrice = Math.min(regularPrice, Math.max(0, Number(input.comboPrice || 0)));
+
+      const id = existingId || `combo-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+      const ref = doc(db, 'combos', id);
+      const path = `combos/${id}`;
+      const prevCombo = existingId
+        ? liveCombos.find((c) => c.id === existingId)
+        : undefined;
+
+      const cleanCombo: ComboInput = {
+        title: cleanTitle,
+        subtitle: sanitizeText(input.subtitle, 300),
+        perfumeNames: cleanNames,
+        sizeLabel: cleanSize,
+        regularPrice,
+        comboPrice,
+        tag: sanitizeText(input.tag, 40),
+        featured: Boolean(input.featured),
+        active: Boolean(input.active),
+      };
+
+      const mutablePayload = { ...cleanCombo, updatedAt: serverTimestamp() };
+      try {
+        if (existingId) {
+          await setDoc(ref, mutablePayload, { merge: true });
+        } else {
+          await setDoc(ref, {
+            ...mutablePayload,
+            ownerUid,
+            createdAt: serverTimestamp(),
+          });
+        }
+        await writeAuditLog({
+          action: existingId ? 'update' : 'create',
+          section: 'combo',
+          targetId: id,
+          targetLabel: cleanTitle,
+          summary: existingId
+            ? `Updated combo bundle "${cleanTitle}"`
+            : `Created combo bundle "${cleanTitle}"`,
+          changes: buildComboDiff(prevCombo, cleanCombo),
+        });
+        return id;
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          existingId ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [liveCombos, requireOwnerUid, writeAuditLog]
+  );
+
+  const deleteComboDeal = useCallback(
+    async (comboId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `combos/${comboId}`;
+      const existing = liveCombos.find((c) => c.id === comboId);
+      try {
+        await deleteDoc(doc(db, 'combos', comboId));
+        await writeAuditLog({
+          action: 'delete',
+          section: 'combo',
+          targetId: comboId,
+          targetLabel: existing?.title ?? comboId,
+          summary: existing
+            ? `Deleted combo bundle "${existing.title}"`
+            : `Deleted combo bundle (${comboId})`,
+          changes: existing
+            ? [`Removed combo: ${existing.perfumeNames.join(' + ')} (E${existing.comboPrice})`]
+            : [`Deleted combo ${comboId}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [liveCombos, requireOwnerUid, writeAuditLog]
+  );
+
+  const saveLayeringIdea = useCallback(
+    async (input: LayeringIdeaInput, existingId?: string): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const cleanTitle = sanitizeText(input.title, 140);
+      const cleanBase = sanitizeText(input.basePerfumeName, 140);
+      const cleanTop = sanitizeText(input.topPerfumeName, 140);
+      if (!cleanTitle || !cleanBase || !cleanTop) {
+        throw new Error('Title, Base Perfume, and Topper Perfume are required.');
+      }
+
+      const id = existingId || `layer-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+      const ref = doc(db, 'layeringIdeas', id);
+      const path = `layeringIdeas/${id}`;
+      const prevIdea = existingId
+        ? liveLayeringIdeas.find((i) => i.id === existingId)
+        : undefined;
+
+      const cleanIdea: LayeringIdeaInput = {
+        title: cleanTitle,
+        vibe: sanitizeText(input.vibe, 60) || 'Signature Blend',
+        basePerfumeName: cleanBase,
+        topPerfumeName: cleanTop,
+        sprayRatio:
+          sanitizeText(input.sprayRatio, 80) || '2 sprays base · 2 sprays top',
+        occasion: sanitizeText(input.occasion, 120),
+        whyItWorks:
+          sanitizeText(input.whyItWorks, 500) ||
+          `${cleanBase} anchors the skin while ${cleanTop} adds luminous projection.`,
+        active: Boolean(input.active),
+      };
+
+      const mutablePayload = { ...cleanIdea, updatedAt: serverTimestamp() };
+      try {
+        if (existingId) {
+          await setDoc(ref, mutablePayload, { merge: true });
+        } else {
+          await setDoc(ref, {
+            ...mutablePayload,
+            ownerUid,
+            createdAt: serverTimestamp(),
+          });
+        }
+        await writeAuditLog({
+          action: existingId ? 'update' : 'create',
+          section: 'layering',
+          targetId: id,
+          targetLabel: cleanTitle,
+          summary: existingId
+            ? `Updated layering ritual "${cleanTitle}"`
+            : `Created layering ritual "${cleanTitle}"`,
+          changes: buildLayeringDiff(prevIdea, cleanIdea),
+        });
+        return id;
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          existingId ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [liveLayeringIdeas, requireOwnerUid, writeAuditLog]
+  );
+
+  const deleteLayeringIdea = useCallback(
+    async (ideaId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `layeringIdeas/${ideaId}`;
+      const existing = liveLayeringIdeas.find((i) => i.id === ideaId);
+      try {
+        await deleteDoc(doc(db, 'layeringIdeas', ideaId));
+        await writeAuditLog({
+          action: 'delete',
+          section: 'layering',
+          targetId: ideaId,
+          targetLabel: existing?.title ?? ideaId,
+          summary: existing
+            ? `Deleted layering ritual "${existing.title}"`
+            : `Deleted layering ritual (${ideaId})`,
+          changes: existing
+            ? [`Removed pairing: ${existing.basePerfumeName} + ${existing.topPerfumeName}`]
+            : [`Deleted layering idea ${ideaId}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [liveLayeringIdeas, requireOwnerUid, writeAuditLog]
+  );
+
+  const importStarterCombosAndLayering = useCallback(async (): Promise<number> => {
     const ownerUid = requireOwnerUid();
     const batch = writeBatch(db);
     try {
@@ -1445,83 +3327,121 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
       await batch.commit();
+      await writeAuditLog({
+        action: 'import',
+        section: 'combo',
+        targetId: 'starter-combos-layering',
+        targetLabel: `Starter Combos & Layering (${starterCombos.length + starterLayeringIdeas.length})`,
+        summary: `Imported ${starterCombos.length} combos and ${starterLayeringIdeas.length} layering ideas`,
+        changes: [
+          `Imported ${starterCombos.length} starter combo bundles`,
+          `Imported ${starterLayeringIdeas.length} starter layering rituals`,
+        ],
+      });
       return starterCombos.length + starterLayeringIdeas.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'combos');
     }
-  };
+  }, [requireOwnerUid, writeAuditLog]);
 
-  const saveHamper = async (
-    input: GiftHamperInput,
-    existingId?: string
-  ): Promise<string> => {
-    const ownerUid = requireOwnerUid();
-    const cleanTitle = input.title.trim().slice(0, 140);
-    if (!cleanTitle) {
-      throw new Error('Gift hamper title is required.');
-    }
-    const cleanOccasion = (input.occasion.trim() || 'For Her').slice(0, 60);
-    const cleanItems = input.itemsIncluded
-      .map((item) => item.trim().slice(0, 140))
-      .filter(Boolean)
-      .slice(0, 8);
-    if (cleanItems.length < 1) {
-      throw new Error('Add at least 1 included item to this gift hamper.');
-    }
-    const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
-    const hamperPrice = Math.min(regularPrice, Math.max(0, Number(input.hamperPrice || 0)));
-    const cleanImage = (input.image.trim() || DEFAULT_HAMPER_IMAGE).slice(0, 500);
-
-    const id = existingId || `hamper-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
-    const ref = doc(db, 'hampers', id);
-    const path = `hampers/${id}`;
-
-    const mutablePayload = {
-      title: cleanTitle,
-      occasion: cleanOccasion,
-      subtitle: input.subtitle.trim().slice(0, 300),
-      itemsIncluded: cleanItems,
-      regularPrice,
-      hamperPrice,
-      image: cleanImage,
-      giftWrapNote: input.giftWrapNote.trim().slice(0, 200),
-      availability: input.availability,
-      featured: Boolean(input.featured),
-      active: Boolean(input.active),
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      if (existingId) {
-        await setDoc(ref, mutablePayload, { merge: true });
-      } else {
-        await setDoc(ref, {
-          ...mutablePayload,
-          ownerUid,
-          createdAt: serverTimestamp(),
-        });
+  const saveHamper = useCallback(
+    async (input: GiftHamperInput, existingId?: string): Promise<string> => {
+      const ownerUid = requireOwnerUid();
+      const cleanTitle = sanitizeText(input.title, 140);
+      if (!cleanTitle) throw new Error('Gift hamper title is required.');
+      const cleanOccasion = sanitizeText(input.occasion, 60) || 'For Her';
+      const cleanItems = input.itemsIncluded
+        .map((item) => sanitizeText(item, 140))
+        .filter(Boolean)
+        .slice(0, 8);
+      if (cleanItems.length < 1) {
+        throw new Error('Add at least 1 included item to this gift hamper.');
       }
-      return id;
-    } catch (error) {
-      handleFirestoreError(
-        error,
-        existingId ? OperationType.UPDATE : OperationType.CREATE,
-        path
-      );
-    }
-  };
+      const regularPrice = Math.min(100000, Math.max(0, Number(input.regularPrice || 0)));
+      const hamperPrice = Math.min(regularPrice, Math.max(0, Number(input.hamperPrice || 0)));
+      const cleanImage = (input.image.trim() || DEFAULT_HAMPER_IMAGE).slice(0, 500);
 
-  const deleteHamper = async (hamperId: string): Promise<void> => {
-    requireOwnerUid();
-    const path = `hampers/${hamperId}`;
-    try {
-      await deleteDoc(doc(db, 'hampers', hamperId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
+      const id = existingId || `hamper-${slugifyId(cleanTitle)}-${Date.now().toString(36)}`;
+      const ref = doc(db, 'hampers', id);
+      const path = `hampers/${id}`;
+      const prevHamper = existingId
+        ? liveHampers.find((h) => h.id === existingId)
+        : undefined;
 
-  const importStarterHampers = async (): Promise<number> => {
+      const cleanHamper: GiftHamperInput = {
+        title: cleanTitle,
+        occasion: cleanOccasion,
+        subtitle: sanitizeText(input.subtitle, 300),
+        itemsIncluded: cleanItems,
+        regularPrice,
+        hamperPrice,
+        image: cleanImage,
+        giftWrapNote: sanitizeText(input.giftWrapNote, 200),
+        availability: input.availability,
+        featured: Boolean(input.featured),
+        active: Boolean(input.active),
+      };
+
+      const mutablePayload = { ...cleanHamper, updatedAt: serverTimestamp() };
+      try {
+        if (existingId) {
+          await setDoc(ref, mutablePayload, { merge: true });
+        } else {
+          await setDoc(ref, {
+            ...mutablePayload,
+            ownerUid,
+            createdAt: serverTimestamp(),
+          });
+        }
+        await writeAuditLog({
+          action: existingId ? 'update' : 'create',
+          section: 'hamper',
+          targetId: id,
+          targetLabel: cleanTitle,
+          summary: existingId
+            ? `Updated gift hamper "${cleanTitle}"`
+            : `Created gift hamper "${cleanTitle}"`,
+          changes: buildHamperDiff(prevHamper, cleanHamper),
+        });
+        return id;
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          existingId ? OperationType.UPDATE : OperationType.CREATE,
+          path
+        );
+      }
+    },
+    [liveHampers, requireOwnerUid, writeAuditLog]
+  );
+
+  const deleteHamper = useCallback(
+    async (hamperId: string): Promise<void> => {
+      requireOwnerUid();
+      const path = `hampers/${hamperId}`;
+      const existing = liveHampers.find((h) => h.id === hamperId);
+      try {
+        await deleteDoc(doc(db, 'hampers', hamperId));
+        await writeAuditLog({
+          action: 'delete',
+          section: 'hamper',
+          targetId: hamperId,
+          targetLabel: existing?.title ?? hamperId,
+          summary: existing
+            ? `Deleted gift hamper "${existing.title}"`
+            : `Deleted gift hamper (${hamperId})`,
+          changes: existing
+            ? [`Removed gift hamper (${existing.occasion}, E${existing.hamperPrice})`]
+            : [`Deleted gift hamper ${hamperId}`],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [liveHampers, requireOwnerUid, writeAuditLog]
+  );
+
+  const importStarterHampers = useCallback(async (): Promise<number> => {
     const ownerUid = requireOwnerUid();
     const batch = writeBatch(db);
     try {
@@ -1544,65 +3464,181 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
       await batch.commit();
+      await writeAuditLog({
+        action: 'import',
+        section: 'hamper',
+        targetId: 'starter-hampers',
+        targetLabel: `Starter Gift Hampers (${starterHampers.length})`,
+        summary: `Imported ${starterHampers.length} starter gift hampers`,
+        changes: [`Published ${starterHampers.length} starter gift hampers`],
+      });
       return starterHampers.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'hampers');
     }
-  };
+  }, [requireOwnerUid, writeAuditLog]);
 
-  const value: StoreContextValue = {
-    user,
-    authReady,
-    isOwner,
-    signInOwnerWithGoogle,
-    signInOwnerWithPassword,
-    sendOwnerPasswordReset,
-    resendOwnerVerificationEmail,
-    refreshAuthUser,
-    setOwnerPasswordCredential,
-    signOutOwner,
-    perfumes,
-    livePerfumes,
-    usingSampleFallback,
-    catalogueLoading,
-    catalogueError,
-    campaign,
-    campaignLoading,
-    coupons,
-    couponsLoading,
-    combos,
-    liveCombos,
-    usingSampleCombos,
-    combosLoading,
-    layeringIdeas,
-    liveLayeringIdeas,
-    usingSampleLayering,
-    layeringLoading,
-    hampers,
-    liveHampers,
-    usingSampleHampers,
-    hampersLoading,
-    weeklySpecial,
-    weeklySpecialLoading,
-    lookupCouponByCode,
-    savePerfume,
-    deletePerfume,
-    togglePerfumeSpecial,
-    importStarterCatalogue,
-    saveCoupon,
-    toggleCouponActive,
-    deleteCoupon,
-    saveCampaign,
-    saveWeeklySpecial,
-    saveComboDeal,
-    deleteComboDeal,
-    saveLayeringIdea,
-    deleteLayeringIdea,
-    importStarterCombosAndLayering,
-    saveHamper,
-    deleteHamper,
-    importStarterHampers,
-  };
+  const value = useMemo<StoreContextValue>(
+    () => ({
+      user,
+      authReady,
+      isOwner,
+      signInOwnerWithGoogle,
+      signInOwnerWithPassword,
+      sendOwnerPasswordReset,
+      resendOwnerVerificationEmail,
+      refreshAuthUser,
+      setOwnerPasswordCredential,
+      signOutOwner,
+      perfumes,
+      livePerfumes,
+      usingSampleFallback,
+      catalogueLoading,
+      catalogueComplete,
+      catalogueHasMore,
+      catalogueError,
+      campaign,
+      campaignLoading,
+      coupons,
+      couponsLoading,
+      referrals,
+      referralsLoading,
+      referralAttributions,
+      referralAttributionsLoading,
+      referralSales,
+      referralSalesLoading,
+      auditLogs,
+      auditLogsLoading,
+      snapshotStatus,
+      combos,
+      liveCombos,
+      usingSampleCombos,
+      combosLoading,
+      layeringIdeas,
+      liveLayeringIdeas,
+      usingSampleLayering,
+      layeringLoading,
+      hampers,
+      liveHampers,
+      usingSampleHampers,
+      hampersLoading,
+      weeklySpecial,
+      weeklySpecialLoading,
+      loadMorePerfumes,
+      ensureAllPerfumesLoaded,
+      ensureSecondaryLoaded,
+      retryCatalogueSync,
+      setAdminConsoleActive,
+      publishCatalogueSnapshot,
+      lookupCouponByCode,
+      lookupReferralByCode,
+      recordCheckoutReferralSale,
+      savePerfume,
+      deletePerfume,
+      togglePerfumeSpecial,
+      importStarterCatalogue,
+      saveCoupon,
+      toggleCouponActive,
+      deleteCoupon,
+      saveReferral,
+      toggleReferralActive,
+      deleteReferral,
+      approveReferralAttribution,
+      dismissReferralAttribution,
+      logManualReferralSale,
+      updateReferralSaleStatus,
+      deleteReferralSale,
+      saveCampaign,
+      saveWeeklySpecial,
+      saveComboDeal,
+      deleteComboDeal,
+      saveLayeringIdea,
+      deleteLayeringIdea,
+      importStarterCombosAndLayering,
+      saveHamper,
+      deleteHamper,
+      importStarterHampers,
+    }),
+    [
+      user,
+      authReady,
+      isOwner,
+      signInOwnerWithGoogle,
+      signInOwnerWithPassword,
+      sendOwnerPasswordReset,
+      resendOwnerVerificationEmail,
+      refreshAuthUser,
+      setOwnerPasswordCredential,
+      signOutOwner,
+      perfumes,
+      livePerfumes,
+      usingSampleFallback,
+      catalogueLoading,
+      catalogueComplete,
+      catalogueHasMore,
+      catalogueError,
+      campaign,
+      campaignLoading,
+      coupons,
+      couponsLoading,
+      referrals,
+      referralsLoading,
+      referralAttributions,
+      referralAttributionsLoading,
+      referralSales,
+      referralSalesLoading,
+      auditLogs,
+      auditLogsLoading,
+      snapshotStatus,
+      combos,
+      liveCombos,
+      usingSampleCombos,
+      combosLoading,
+      layeringIdeas,
+      liveLayeringIdeas,
+      usingSampleLayering,
+      layeringLoading,
+      hampers,
+      liveHampers,
+      usingSampleHampers,
+      hampersLoading,
+      weeklySpecial,
+      weeklySpecialLoading,
+      loadMorePerfumes,
+      ensureAllPerfumesLoaded,
+      ensureSecondaryLoaded,
+      retryCatalogueSync,
+      publishCatalogueSnapshot,
+      lookupCouponByCode,
+      lookupReferralByCode,
+      recordCheckoutReferralSale,
+      savePerfume,
+      deletePerfume,
+      togglePerfumeSpecial,
+      importStarterCatalogue,
+      saveCoupon,
+      toggleCouponActive,
+      deleteCoupon,
+      saveReferral,
+      toggleReferralActive,
+      deleteReferral,
+      approveReferralAttribution,
+      dismissReferralAttribution,
+      logManualReferralSale,
+      updateReferralSaleStatus,
+      deleteReferralSale,
+      saveCampaign,
+      saveWeeklySpecial,
+      saveComboDeal,
+      deleteComboDeal,
+      saveLayeringIdea,
+      deleteLayeringIdea,
+      importStarterCombosAndLayering,
+      saveHamper,
+      deleteHamper,
+      importStarterHampers,
+    ]
+  );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 };

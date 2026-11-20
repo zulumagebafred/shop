@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAdminEmail() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email.lower() in [
+          'zulumagebafred@gmail.com',
+          'tese.khumalo@gmail.com'
+        ];
+    }
+
+    function isValidPublicImageUpload() {
+      return request.resource != null &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(jpeg|jpg|png|webp|avif|gif)');
+    }
+
+    // Default deny on all paths unless explicitly matched below
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Public storefront product/hamper imagery paths (read-only for visitors, verified admin uploads only)
+    match /perfumes/{allPaths=**} {
+      allow read: if true;
+      allow write: if isVerifiedAdminEmail() && (request.resource == null || isValidPublicImageUpload());
+    }
+
+    match /hampers/{allPaths=**} {
+      allow read: if true;
+      allow write: if isVerifiedAdminEmail() && (request.resource == null || isValidPublicImageUpload());
+    }
+
+    match /catalogue/{allPaths=**} {
+      allow read: if true;
+      allow write: if isVerifiedAdminEmail() && (request.resource == null || isValidPublicImageUpload());
+    }
+
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if isVerifiedAdminEmail() && (request.resource == null || isValidPublicImageUpload());
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Filter, Flame, Package, Search, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
@@ -14,6 +14,7 @@ import {
 } from '../utils/pricing';
 import { SEASON_OPTIONS, getProductSeasons } from '../utils/seasons';
 import { isAvailableAtBranch } from '../utils/branches';
+import { sanitizeSearchQuery } from '../utils/sanitize';
 import {
   BottleSize,
   BranchStockFilter,
@@ -84,29 +85,23 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onSelectProduct,
   onQuickWhatsApp,
 }) => {
-  const { perfumes, campaign } = useStore();
+  const {
+    perfumes,
+    campaign,
+    catalogueLoading,
+    catalogueHasMore,
+    ensureAllPerfumesLoaded,
+  } = useStore();
   const [sortBy, setSortBy] = useState<'featured' | 'price-asc' | 'price-desc'>('featured');
   const [visibleCount, setVisibleCount] = useState<number>(SHOP_PAGE_SIZE);
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  useEffect(() => {
+    void ensureAllPerfumesLoaded();
+  }, [ensureAllPerfumesLoaded]);
   const extraBrands = useMemo(() => getExtraCatalogueBrands(perfumes), [perfumes]);
   const categories: (FragranceCategory | 'All')[] = ['All', 'Men', 'Women', 'Unisex'];
-  const sizes: (BottleSize | 'All')[] = useMemo(() => {
-    const sizeSet = new Set<string>();
-    perfumes.forEach((p) => {
-      p.sizes.forEach((s) => {
-        if (s.available && s.size.trim()) {
-          sizeSet.add(s.size.trim());
-        }
-      });
-    });
-    const sorted = Array.from(sizeSet).sort((a, b) => {
-      const numA = Number.parseFloat(a.match(/\d+(?:\.\d+)?/)?.[0] ?? '9999');
-      const numB = Number.parseFloat(b.match(/\d+(?:\.\d+)?/)?.[0] ?? '9999');
-      if (numA !== numB) return numA - numB;
-      return a.localeCompare(b);
-    });
-    return ['All', ...sorted];
-  }, [perfumes]);
   const availableCatalogCount = useMemo(
     () => perfumes.filter((p) => p.availability !== 'Out of Stock').length,
     [perfumes]
@@ -128,11 +123,11 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     [perfumes]
   );
 
-  const isSearching = searchQuery.trim().length > 0;
+  const isSearching = deferredSearchQuery.trim().length > 0;
 
-  const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const list = perfumes.filter((product) => {
+  const baseFilteredProducts = useMemo(() => {
+    const q = sanitizeSearchQuery(deferredSearchQuery).trim().toLowerCase();
+    return perfumes.filter((product) => {
       // Hide out-of-stock perfumes during normal browsing; only reveal them when actively searched
       if (product.availability === 'Out of Stock' && (!q || onlyInStock)) {
         return false;
@@ -145,12 +140,6 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       }
       if (selectedBranchFilter !== 'all' && !isAvailableAtBranch(product, selectedBranchFilter)) {
         return false;
-      }
-      if (selectedSize !== 'All') {
-        const hasSize = product.sizes.some(
-          (s) => s.size === selectedSize && s.available
-        );
-        if (!hasSize) return false;
       }
       if (!matchesPriceRange(product, selectedPriceRange)) {
         return false;
@@ -168,19 +157,71 @@ export const ShopPage: React.FC<ShopPageProps> = ({
         return false;
       }
       if (q) {
-        const notes = [...product.notes.top, ...product.notes.heart, ...product.notes.base]
-          .join(' ')
-          .toLowerCase();
-        const matchesQuery =
+        if (
           product.name.toLowerCase().includes(q) ||
           product.brand.toLowerCase().includes(q) ||
           product.category.toLowerCase().includes(q) ||
-          product.description.toLowerCase().includes(q) ||
-          notes.includes(q);
-        if (!matchesQuery) return false;
+          product.description.toLowerCase().includes(q)
+        ) {
+          return true;
+        }
+        const notes = [...product.notes.top, ...product.notes.heart, ...product.notes.base]
+          .join(' ')
+          .toLowerCase();
+        if (!notes.includes(q)) return false;
       }
       return true;
     });
+  }, [
+    perfumes,
+    selectedCategory,
+    selectedBrand,
+    selectedBranchFilter,
+    selectedPriceRange,
+    selectedSeason,
+    deferredSearchQuery,
+    onlyInStock,
+    onlySpecials,
+    onlyUnboxed,
+  ]);
+
+  const sizes: (BottleSize | 'All')[] = useMemo(() => {
+    const sizeSet = new Set<string>();
+    baseFilteredProducts.forEach((p) => {
+      p.sizes.forEach((s) => {
+        if (s.available && s.size.trim()) {
+          sizeSet.add(s.size.trim());
+        }
+      });
+    });
+    const sorted = Array.from(sizeSet).sort((a, b) => {
+      const numA = Number.parseFloat(a.match(/\d+(?:\.\d+)?/)?.[0] ?? '9999');
+      const numB = Number.parseFloat(b.match(/\d+(?:\.\d+)?/)?.[0] ?? '9999');
+      if (numA !== numB) return numA - numB;
+      return a.localeCompare(b);
+    });
+    return ['All', ...sorted];
+  }, [baseFilteredProducts]);
+
+  useEffect(() => {
+    if (
+      baseFilteredProducts.length > 0 &&
+      selectedSize !== 'All' &&
+      !sizes.includes(selectedSize)
+    ) {
+      onSizeChange('All');
+    }
+  }, [baseFilteredProducts.length, selectedSize, sizes, onSizeChange]);
+
+  const filteredProducts = useMemo(() => {
+    const list =
+      selectedSize === 'All'
+        ? baseFilteredProducts
+        : baseFilteredProducts.filter((product) =>
+            product.sizes.some(
+              (s) => s.available && s.size.trim() === selectedSize
+            )
+          );
 
     if (sortBy === 'price-asc' || sortBy === 'price-desc') {
       return [...list].sort((a, b) => {
@@ -194,20 +235,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     }
 
     return list;
-  }, [
-    perfumes,
-    selectedCategory,
-    selectedBrand,
-    selectedBranchFilter,
-    selectedSize,
-    selectedPriceRange,
-    selectedSeason,
-    searchQuery,
-    onlyInStock,
-    onlySpecials,
-    onlyUnboxed,
-    sortBy,
-  ]);
+  }, [baseFilteredProducts, selectedSize, sortBy]);
 
   useEffect(() => {
     setVisibleCount(SHOP_PAGE_SIZE);
@@ -327,7 +355,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
+              onChange={(e) => onSearchChange(sanitizeSearchQuery(e.target.value))}
               placeholder="Search name, house, or scent note..."
               className="w-full pl-10 pr-9 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:border-[#0A0A0A]"
             />
@@ -464,73 +492,67 @@ export const ShopPage: React.FC<ShopPageProps> = ({
         </div>
 
         {/* Size Filter Row */}
-        <div className="pt-4 border-t border-[#E5E5E5] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#525252] mr-1">
-              <Filter className="w-3.5 h-3.5 text-[#0A0A0A]" />
-              <span>Available Size:</span>
+        <div className="pt-4 border-t border-[#E5E5E5] flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#525252] mr-1 whitespace-nowrap shrink-0">
+            <Filter className="w-3.5 h-3.5 text-[#0A0A0A]" />
+            <span>Available Size:</span>
+          </span>
+          {sizes.map((size) => {
+            const active = selectedSize === size;
+            return (
+              <button
+                key={size}
+                type="button"
+                onClick={() => onSizeChange(size)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium tabular-nums border transition-colors whitespace-nowrap shrink-0 ${
+                  active
+                    ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                    : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                }`}
+              >
+                {size === 'All' ? 'All Sizes' : size}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Store, Specials & Sort Row */}
+        <div className="pt-4 border-t border-[#E5E5E5] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Store Branch Stock Filter */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#525252] mr-0.5 whitespace-nowrap">
+              Store:
             </span>
-            {sizes.map((size) => {
-              const active = selectedSize === size;
+            {(
+              [
+                { id: 'all', label: 'All Stores' },
+                { id: 'manzini', label: 'Manzini' },
+                { id: 'mbabane', label: 'Mbabane' },
+              ] as const
+            ).map((b) => {
+              const active = selectedBranchFilter === b.id;
               return (
                 <button
-                  key={size}
+                  key={b.id}
                   type="button"
-                  onClick={() => onSizeChange(size)}
-                  className={`relative px-3.5 py-1.5 rounded-full text-xs font-medium tabular-nums border transition-colors overflow-hidden ${
+                  onClick={() => onBranchFilterChange(b.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 ${
                     active
-                      ? 'text-white border-[#0A0A0A]'
+                      ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
                       : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
                   }`}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="shop-size-pill"
-                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute inset-0 bg-[#0A0A0A] rounded-full"
-                    />
-                  )}
-                  <span className="relative z-10">{size === 'All' ? 'All Sizes' : size}</span>
+                  {b.label}
                 </button>
               );
             })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Store Branch Stock Filter */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#525252] mr-0.5">
-                Store:
-              </span>
-              {(
-                [
-                  { id: 'all', label: 'All Stores' },
-                  { id: 'manzini', label: 'Manzini' },
-                  { id: 'mbabane', label: 'Mbabane' },
-                ] as const
-              ).map((b) => {
-                const active = selectedBranchFilter === b.id;
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => onBranchFilterChange(b.id)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
-                      active
-                        ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
-                        : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
-                    }`}
-                  >
-                    {b.label}
-                  </button>
-                );
-              })}
-            </div>
-
+          <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
             <button
               type="button"
               onClick={() => onOnlyUnboxedChange(!onlyUnboxed)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 onlyUnboxed
                   ? 'bg-[#0A0A0A] text-[#FACC15] border-[#0A0A0A]'
                   : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
@@ -544,7 +566,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               <button
                 type="button"
                 onClick={() => onOnlySpecialsChange(!onlySpecials)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   onlySpecials
                     ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
                     : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
@@ -565,7 +587,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               onChange={(e) =>
                 setSortBy(e.target.value as 'featured' | 'price-asc' | 'price-desc')
               }
-              className="py-1.5 px-3 bg-white border border-[#D4D4D4] rounded-full text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+              className="py-1.5 px-3 bg-white border border-[#D4D4D4] rounded-full text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A] shrink-0"
             >
               <option value="featured">Sort: Featured</option>
               <option value="price-asc">Price: Low to High</option>
@@ -573,7 +595,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
             </select>
 
             {isSearching && (
-              <label className="inline-flex items-center gap-2 text-xs text-[#404040] cursor-pointer select-none">
+              <label className="inline-flex items-center gap-2 text-xs text-[#404040] cursor-pointer select-none whitespace-nowrap shrink-0">
                 <input
                   type="checkbox"
                   checked={onlyInStock}
@@ -588,7 +610,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               <button
                 type="button"
                 onClick={onResetFilters}
-                className="text-xs font-semibold text-[#0A0A0A] hover:opacity-65 underline underline-offset-4"
+                className="text-xs font-semibold text-[#0A0A0A] hover:opacity-65 underline underline-offset-4 whitespace-nowrap shrink-0"
               >
                 Reset Filters
               </button>
@@ -630,35 +652,39 @@ export const ShopPage: React.FC<ShopPageProps> = ({
                   key={product.id}
                   product={product}
                   index={idx}
-                  disableEntranceAnimation={idx >= 8}
+                  disableEntranceAnimation={isSearching || idx >= 8}
                   imageLoading={idx < 6 ? 'eager' : 'lazy'}
                   fetchPriority={idx < 3 ? 'high' : 'auto'}
                   priceRange={selectedPriceRange}
+                  selectedSize={selectedSize}
                   onViewDetails={onSelectProduct}
                   onQuickWhatsApp={onQuickWhatsApp}
                 />
               ))}
             </div>
 
-            {hasMoreProducts && (
+            {(hasMoreProducts || (catalogueLoading && catalogueHasMore)) && (
               <div
                 ref={loadMoreTriggerRef}
                 className="flex flex-col items-center justify-center gap-3 pt-2"
               >
                 <p className="text-xs text-[#525252] tabular-nums">
                   Showing {visibleProducts.length} of {filteredProducts.length} fragrances
+                  {catalogueLoading && catalogueHasMore ? ' · Syncing more from store...' : ''}
                 </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVisibleCount((prev) =>
-                      Math.min(prev + SHOP_PAGE_SIZE, filteredProducts.length)
-                    )
-                  }
-                  className="px-6 py-2.5 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider"
-                >
-                  Load More Fragrances
-                </button>
+                {hasMoreProducts && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisibleCount((prev) =>
+                        Math.min(prev + SHOP_PAGE_SIZE, filteredProducts.length)
+                      )
+                    }
+                    className="px-6 py-2.5 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider"
+                  >
+                    Load More Fragrances
+                  </button>
+                )}
               </div>
             )}
           </motion.div>

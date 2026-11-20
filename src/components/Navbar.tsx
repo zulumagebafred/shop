@@ -252,12 +252,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="inline-flex items-center gap-2.5 text-lg sm:text-xl font-bold tracking-[0.14em] text-[#0A0A0A] hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] rounded-lg px-1"
           >
             <span className="w-9 h-9 rounded-xl bg-black overflow-hidden shrink-0 inline-flex items-center justify-center border border-[#0A0A0A]">
-              <img
-                src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
-                alt=""
-                aria-hidden="true"
-                className="w-full h-full object-cover scale-[1.68]"
-              />
+              <picture className="w-full h-full">
+                <source srcSet="/assets/aistudio/aurahut_logo_a0bd1434-thumb.webp" type="image/webp" />
+                <img
+                  src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
+                  alt=""
+                  aria-hidden="true"
+                  className="w-full h-full object-cover scale-[1.68]"
+                />
+              </picture>
             </span>
             <span>{siteConfig.brandName}</span>
           </motion.button>
@@ -595,12 +598,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center justify-between px-6 h-16 border-b border-[#E5E5E5]">
                 <span className="inline-flex items-center gap-2.5 text-lg font-bold tracking-[0.14em]">
                   <span className="w-8 h-8 rounded-lg bg-black overflow-hidden shrink-0 inline-flex items-center justify-center">
-                    <img
-                      src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
-                      alt=""
-                      aria-hidden="true"
-                      className="w-full h-full object-cover scale-[1.68]"
-                    />
+                    <picture className="w-full h-full">
+                      <source srcSet="/assets/aistudio/aurahut_logo_a0bd1434-thumb.webp" type="image/webp" />
+                      <img
+                        src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                        className="w-full h-full object-cover scale-[1.68]"
+                      />
+                    </picture>
                   </span>
                   <span>{siteConfig.brandName}</span>
                 </span>

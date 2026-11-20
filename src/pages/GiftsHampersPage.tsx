@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   ArrowRight,
@@ -32,10 +32,15 @@ export const GiftsHampersPage: React.FC<GiftsHampersPageProps> = ({
   onAddHamperToBasket,
   onNavigate,
 }) => {
-  const { hampers, perfumes } = useStore();
+  const { hampers, perfumes, ensureSecondaryLoaded, ensureAllPerfumesLoaded } = useStore();
   const [selectedOccasion, setSelectedOccasion] = useState<string>('All');
   const [giftNotes, setGiftNotes] = useState<Record<string, string>>({});
   const [addedId, setAddedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void ensureSecondaryLoaded('hampers');
+    void ensureAllPerfumesLoaded();
+  }, [ensureSecondaryLoaded, ensureAllPerfumesLoaded]);
 
   const activeAvailableHampers = useMemo(
     () => hampers.filter((h) => h.active && h.availability !== 'Out of Stock'),

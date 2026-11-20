@@ -1,9 +1,16 @@
 import {
   BasketItem,
+  BasketPriceDelta,
+  BasketRevalidationResult,
+  ComboDeal,
   Coupon,
   FragranceProduct,
+  GiftHamper,
+  InfluencerReferral,
   PriceRangeFilter,
+  PublicReferral,
   SizeOption,
+  WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 
 export function getEffectiveUnitPrice(
@@ -294,5 +301,327 @@ export function calculateCouponDiscount(
     discountAmount,
     finalTotal,
     valid: true,
+  };
+}
+
+export interface ReferralBenefitCalculation {
+  discountAmount: number;
+  netOrderAmount: number;
+  commissionAmount: number;
+}
+
+export function calculateReferralCommission(
+  netOrderAmount: number,
+  referral: Pick<InfluencerReferral, 'commissionType' | 'commissionValue'> | null
+): number {
+  if (!referral || netOrderAmount <= 0 || referral.commissionValue <= 0) return 0;
+  if (referral.commissionType === 'percentage') {
+    const pct = Math.min(90, Math.max(0, referral.commissionValue));
+    return Math.round(((netOrderAmount * pct) / 100) * 100) / 100;
+  }
+  return Math.min(100000, Math.round(Math.max(0, referral.commissionValue) * 100) / 100);
+}
+
+export function calculateReferralBenefit(
+  eligibleSubtotal: number,
+  referral: PublicReferral | InfluencerReferral | null
+): ReferralBenefitCalculation {
+  const safeSubtotal = Math.max(0, eligibleSubtotal);
+  if (!referral || !referral.active || safeSubtotal <= 0) {
+    return {
+      discountAmount: 0,
+      netOrderAmount: safeSubtotal,
+      commissionAmount: 0,
+    };
+  }
+
+  let rawDiscount = 0;
+  if (
+    referral.followerDiscountType === 'percentage' &&
+    referral.followerDiscountValue > 0
+  ) {
+    const pct = Math.min(95, Math.max(0, referral.followerDiscountValue));
+    rawDiscount = (safeSubtotal * pct) / 100;
+  } else if (
+    referral.followerDiscountType === 'fixed' &&
+    referral.followerDiscountValue > 0
+  ) {
+    rawDiscount = referral.followerDiscountValue;
+  }
+
+  const discountAmount = Math.min(
+    safeSubtotal,
+    Math.round(rawDiscount * 100) / 100
+  );
+  const netOrderAmount = Math.max(
+    0,
+    Math.round((safeSubtotal - discountAmount) * 100) / 100
+  );
+  const commissionAmount =
+    'commissionType' in referral
+      ? calculateReferralCommission(netOrderAmount, referral)
+      : 0;
+
+  return {
+    discountAmount,
+    netOrderAmount,
+    commissionAmount,
+  };
+}
+
+function pricesDiffer(a: number | null | undefined, b: number | null | undefined): boolean {
+  if ((a === null || a === undefined) && (b === null || b === undefined)) return false;
+  if (a === null || a === undefined || b === null || b === undefined) return true;
+  return Math.abs(a - b) > 0.005;
+}
+
+/**
+ * Revalidates persisted cart items against authoritative live catalogue, hamper,
+ * combo, and weekly special pricing. Never trusts stored localStorage prices.
+ */
+export function revalidateBasketItems(
+  items: BasketItem[],
+  catalogue: FragranceProduct[],
+  hampers: GiftHamper[] = [],
+  combos: ComboDeal[] = [],
+  weeklySpecial?: WeeklyFiveMlSpecial | null
+): BasketRevalidationResult {
+  const perfumeMap = new Map(catalogue.map((p) => [p.id, p]));
+  const hamperMap = new Map(hampers.map((h) => [h.id, h]));
+  const comboMap = new Map(combos.map((c) => [c.id, c]));
+
+  const validatedItems: BasketItem[] = [];
+  const staleChanges: BasketPriceDelta[] = [];
+  let hasStalePrices = false;
+  let hasUnavailableItems = false;
+  let hasUnverifiedItems = catalogue.length === 0;
+
+  for (const rawItem of items) {
+    const safeQuantity = Math.min(50, Math.max(1, Math.floor(Number(rawItem.quantity) || 1)));
+
+    if (rawItem.productId.startsWith('hamper-')) {
+      const hamperId = rawItem.productId.slice('hamper-'.length);
+      if (hampers.length === 0) {
+        hasUnverifiedItems = true;
+        validatedItems.push({ ...rawItem, quantity: safeQuantity });
+        continue;
+      }
+      const liveHamper = hamperMap.get(hamperId);
+      if (!liveHamper || !liveHamper.active || liveHamper.availability === 'Out of Stock') {
+        hasUnavailableItems = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'unavailable',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: null,
+        });
+        continue;
+      }
+      const nextOnSpecial = liveHamper.regularPrice > liveHamper.hamperPrice;
+      const changed =
+        pricesDiffer(rawItem.unitPrice, liveHamper.hamperPrice) ||
+        pricesDiffer(rawItem.originalUnitPrice, liveHamper.regularPrice) ||
+        Boolean(rawItem.onSpecial) !== nextOnSpecial;
+
+      if (changed) {
+        hasStalePrices = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: liveHamper.title,
+          size: rawItem.size,
+          reason: 'price-changed',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: liveHamper.hamperPrice,
+        });
+      }
+
+      validatedItems.push({
+        ...rawItem,
+        productName: liveHamper.title,
+        image: liveHamper.image || rawItem.image,
+        unitPrice: liveHamper.hamperPrice,
+        originalUnitPrice: liveHamper.regularPrice,
+        onSpecial: nextOnSpecial,
+        quantity: safeQuantity,
+      });
+      continue;
+    }
+
+    if (rawItem.productId.startsWith('combo-')) {
+      const comboId = rawItem.productId.slice('combo-'.length);
+      if (combos.length === 0) {
+        hasUnverifiedItems = true;
+        validatedItems.push({ ...rawItem, quantity: safeQuantity });
+        continue;
+      }
+      const liveCombo = comboMap.get(comboId);
+      if (!liveCombo || !liveCombo.active) {
+        hasUnavailableItems = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'unavailable',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: null,
+        });
+        continue;
+      }
+      const nextOnSpecial = liveCombo.regularPrice > liveCombo.comboPrice;
+      const changed =
+        pricesDiffer(rawItem.unitPrice, liveCombo.comboPrice) ||
+        pricesDiffer(rawItem.originalUnitPrice, liveCombo.regularPrice) ||
+        Boolean(rawItem.onSpecial) !== nextOnSpecial;
+
+      if (changed) {
+        hasStalePrices = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: liveCombo.title,
+          size: rawItem.size,
+          reason: 'price-changed',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: liveCombo.comboPrice,
+        });
+      }
+
+      validatedItems.push({
+        ...rawItem,
+        productName: liveCombo.title,
+        unitPrice: liveCombo.comboPrice,
+        originalUnitPrice: liveCombo.regularPrice,
+        onSpecial: nextOnSpecial,
+        quantity: safeQuantity,
+      });
+      continue;
+    }
+
+    if (rawItem.productId.startsWith('weekly-5ml-')) {
+      if (!weeklySpecial) {
+        hasUnverifiedItems = true;
+        validatedItems.push({ ...rawItem, quantity: safeQuantity });
+        continue;
+      }
+      if (!weeklySpecial.enabled) {
+        hasUnavailableItems = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'unavailable',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: null,
+        });
+        continue;
+      }
+      const isFourPack = rawItem.productId.endsWith('-4-for-100');
+      const livePrice = isFourPack
+        ? Number(weeklySpecial.fourPackPrice || 100)
+        : Number(weeklySpecial.twoPackPrice || 50);
+
+      if (pricesDiffer(rawItem.unitPrice, livePrice)) {
+        hasStalePrices = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'special-changed',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: livePrice,
+        });
+      }
+
+      validatedItems.push({
+        ...rawItem,
+        unitPrice: livePrice,
+        onSpecial: true,
+        quantity: safeQuantity,
+      });
+      continue;
+    }
+
+    if (catalogue.length === 0) {
+      validatedItems.push({ ...rawItem, quantity: safeQuantity });
+      continue;
+    }
+
+    const liveProduct = perfumeMap.get(rawItem.productId);
+    if (!liveProduct || liveProduct.availability === 'Out of Stock') {
+      hasUnavailableItems = true;
+      staleChanges.push({
+        productId: rawItem.productId,
+        productName: rawItem.productName,
+        size: rawItem.size,
+        reason: 'unavailable',
+        previousUnitPrice: rawItem.unitPrice,
+        currentUnitPrice: null,
+      });
+      continue;
+    }
+
+    const normalizedSize = rawItem.size.trim().toLowerCase();
+    const liveSizeOption = liveProduct.sizes.find(
+      (s) => s.size.trim().toLowerCase() === normalizedSize
+    );
+
+    if (!liveSizeOption || !liveSizeOption.available) {
+      hasUnavailableItems = true;
+      staleChanges.push({
+        productId: rawItem.productId,
+        productName: liveProduct.name,
+        size: rawItem.size,
+        reason: 'unavailable',
+        previousUnitPrice: rawItem.unitPrice,
+        currentUnitPrice: null,
+      });
+      continue;
+    }
+
+    const pricing = getSizeEffectivePrice(liveProduct, liveSizeOption);
+    const prevSpecialPct = Number(rawItem.specialDiscountPercent ?? 0);
+    const liveSpecialPct = Number(liveProduct.specialDiscountPercent ?? 0);
+    const priceChanged =
+      pricesDiffer(rawItem.unitPrice, pricing.effectivePrice) ||
+      pricesDiffer(rawItem.originalUnitPrice, pricing.originalPrice);
+    const specialChanged =
+      Boolean(rawItem.onSpecial) !== Boolean(liveProduct.onSpecial) ||
+      prevSpecialPct !== liveSpecialPct;
+
+    if (priceChanged || specialChanged) {
+      hasStalePrices = true;
+      staleChanges.push({
+        productId: rawItem.productId,
+        productName: liveProduct.name,
+        size: liveSizeOption.size,
+        reason: specialChanged && !priceChanged ? 'special-changed' : 'price-changed',
+        previousUnitPrice: rawItem.unitPrice,
+        currentUnitPrice: pricing.effectivePrice,
+      });
+    }
+
+    validatedItems.push({
+      productId: liveProduct.id,
+      productName: liveProduct.name,
+      brand: liveProduct.brand,
+      image: liveProduct.image,
+      size: liveSizeOption.size,
+      unitPrice: pricing.effectivePrice,
+      originalUnitPrice: pricing.originalPrice,
+      onSpecial: liveProduct.onSpecial,
+      specialDiscountPercent: liveProduct.specialDiscountPercent,
+      isUnboxed: Boolean(liveProduct.isUnboxed),
+      quantity: safeQuantity,
+      isSampleListing: liveProduct.isSampleListing,
+    });
+  }
+
+  return {
+    validatedItems,
+    hasStalePrices,
+    hasUnavailableItems,
+    hasUnverifiedItems,
+    staleChanges,
   };
 }

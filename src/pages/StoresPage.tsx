@@ -48,7 +48,8 @@ export const StoresPage: React.FC<StoresPageProps> = ({
                 src={branch.image}
                 alt={`${branch.name} Storefront & Visual Directions`}
                 fallbackTitle={branch.name}
-                loading="eager"
+                loading="lazy"
+                variant="detail"
                 className="w-full h-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
               />
               <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-black/75 text-white text-[10px] font-medium tracking-wide inline-flex items-center gap-1 opacity-90 group-hover:opacity-100">
@@ -154,11 +155,16 @@ export const StoresPage: React.FC<StoresPageProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
-            <img
-              src={zoomedBranch.src}
-              alt={`${zoomedBranch.name} directions and store view`}
-              className="max-h-[80vh] w-auto rounded-2xl object-contain shadow-2xl border border-white/15"
-            />
+            <div className="max-h-[80vh] w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl border border-white/15 bg-black">
+              <ResilientImage
+                src={zoomedBranch.src}
+                alt={`${zoomedBranch.name} directions and store view`}
+                fallbackTitle={zoomedBranch.name}
+                loading="eager"
+                variant="detail"
+                className="max-h-[80vh] w-full object-contain"
+              />
+            </div>
           </div>
         </div>
       )}

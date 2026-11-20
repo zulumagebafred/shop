@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowLeft,
@@ -22,6 +22,8 @@ import {
   DeliveryMethod,
   DRIVER_DELIVERY_FEE,
   FragranceProduct,
+  InfluencerReferral,
+  PublicReferral,
 } from '../types/fragrance';
 import {
   formatBranchName,
@@ -30,6 +32,7 @@ import {
   isAvailableAtBranch,
 } from '../utils/branches';
 import {
+  calculateReferralBenefit,
   getEffectiveUnitPrice,
   getHighestAvailableSize,
   getSizeEffectivePrice,
@@ -48,6 +51,7 @@ interface ProductDetailPageProps {
   deliveryMethod: DeliveryMethod;
   postOfficeTown: string;
   deliveryAddress: string;
+  appliedReferral?: PublicReferral | InfluencerReferral | null;
   onSelectBranch: (branch: BranchId) => void;
   onSelectDeliveryMethod: (method: DeliveryMethod) => void;
   onPostOfficeTownChange: (town: string) => void;
@@ -79,6 +83,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   deliveryMethod,
   postOfficeTown,
   deliveryAddress,
+  appliedReferral = null,
   onSelectBranch,
   onSelectDeliveryMethod,
   onPostOfficeTownChange,
@@ -88,7 +93,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   onSelectProduct,
   onQuickWhatsApp,
 }) => {
-  const { perfumes } = useStore();
+  const { perfumes, recordCheckoutReferralSale } = useStore();
 
   const firstAvailable =
     getHighestAvailableSize(product)?.size ?? product.sizes[0]?.size ?? '100ml';
@@ -100,8 +105,9 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [showNumberNotice, setShowNumberNotice] = useState(false);
   const [postOfficeError, setPostOfficeError] = useState(false);
   const [deliveryAddressError, setDeliveryAddressError] = useState(false);
-  const townInputRef = React.useRef<HTMLInputElement | null>(null);
+  const townInputRef = React.useRef<HTMLSelectElement | null>(null);
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const lastWhatsAppSubmitRef = useRef<number>(0);
 
   const currentSizeObj = useMemo(
     () =>
@@ -119,10 +125,18 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const unitPrice = sizePricing.effectivePrice;
   const originalUnitPrice = sizePricing.originalPrice;
   const lineTotal = unitPrice !== null ? unitPrice * quantity : null;
+  const activeReferral = appliedReferral?.active ? appliedReferral : null;
+  const referralBenefit = useMemo(
+    () =>
+      lineTotal !== null ? calculateReferralBenefit(lineTotal, activeReferral) : null,
+    [lineTotal, activeReferral]
+  );
+  const netLineTotal =
+    referralBenefit !== null ? referralBenefit.netOrderAmount : lineTotal;
   const originalLineTotal =
     originalUnitPrice !== null ? originalUnitPrice * quantity : null;
   const deliveryFee = getDeliveryFee(deliveryMethod);
-  const finalPayable = lineTotal !== null ? lineTotal + deliveryFee : null;
+  const finalPayable = netLineTotal !== null ? netLineTotal + deliveryFee : null;
 
   const activeBranch = useMemo(
     () =>
@@ -140,6 +154,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         branchId: selectedBranch,
         unitPrice,
         originalUnitPrice,
+        appliedReferral: activeReferral,
         deliveryMethod,
         postOfficeTown,
         deliveryAddress,
@@ -152,6 +167,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       selectedBranch,
       unitPrice,
       originalUnitPrice,
+      activeReferral,
       deliveryMethod,
       postOfficeTown,
       deliveryAddress,
@@ -179,6 +195,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   };
 
   const handleOrderWhatsApp = () => {
+    const now = Date.now();
+    if (now - lastWhatsAppSubmitRef.current < 2500) {
+      return;
+    }
     if (deliveryMethod === 'post-office' && !postOfficeTown.trim()) {
       setPostOfficeError(true);
       townInputRef.current?.focus();
@@ -191,7 +211,23 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       addressInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+    if (activeReferral && lineTotal !== null && referralBenefit) {
+      const customerRef =
+        deliveryMethod === 'post-office'
+          ? `Post Office · ${postOfficeTown.trim()}`
+          : deliveryMethod === 'driver-delivery'
+          ? `Driver Delivery (${activeBranch?.city})`
+          : `${activeBranch?.city} Store Pickup`;
+      void recordCheckoutReferralSale({
+        referral: activeReferral,
+        orderSummary: `${product.name} (${currentSizeObj?.size ?? selectedSize} × ${quantity})`,
+        reportedSubtotal: lineTotal,
+        reportedDiscount: referralBenefit.discountAmount,
+        customerRef,
+      });
+    }
     if (whatsappUrl) {
+      lastWhatsAppSubmitRef.current = now;
       openExternalUrl(whatsappUrl);
     } else {
       setShowNumberNotice(true);
@@ -230,6 +266,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               fallbackTitle={product.name}
               loading="eager"
               fetchPriority="high"
+              variant="detail"
               className="w-full h-full object-cover saturate-[1.1] contrast-[1.03]"
             />
             {product.onSpecial && (
@@ -498,7 +535,20 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             );
           })()}
 
-          {deliveryFee > 0 && lineTotal !== null && (
+          {activeReferral && (
+            <div className="bg-[#F6F6F7] border border-[#0A0A0A] rounded-xl px-4 py-2.5 flex items-center justify-between text-xs">
+              <span>
+                Influencer Referral <strong className="font-mono">{activeReferral.code}</strong> ({activeReferral.influencerName})
+              </span>
+              {referralBenefit && referralBenefit.discountAmount > 0 && (
+                <span className="font-semibold text-[#0A0A0A] tabular-nums">
+                  -{formatPrice(referralBenefit.discountAmount)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {deliveryFee > 0 && netLineTotal !== null && (
             <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-xl px-4 py-2.5 flex items-center justify-between text-xs">
               <span className="text-[#525252]">
                 Order Total (incl. {formatPrice(DRIVER_DELIVERY_FEE)} Driver Delivery)

@@ -20,6 +20,7 @@ import {
   Sparkles,
   Sun,
 } from 'lucide-react';
+import { DecantLineupViewer, DecantViewerSelection } from '../components/DecantLineupViewer';
 import { HouseLogo } from '../components/HouseLogo';
 import { ProductCard } from '../components/ProductCard';
 import { ResilientImage } from '../components/ResilientImage';
@@ -29,7 +30,7 @@ import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, matchesHouseBrand } from '../data/catalogue';
 import { siteContent } from '../data/siteContent';
-import { formatBranchName, getSingleBranchExclusive } from '../utils/branches';
+import { getBranchAvailabilityLabel } from '../utils/branches';
 import {
   getEffectiveUnitPrice,
   getProductPriceSummary,
@@ -163,8 +164,8 @@ const HeroCountdown: React.FC<{ endsAt?: string }> = React.memo(({ endsAt }) => 
         return parsed;
       }
     }
-    return getDefaultWeekEndMs(nowMs);
-  }, [endsAt, nowMs]);
+    return getDefaultWeekEndMs(Date.now());
+  }, [endsAt]);
 
   const countdown = useMemo(
     () => getCountdownParts(targetMs, nowMs),
@@ -230,6 +231,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   );
   const [activeMood, setActiveMood] = useState<ScentMood>('all');
   const [activeDecantIndex, setActiveDecantIndex] = useState(1);
+  const [showAllDecantLineup, setShowAllDecantLineup] = useState(false);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [heroSlideDirection, setHeroSlideDirection] = useState<1 | -1>(1);
   const [heroPaused, setHeroPaused] = useState(false);
@@ -563,7 +565,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               const activeSizes = [...activeSlideProduct.sizes]
                 .filter((s) => s.available)
                 .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
-              const activeSingleBranch = getSingleBranchExclusive(activeSlideProduct);
+              const activeBranchLabel = getBranchAvailabilityLabel(activeSlideProduct);
 
               return (
                 <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
@@ -583,17 +585,22 @@ export const HomePage: React.FC<HomePageProps> = ({
                     {/* Live Special Countdown (Days : Hours : Minutes : Seconds) */}
                     <HeroCountdown endsAt={campaign.endsAt} />
 
-                    {/* Spotlight Perfume Name, Branch Cue & Transparent Size Prices */}
+                    {/* Spotlight Perfume Name, Branch Tag & Transparent Size Prices */}
                     <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left">
-                      <p className="text-xs font-semibold text-white/90 truncate">
-                        {activeSlideProduct.name}{' '}
-                        <span className="text-white/55 font-normal">
-                          · {activeSlideProduct.brand}
-                          {activeSingleBranch
-                            ? ` · ${formatBranchName(activeSingleBranch)} Only`
-                            : ''}
-                        </span>
-                      </p>
+                      <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                        <p className="text-xs font-semibold text-white/90 truncate">
+                          {activeSlideProduct.name}{' '}
+                          <span className="text-white/55 font-normal">
+                            · {activeSlideProduct.brand}
+                          </span>
+                        </p>
+                        {activeSlideProduct.availability !== 'Out of Stock' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/12 border border-white/25 text-[10px] font-semibold text-white">
+                            <MapPin className="w-2.5 h-2.5 text-[#FACC15]" aria-hidden="true" />
+                            <span>{activeBranchLabel}</span>
+                          </span>
+                        )}
+                      </div>
                       {activeSizes.length > 0 && (
                         <p className="text-xs text-white/75 tabular-nums">
                           {activeSizes.map((s, idx) => {
@@ -772,8 +779,9 @@ export const HomePage: React.FC<HomePageProps> = ({
                                       src={product.image}
                                       alt={`${product.name} by ${product.brand}`}
                                       fallbackTitle={product.name}
-                                      loading="eager"
+                                      loading={isCenter ? 'eager' : 'lazy'}
                                       fetchPriority={isCenter ? 'high' : 'low'}
+                                      variant="card"
                                       className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
                                     />
                                   {product.onSpecial && product.specialDiscountPercent ? (
@@ -1342,13 +1350,23 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       {/* DISCOVER OUR DECANTS */}
       <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
-          <div className="lg:col-span-5 relative aspect-[4/3] lg:aspect-auto lg:min-h-[460px] rounded-3xl bg-[#F5F5F5] border border-[#E5E5E5] overflow-hidden">
-            <ResilientImage
-              src={siteContent.decantsSection.image}
-              alt="5ml, 10ml, 22ml Decants and Full Bottle Lineup"
-              fallbackTitle="AuraHut Co. Decants"
-              className="w-full h-full object-cover"
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+          <div className="lg:col-span-5">
+            <DecantLineupViewer
+              selectedSize={showAllDecantLineup ? 'all' : activeDecant.size}
+              onSelectSize={(size: DecantViewerSelection) => {
+                if (size === 'all') {
+                  setShowAllDecantLineup(true);
+                  return;
+                }
+                const matchedIdx = siteContent.decantsSection.tiers.findIndex(
+                  (t) => t.size === size
+                );
+                if (matchedIdx >= 0) {
+                  setActiveDecantIndex(matchedIdx);
+                }
+                setShowAllDecantLineup(false);
+              }}
             />
           </div>
 
@@ -1368,13 +1386,16 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {siteContent.decantsSection.tiers.map((tier, idx) => {
-                  const active = idx === activeDecantIndex;
+                  const active = !showAllDecantLineup && idx === activeDecantIndex;
                   return (
                     <motion.button
                       key={tier.size}
                       type="button"
                       whileTap={{ scale: 0.97 }}
-                      onClick={() => setActiveDecantIndex(idx)}
+                      onClick={() => {
+                        setActiveDecantIndex(idx);
+                        setShowAllDecantLineup(false);
+                      }}
                       className={`relative py-3 px-3.5 border rounded-2xl text-left transition-colors ${
                         active
                           ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
@@ -1453,7 +1474,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 Perfume Houses We Carry
               </p>
               <h2 className="text-2xl sm:text-4xl font-bold text-[#0A0A0A]">
-                Featured Arabian Fragrance Houses
+                Featured Fragrance Houses
               </h2>
             </div>
             <p className="text-xs text-[#525252]">
@@ -1535,7 +1556,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                 src="/assets/images/unboxed_perfume_flacon_1795005243926.jpg"
                 alt="Authentic Unboxed Perfume Bottles at AuraHut Co."
                 fallbackTitle="Unboxed Bottles"
-                loading="eager"
+                loading="lazy"
+                variant="card"
                 className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
               />
             </button>
@@ -1583,7 +1605,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                 src="/assets/images/luxury_gift_hamper_1795005244668.jpg"
                 alt="AuraHut Co. Luxury Gift Hampers and Perfume Sets"
                 fallbackTitle="Gift Hampers"
-                loading="eager"
+                loading="lazy"
+                variant="card"
                 className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
               />
             </button>

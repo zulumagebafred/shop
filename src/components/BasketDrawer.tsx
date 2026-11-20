@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   Check,
   Copy,
   ExternalLink,
   Minus,
   Plus,
+  RefreshCw,
   ShoppingBag,
   ShoppingCart,
   Tag,
@@ -20,8 +22,14 @@ import {
   Coupon,
   DeliveryMethod,
   DRIVER_DELIVERY_FEE,
+  InfluencerReferral,
+  PublicReferral,
 } from '../types/fragrance';
-import { calculateCouponDiscount } from '../utils/pricing';
+import {
+  calculateCouponDiscount,
+  calculateReferralBenefit,
+  revalidateBasketItems,
+} from '../utils/pricing';
 import {
   formatBranchName,
   getAvailableBranches,
@@ -44,13 +52,16 @@ interface BasketDrawerProps {
   postOfficeTown: string;
   deliveryAddress: string;
   appliedCoupon: Coupon | null;
+  appliedReferral: PublicReferral | InfluencerReferral | null;
   onApplyCoupon: (coupon: Coupon | null) => void;
+  onApplyReferral: (referral: PublicReferral | InfluencerReferral | null) => void;
   onSelectBranch: (branch: BranchId) => void;
   onSelectDeliveryMethod: (method: DeliveryMethod) => void;
   onPostOfficeTownChange: (town: string) => void;
   onDeliveryAddressChange: (address: string) => void;
   onUpdateQuantity: (productId: string, size: BasketItem['size'], delta: number) => void;
   onRemoveItem: (productId: string, size: BasketItem['size']) => void;
+  onReplaceBasket: (nextItems: BasketItem[]) => void;
   onClearBasket: () => void;
   onClose: () => void;
   onExploreShop: () => void;
@@ -64,18 +75,31 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
   postOfficeTown,
   deliveryAddress,
   appliedCoupon,
+  appliedReferral,
   onApplyCoupon,
+  onApplyReferral,
   onSelectBranch,
   onSelectDeliveryMethod,
   onPostOfficeTownChange,
   onDeliveryAddressChange,
   onUpdateQuantity,
   onRemoveItem,
+  onReplaceBasket,
   onClearBasket,
   onClose,
   onExploreShop,
 }) => {
-  const { lookupCouponByCode, perfumes } = useStore();
+  const {
+    lookupCouponByCode,
+    lookupReferralByCode,
+    recordCheckoutReferralSale,
+    perfumes,
+    catalogueLoading,
+    hampers,
+    combos,
+    weeklySpecial,
+    ensureSecondaryLoaded,
+  } = useStore();
   const [customerNote, setCustomerNote] = useState('');
   const [couponInput, setCouponInput] = useState('');
   const [couponFeedback, setCouponFeedback] = useState<string | null>(null);
@@ -85,8 +109,32 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
   const [showDispatchNotice, setShowDispatchNotice] = useState(false);
   const [postOfficeError, setPostOfficeError] = useState(false);
   const [deliveryAddressError, setDeliveryAddressError] = useState(false);
-  const townInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [pricesRefreshedNotice, setPricesRefreshedNotice] = useState(false);
+  const townInputRef = React.useRef<HTMLSelectElement | null>(null);
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const lastOrderSubmitRef = React.useRef<number>(0);
+
+  useEffect(() => {
+    if (!isOpen || items.length === 0) return;
+    if (items.some((item) => item.productId.startsWith('hamper-'))) {
+      void ensureSecondaryLoaded('hampers');
+    }
+    if (items.some((item) => item.productId.startsWith('combo-'))) {
+      void ensureSecondaryLoaded('combos');
+    }
+  }, [isOpen, items, ensureSecondaryLoaded]);
+
+  const revalidation = useMemo(
+    () => revalidateBasketItems(items, perfumes, hampers, combos, weeklySpecial),
+    [items, perfumes, hampers, combos, weeklySpecial]
+  );
+
+  const basketNeedsRefresh =
+    revalidation.hasStalePrices || revalidation.hasUnavailableItems;
+  const basketBlockedFromCheckout =
+    basketNeedsRefresh || revalidation.hasUnverifiedItems || catalogueLoading;
+
+  const authoritativeItems = revalidation.validatedItems;
 
   const activeBranch = useMemo(
     () =>
@@ -96,35 +144,42 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
   );
 
   const couponCalc = useMemo(
-    () => calculateCouponDiscount(items, appliedCoupon),
-    [items, appliedCoupon]
+    () => calculateCouponDiscount(authoritativeItems, appliedCoupon),
+    [authoritativeItems, appliedCoupon]
   );
 
   const activeValidCoupon = couponCalc.valid ? appliedCoupon : null;
+  const activeReferral = appliedReferral?.active ? appliedReferral : null;
   const deliveryFee = getDeliveryFee(deliveryMethod);
   const itemsAfterCoupon =
     activeValidCoupon && couponCalc.valid ? couponCalc.finalTotal : couponCalc.subtotal;
-  const finalCartTotal = itemsAfterCoupon + deliveryFee;
+  const referralBenefit = useMemo(
+    () => calculateReferralBenefit(itemsAfterCoupon, activeReferral),
+    [itemsAfterCoupon, activeReferral]
+  );
+  const finalCartTotal = referralBenefit.netOrderAmount + deliveryFee;
 
   const whatsappMessage = useMemo(
     () =>
       buildBasketWhatsAppMessage(
-        items,
+        authoritativeItems,
         selectedBranch,
         customerNote,
         activeValidCoupon,
         deliveryMethod,
         postOfficeTown,
-        deliveryAddress
+        deliveryAddress,
+        activeReferral
       ),
     [
-      items,
+      authoritativeItems,
       selectedBranch,
       customerNote,
       activeValidCoupon,
       deliveryMethod,
       postOfficeTown,
       deliveryAddress,
+      activeReferral,
     ]
   );
 
@@ -133,6 +188,12 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
     [whatsappMessage]
   );
 
+  const handleRefreshBasketPrices = () => {
+    onReplaceBasket(revalidation.validatedItems);
+    setPricesRefreshedNotice(true);
+    window.setTimeout(() => setPricesRefreshedNotice(false), 3000);
+  };
+
   const handleApplyCouponSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCouponFeedback(null);
@@ -140,26 +201,37 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
 
     setApplyingCoupon(true);
     try {
-      const { coupon, error } = await lookupCouponByCode(couponInput);
-      if (!coupon) {
-        setCouponFeedback(error ?? 'Invalid coupon code.');
+      const { coupon } = await lookupCouponByCode(couponInput);
+      if (coupon) {
+        const check = calculateCouponDiscount(authoritativeItems, coupon);
+        if (!check.valid) {
+          setCouponFeedback(check.errorReason ?? 'Coupon does not apply to these items.');
+          return;
+        }
+        onApplyCoupon(coupon);
+        setCouponInput('');
         return;
       }
-      const check = calculateCouponDiscount(items, coupon);
-      if (!check.valid) {
-        setCouponFeedback(check.errorReason ?? 'Coupon does not apply to these items.');
+
+      const { referral, error: referralError } = await lookupReferralByCode(couponInput);
+      if (referral) {
+        onApplyReferral(referral);
+        setCouponInput('');
         return;
       }
-      onApplyCoupon(coupon);
-      setCouponInput('');
+
+      setCouponFeedback(
+        referralError ?? `Code "${couponInput.trim().toUpperCase()}" was not found.`
+      );
     } catch {
-      setCouponFeedback('Could not verify coupon right now. Please try again.');
+      setCouponFeedback('Could not verify code right now. Please try again.');
     } finally {
       setApplyingCoupon(false);
     }
   };
 
   const handleCopyMessage = async () => {
+    if (basketBlockedFromCheckout) return;
     try {
       await navigator.clipboard.writeText(whatsappMessage);
       setCopied(true);
@@ -170,6 +242,11 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
   };
 
   const handleOrderClick = () => {
+    if (basketBlockedFromCheckout) return;
+    const now = Date.now();
+    if (now - lastOrderSubmitRef.current < 2500) {
+      return;
+    }
     if (deliveryMethod === 'post-office' && !postOfficeTown.trim()) {
       setPostOfficeError(true);
       townInputRef.current?.focus();
@@ -182,7 +259,28 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
       addressInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+
+    if (activeReferral) {
+      const summary = authoritativeItems
+        .map((i) => `${i.productName} (${i.size} × ${i.quantity})`)
+        .join(', ');
+      const customerRef =
+        deliveryMethod === 'post-office'
+          ? `Post Office · ${postOfficeTown.trim()}`
+          : deliveryMethod === 'driver-delivery'
+          ? `Driver Delivery (${activeBranch?.city})`
+          : `${activeBranch?.city} Store Pickup`;
+      void recordCheckoutReferralSale({
+        referral: activeReferral,
+        orderSummary: summary,
+        reportedSubtotal: itemsAfterCoupon,
+        reportedDiscount: referralBenefit.discountAmount,
+        customerRef: customerNote.trim() ? `${customerRef} · ${customerNote.trim()}` : customerRef,
+      });
+    }
+
     if (whatsappUrl) {
+      lastOrderSubmitRef.current = now;
       openExternalUrl(whatsappUrl);
     } else {
       setShowDispatchNotice(true);
@@ -259,18 +357,79 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                 </div>
               ) : (
                 <>
+                  {/* Stale Price / Availability Alert */}
+                  {basketNeedsRefresh && (
+                    <div
+                      role="alert"
+                      className="p-3.5 bg-[#FEF3C7] border border-[#F59E0B] rounded-2xl text-xs text-[#92400E] space-y-2.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#B45309]" />
+                        <div className="space-y-1">
+                          <p className="font-semibold text-[#78350F]">
+                            Catalogue prices or availability changed
+                          </p>
+                          <p className="leading-snug">
+                            Please refresh your basket to sync live store prices before placing your WhatsApp order:
+                          </p>
+                          <ul className="space-y-0.5 pt-0.5 text-[11px] font-medium">
+                            {revalidation.staleChanges.map((chg) => (
+                              <li key={`${chg.productId}-${chg.size}`}>
+                                · {chg.productName} ({chg.size}):{' '}
+                                {chg.reason === 'unavailable'
+                                  ? 'Currently out of stock / removed'
+                                  : `${formatPrice(chg.previousUnitPrice)} → ${formatPrice(
+                                      chg.currentUnitPrice
+                                    )}`}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRefreshBasketPrices}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#0A0A0A] text-white text-[11px] font-semibold uppercase tracking-wider hover:bg-[#262626]"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Refresh Basket Prices</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {pricesRefreshedNotice && !basketNeedsRefresh && (
+                    <div className="p-3 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl text-xs text-[#166534] font-medium flex items-center gap-2">
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>Basket prices updated to live catalogue rates.</span>
+                    </div>
+                  )}
+
                   {/* Line Items */}
                   <div className="space-y-3">
                     <AnimatePresence initial={false}>
                       {items.map((item) => {
+                        const delta = revalidation.staleChanges.find(
+                          (c) =>
+                            c.productId === item.productId &&
+                            c.size.toLowerCase() === item.size.toLowerCase()
+                        );
+                        const liveItem = authoritativeItems.find(
+                          (a) =>
+                            a.productId === item.productId &&
+                            a.size.toLowerCase() === item.size.toLowerCase()
+                        );
+                        const activeUnitPrice = liveItem ? liveItem.unitPrice : item.unitPrice;
+                        const activeOrigPrice = liveItem
+                          ? liveItem.originalUnitPrice
+                          : item.originalUnitPrice;
                         const lineTotal =
-                          item.unitPrice !== null ? item.unitPrice * item.quantity : null;
+                          activeUnitPrice !== null ? activeUnitPrice * item.quantity : null;
                         const origTotal =
-                          item.originalUnitPrice !== undefined &&
-                          item.originalUnitPrice !== null &&
-                          item.unitPrice !== null &&
-                          item.originalUnitPrice > item.unitPrice
-                            ? item.originalUnitPrice * item.quantity
+                          activeOrigPrice !== undefined &&
+                          activeOrigPrice !== null &&
+                          activeUnitPrice !== null &&
+                          activeOrigPrice > activeUnitPrice
+                            ? activeOrigPrice * item.quantity
                             : null;
 
                         return (
@@ -287,6 +446,8 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                                 src={item.image}
                                 alt={item.productName}
                                 fallbackTitle={item.productName}
+                                variant="thumb"
+                                loading="lazy"
                                 className="w-full h-full object-cover"
                               />
                             </div>
@@ -302,6 +463,13 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                                   <h3 className="text-sm font-semibold text-[#0A0A0A] truncate">
                                     {item.productName}
                                   </h3>
+                                  {delta && (
+                                    <span className="inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
+                                      {delta.reason === 'unavailable'
+                                        ? 'Unavailable — tap refresh'
+                                        : 'Price updated'}
+                                    </span>
+                                  )}
                                 </div>
                                 <button
                                   type="button"
@@ -340,13 +508,22 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                                   </button>
                                 </div>
                                 <div className="text-right">
+                                  {delta &&
+                                    delta.reason !== 'unavailable' &&
+                                    delta.previousUnitPrice !== null && (
+                                      <span className="block text-[10px] text-[#B45309] line-through tabular-nums">
+                                        {formatPrice(delta.previousUnitPrice * item.quantity)}
+                                      </span>
+                                    )}
                                   {origTotal !== null && (
                                     <span className="block text-[10px] text-[#737373] line-through tabular-nums">
                                       {formatPrice(origTotal)}
                                     </span>
                                   )}
                                   <span className="text-sm font-semibold text-[#0A0A0A] tabular-nums">
-                                    {formatPrice(lineTotal)}
+                                    {delta?.reason === 'unavailable'
+                                      ? 'Unavailable'
+                                      : formatPrice(lineTotal)}
                                   </span>
                                 </div>
                               </div>
@@ -357,15 +534,39 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                     </AnimatePresence>
                   </div>
 
-                  {/* Coupon Code Redemption */}
+                  {/* Promo / Coupon or Influencer Code Redemption */}
                   <div className="space-y-2.5 pt-2 border-t border-[#E5E5E5]">
                     <label
                       htmlFor="basket-coupon"
                       className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
                     >
                       <Tag className="w-3.5 h-3.5 text-[#0A0A0A]" />
-                      <span>Promo / Coupon Code</span>
+                      <span>Promo or Influencer Code</span>
                     </label>
+
+                    {activeReferral && (
+                      <div className="bg-white border border-[#0A0A0A] rounded-xl p-3 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[#0A0A0A] font-mono uppercase">
+                            Referral: {activeReferral.code}
+                          </p>
+                          <p className="text-[11px] text-[#525252] truncate">
+                            Referred by {activeReferral.influencerName}
+                            {activeReferral.socialHandle ? ` (${activeReferral.socialHandle})` : ''}
+                            {referralBenefit.discountAmount > 0
+                              ? ` · Saving ${formatPrice(referralBenefit.discountAmount)}`
+                              : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onApplyReferral(null)}
+                          className="text-xs underline text-[#525252] hover:text-[#0A0A0A] shrink-0"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
 
                     {appliedCoupon && couponCalc.valid ? (
                       <div className="bg-white border border-[#0A0A0A] rounded-xl p-3 flex items-center justify-between gap-2">
@@ -399,7 +600,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                             setCouponInput(e.target.value.toUpperCase());
                             setCouponFeedback(null);
                           }}
-                          placeholder="Enter code from social post or live stream"
+                          placeholder="Enter coupon or influencer referral code"
                           maxLength={32}
                           className="flex-1 px-3.5 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-mono uppercase text-[#0A0A0A] placeholder:text-[#737373] placeholder:normal-case placeholder:font-sans focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -561,7 +762,9 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
             {/* Footer */}
             {items.length > 0 && (
               <div className="p-6 border-t border-[#E5E5E5] bg-white space-y-3">
-                {deliveryFee > 0 || (couponCalc.valid && couponCalc.discountAmount > 0) ? (
+                {deliveryFee > 0 ||
+                (couponCalc.valid && couponCalc.discountAmount > 0) ||
+                referralBenefit.discountAmount > 0 ? (
                   <div className="space-y-1.5 pb-1">
                     <div className="flex items-baseline justify-between text-xs text-[#666666]">
                       <span>Items Subtotal</span>
@@ -571,6 +774,12 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                       <div className="flex items-baseline justify-between text-xs font-medium text-[#0A0A0A]">
                         <span>Coupon ({appliedCoupon?.code})</span>
                         <span className="tabular-nums">-{formatPrice(couponCalc.discountAmount)}</span>
+                      </div>
+                    )}
+                    {activeReferral && referralBenefit.discountAmount > 0 && (
+                      <div className="flex items-baseline justify-between text-xs font-medium text-[#0A0A0A]">
+                        <span>Influencer Perk ({activeReferral.code})</span>
+                        <span className="tabular-nums">-{formatPrice(referralBenefit.discountAmount)}</span>
                       </div>
                     )}
                     {deliveryFee > 0 && (
@@ -600,21 +809,34 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                 )}
 
                 <p className="text-[11px] text-[#525252] leading-relaxed">
-                  {deliveryMethod === 'driver-delivery'
-                    ? `Includes ${formatPrice(DRIVER_DELIVERY_FEE)} driver delivery dispatched from our ${activeBranch?.city} store—no card entry needed.`
+                  {basketNeedsRefresh
+                    ? 'Tap Refresh Basket Prices above to confirm current pricing before placing your order.'
+                    : revalidation.hasUnverifiedItems || catalogueLoading
+                    ? 'Syncing live store catalogue prices...'
+                    : deliveryMethod === 'driver-delivery'
+                    ? `Estimated quote includes ${formatPrice(DRIVER_DELIVERY_FEE)} driver delivery dispatched from our ${activeBranch?.city} store—final total confirmed by staff on WhatsApp.`
                     : deliveryMethod === 'post-office'
-                    ? `Dispatched via Post Office to ${postOfficeTown.trim() || 'your town'} from our ${activeBranch?.city} store.`
-                    : `Ready for collection at our ${activeBranch?.city} store—no card entry or sign-up needed.`}
+                    ? `Dispatched via Post Office to ${postOfficeTown.trim() || 'your town'} from our ${activeBranch?.city} store—final quote confirmed by staff on WhatsApp.`
+                    : `Estimated quote for collection at our ${activeBranch?.city} store—no card entry needed.`}
                 </p>
 
                 <button
                   type="button"
                   onClick={handleOrderClick}
-                  className="w-full py-3.5 px-5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors flex items-center justify-center gap-2 text-xs font-semibold tracking-wider uppercase"
+                  disabled={basketBlockedFromCheckout}
+                  className="w-full py-3.5 px-5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-45 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-xs font-semibold tracking-wider uppercase"
                 >
                   <ShoppingBag className="w-4 h-4 text-white" />
-                  <span>Buy Now · {formatPrice(finalCartTotal)}</span>
-                  {whatsappUrl && <ExternalLink className="w-3.5 h-3.5 opacity-75" />}
+                  <span>
+                    {basketNeedsRefresh
+                      ? 'Refresh Prices to Order'
+                      : revalidation.hasUnverifiedItems || catalogueLoading
+                      ? 'Verifying Prices...'
+                      : `Buy Now · ${formatPrice(finalCartTotal)}`}
+                  </span>
+                  {!basketBlockedFromCheckout && whatsappUrl && (
+                    <ExternalLink className="w-3.5 h-3.5 opacity-75" />
+                  )}
                 </button>
 
                 <button

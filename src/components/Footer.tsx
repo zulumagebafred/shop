@@ -29,18 +29,21 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-12">
           <div className="space-y-4">
             <div className="w-36 h-24 overflow-hidden flex items-center justify-start -ml-2">
-              <img
-                src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
-                alt={siteConfig.brandName}
-                className="w-full h-full object-contain scale-[1.75] mix-blend-screen select-none"
-              />
+              <picture className="w-full h-full">
+                <source srcSet="/assets/aistudio/aurahut_logo_a0bd1434.webp" type="image/webp" />
+                <img
+                  src="/assets/aistudio/aurahut_logo_a0bd1434.jpg"
+                  alt={siteConfig.brandName}
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-contain scale-[1.75] mix-blend-screen select-none"
+                />
+              </picture>
             </div>
             <p className="text-white/75 text-sm font-medium">
               {siteConfig.tagline}
             </p>
-            <p className="text-xs leading-relaxed text-white/65 max-w-xs">
-              Curated Arabian fragrances and hand-poured 5ml, 10ml, and 22ml discovery decants serving Manzini and Mbabane, Eswatini.
-            </p>
+            
             <div className="pt-2 flex flex-wrap items-center gap-2">
               <a
                 href={siteConfig.social.tiktokUrl}

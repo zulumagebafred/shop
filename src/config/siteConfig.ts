@@ -1,4 +1,5 @@
 import { BranchId, StoreBranch } from '../types/fragrance';
+import { sha256Hex } from '../utils/hash';
 
 /**
  * CENTRAL CONFIGURATION FILE — AURAHUT CO.
@@ -8,7 +9,7 @@ import { BranchId, StoreBranch } from '../types/fragrance';
  */
 export const siteConfig = {
   brandName: 'AURAHUT CO.',
-  tagline: 'The Art of Fragrance.',
+  tagline: 'Scents just for you',
   country: 'Eswatini',
   currency: {
     code: 'SZL',
@@ -37,7 +38,6 @@ export const siteConfig = {
   },
 
   defaultBranch: 'manzini' as BranchId,
-  privatePortalSlug: 'ah-vault-94k',
 
   branches: [
     {
@@ -84,7 +84,8 @@ export const siteConfig = {
   houseLogos: {
     'Al Haramain': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSTei37jrjT_4ZEPVQYiHVjlmJl2H6yREZhWX1GAcAc4w&s=10',
     Rasasi: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQawX83ud24PQ7oUwSepLZTMCLMyn-DcCqjJN49on_t2Q&s=10',
-    'Reef Perfumes': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTF8VMpbmG4bs3m60I8fnoAwHejmQvg6MfxcGKO2lHxQg&s',
+    'Inuka': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRwXhp7uh_L6Vyf5c84CXt4b1m19GisLo7mNVnpnHd4liaFinV92a7ZBIY&s=10',
+    'Paris 2 Dubai': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTAVdBZnsgVRRAPXUlWFV2vq0n0m0fVC-hLSZugSyQBgg&s',
     'Lattafa Perfumes': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTf5pOXtzZR91X9zwfwvHsBlR9JGsu5AHSrNgUOoAvRbzKOSANHgtc4XI&s=10',
     Armaf: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQWFyzU94mQpEYHT1pMrxgKYqTRaeos8BFYK_Qq4suv7Q&s=10',
     Afnan: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYS_Knxrx9mD2OkQ3MD02VynHUkLMBYRuBOIYMnXCD0w&s=10',
@@ -95,13 +96,26 @@ export const siteConfig = {
   } as Record<string, string>,
 };
 
-export function getPrivatePortalSlug(): string {
+const DEFAULT_PORTAL_SLUG_HASH =
+  'ad3a80f095093d95db12bcbc9596315c5f0b105619222c3a9afd79964f5db782';
+
+export function getConfiguredPortalSlug(): string | null {
   const envPath =
     typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_PATH
       ? String(import.meta.env.VITE_ADMIN_PATH)
       : '';
-  const raw = envPath.trim() || siteConfig.privatePortalSlug;
-  return raw.replace(/^[#/]+|\/+$/g, '').toLowerCase() || 'ah-vault-94k';
+  const cleaned = envPath.trim().replace(/^[#/]+|\/+$/g, '').toLowerCase();
+  return cleaned || null;
+}
+
+export function matchesPrivatePortalSlug(candidate: string): boolean {
+  const cleaned = candidate.trim().replace(/^[#/]+|\/+$/g, '').toLowerCase();
+  if (!cleaned) return false;
+  const configured = getConfiguredPortalSlug();
+  if (configured) {
+    return cleaned === configured;
+  }
+  return sha256Hex(cleaned) === DEFAULT_PORTAL_SLUG_HASH;
 }
 
 export function formatPrice(amount: number | null): string {
@@ -113,3 +127,68 @@ export function formatPrice(amount: number | null): string {
     maximumFractionDigits: 2,
   })}`;
 }
+
+export const POST_OFFICE_TOWN_GROUPS: { region: string; towns: string[] }[] = [
+  {
+    region: 'Hhohho',
+    towns: [
+      'Mbabane',
+      'Ezulwini',
+      'The Gables',
+      'Lobamba',
+      'Piggs Peak',
+      'Ntfonjeni',
+      'Buhleni',
+      'Swazi Plaza',
+      'Corner Plaza',
+      'Mahlanya',
+      'Motshane',
+      'Ngwenya',
+    ],
+  },
+  {
+    region: 'Manzini',
+    towns: [
+      'Manzini',
+      'Bhunya',
+      'Mahhala',
+      'Luyengo',
+      'Mankayane',
+      'Malkerns',
+      'Matsapha',
+      'Velezizweni',
+    ],
+  },
+  {
+    region: 'Shiselweni',
+    towns: [
+      'Nhlangano',
+      'Hlatikulu',
+      'Lavumisa',
+      'Hluti',
+      'Sigwe',
+    ],
+  },
+  {
+    region: 'Lubombo',
+    towns: [
+      'Siteki',
+      'Mpolonjeni',
+      'Simunye',
+      'Lomahasha',
+      'Big Bend',
+      'Matata',
+      'Nsoko',
+      'Siphofaneni',
+      'Sithobelweni',
+      'Tshaneni',
+      'Mpaka',
+      'Mhlume',
+    ],
+  },
+];
+
+export const POST_OFFICE_TOWNS: string[] = POST_OFFICE_TOWN_GROUPS.flatMap(
+  (group) => group.towns
+);
+

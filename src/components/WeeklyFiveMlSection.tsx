@@ -37,14 +37,7 @@ function formatCategoryBadge(category: FragranceProduct['category']): string {
   return 'Unisex';
 }
 
-export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = ({
-  onSelectProduct,
-  onAddWeeklyPackToBasket,
-}) => {
-  const { perfumes, weeklySpecial } = useStore();
-  const [audience, setAudience] = useState<WeeklyFiveMlAudience>('Women');
-  const [packMode, setPackMode] = useState<WeeklyFiveMlPackMode>('4-for-100');
-  const [justAddedKey, setJustAddedKey] = useState<string | null>(null);
+const WeeklyCountdownBadge: React.FC<{ weekEndMs: number }> = React.memo(({ weekEndMs }) => {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -54,10 +47,42 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = ({
     return () => window.clearInterval(timer);
   }, []);
 
-  const resolved = useMemo(
-    () => resolveWeeklyFiveMlSelection(perfumes, weeklySpecial, nowMs),
-    [perfumes, weeklySpecial, nowMs]
+  return (
+    <div className="inline-flex items-center gap-2.5 self-start lg:self-auto px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/15">
+      <Clock className="w-4 h-4 text-[#FACC15] shrink-0" aria-hidden="true" />
+      <div className="leading-tight">
+        <span className="block text-[10px] uppercase tracking-[0.16em] text-white/60 font-medium">
+          Next Refresh
+        </span>
+        <span className="text-xs sm:text-sm font-bold tabular-nums text-white">
+          {formatWeeklyResetTimer(weekEndMs, nowMs)}
+        </span>
+      </div>
+    </div>
   );
+});
+
+export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.memo(({
+  onSelectProduct,
+  onAddWeeklyPackToBasket,
+}) => {
+  const { perfumes, weeklySpecial } = useStore();
+  const [audience, setAudience] = useState<WeeklyFiveMlAudience>('Women');
+  const [packMode, setPackMode] = useState<WeeklyFiveMlPackMode>('4-for-100');
+  const [justAddedKey, setJustAddedKey] = useState<string | null>(null);
+  const [hourTick, setHourTick] = useState(() => Math.floor(Date.now() / 60000));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setHourTick(Math.floor(Date.now() / 60000));
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const resolved = useMemo(() => {
+    void hourTick;
+    return resolveWeeklyFiveMlSelection(perfumes, weeklySpecial, Date.now());
+  }, [perfumes, weeklySpecial, hourTick]);
 
   if (!resolved.enabled) {
     return null;
@@ -139,17 +164,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = ({
               </p>
             </div>
 
-            <div className="inline-flex items-center gap-2.5 self-start lg:self-auto px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/15">
-              <Clock className="w-4 h-4 text-[#FACC15] shrink-0" aria-hidden="true" />
-              <div className="leading-tight">
-                <span className="block text-[10px] uppercase tracking-[0.16em] text-white/60 font-medium">
-                  Next Refresh
-                </span>
-                <span className="text-xs sm:text-sm font-bold tabular-nums text-white">
-                  {formatWeeklyResetTimer(resolved.weekEndMs, nowMs)}
-                </span>
-              </div>
-            </div>
+            <WeeklyCountdownBadge weekEndMs={resolved.weekEndMs} />
           </div>
 
           {/* Gender Switcher: For Women / For Men */}
@@ -528,4 +543,4 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = ({
       </div>
     </section>
   );
-};
+});

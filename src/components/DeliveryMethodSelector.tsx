@@ -1,6 +1,11 @@
 import React from 'react';
 import { Clock, Mail, MapPin, Store, Truck } from 'lucide-react';
-import { formatPrice, siteConfig } from '../config/siteConfig';
+import {
+  formatPrice,
+  POST_OFFICE_TOWN_GROUPS,
+  POST_OFFICE_TOWNS,
+  siteConfig,
+} from '../config/siteConfig';
 import { BranchId, DeliveryMethod, DRIVER_DELIVERY_FEE } from '../types/fragrance';
 
 interface DeliveryMethodSelectorProps {
@@ -14,7 +19,7 @@ interface DeliveryMethodSelectorProps {
   onSelectBranch: (branch: BranchId) => void;
   onPostOfficeTownChange: (town: string) => void;
   onDeliveryAddressChange: (address: string) => void;
-  townInputRef?: React.RefObject<HTMLInputElement | null>;
+  townInputRef?: React.RefObject<HTMLSelectElement | null>;
   addressInputRef?: React.RefObject<HTMLInputElement | null>;
   compact?: boolean;
 }
@@ -53,7 +58,7 @@ export const DeliveryMethodSelector: React.FC<DeliveryMethodSelectorProps> = ({
     {
       id: 'post-office',
       label: 'Post Office',
-      badge: 'Enter Town',
+      badge: 'Select Town',
       icon: <Mail className="w-4 h-4" />,
     },
     {
@@ -174,25 +179,37 @@ export const DeliveryMethodSelector: React.FC<DeliveryMethodSelectorProps> = ({
                 Post Office Parcel
               </span>
             </label>
-            <input
+            <select
               ref={townInputRef}
               id={compact ? 'post-office-town-compact' : 'post-office-town'}
-              type="text"
               required
               aria-required="true"
               value={postOfficeTown}
               onChange={(e) => onPostOfficeTownChange(e.target.value)}
-              placeholder="Enter town (e.g. Siteki, Nhlangano, Piggs Peak, Malkerns)"
-              maxLength={80}
-              className={`w-full px-3 py-2 bg-[#F6F6F7] border rounded-lg text-xs text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white ${
+              className={`w-full px-3 py-2 bg-[#F6F6F7] border rounded-lg text-xs text-[#0A0A0A] focus:outline-none focus:bg-white ${
                 postOfficeError
                   ? 'border-[#DC2626] focus:border-[#DC2626]'
                   : 'border-[#D4D4D4] focus:border-[#0A0A0A]'
               }`}
-            />
+            >
+              <option value="">Select destination town...</option>
+              {postOfficeTown.trim() &&
+                !POST_OFFICE_TOWNS.includes(postOfficeTown.trim()) && (
+                  <option value={postOfficeTown}>{postOfficeTown}</option>
+                )}
+              {POST_OFFICE_TOWN_GROUPS.map((group) => (
+                <optgroup key={group.region} label={group.region}>
+                  {group.towns.map((town) => (
+                    <option key={town} value={town}>
+                      {town}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
             {postOfficeError && (
               <p className="text-[11px] text-[#DC2626] font-medium">
-                Please enter your town so we know which Post Office to send your parcel to.
+                Please select your destination town for Post Office collection.
               </p>
             )}
           </div>

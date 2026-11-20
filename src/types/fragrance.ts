@@ -84,6 +84,64 @@ export interface Coupon {
   active: boolean;
 }
 
+export type ReferralCommissionType = 'percentage' | 'fixed';
+export type ReferralFollowerDiscountType = 'none' | 'percentage' | 'fixed';
+export type ReferralSaleStatus = 'pending' | 'confirmed' | 'paid' | 'cancelled';
+export type ReferralSaleSource = 'checkout' | 'manual';
+
+export interface InfluencerReferral {
+  id: string;
+  code: string;
+  influencerName: string;
+  socialHandle: string;
+  commissionType: ReferralCommissionType;
+  commissionValue: number;
+  followerDiscountType: ReferralFollowerDiscountType;
+  followerDiscountValue: number;
+  payoutNote: string;
+  active: boolean;
+}
+
+export interface PublicReferral {
+  id: string;
+  code: string;
+  influencerName: string;
+  socialHandle: string;
+  followerDiscountType: ReferralFollowerDiscountType;
+  followerDiscountValue: number;
+  active: boolean;
+}
+
+export type ReferralAttributionStatus = 'pending' | 'converted' | 'dismissed';
+
+export interface ReferralAttribution {
+  id: string;
+  referralCode: string;
+  influencerName: string;
+  orderSummary: string;
+  reportedSubtotal: number;
+  reportedDiscount: number;
+  customerRef: string;
+  status: ReferralAttributionStatus;
+  convertedSaleId: string;
+  createdAtMs: number;
+}
+
+export interface ReferralSale {
+  id: string;
+  referralCode: string;
+  influencerName: string;
+  orderSummary: string;
+  orderSubtotal: number;
+  discountAmount: number;
+  netOrderAmount: number;
+  commissionAmount: number;
+  commissionStatus: ReferralSaleStatus;
+  source: ReferralSaleSource;
+  customerRef: string;
+  createdAtMs: number;
+}
+
 export interface SpecialCampaign {
   title: string;
   badgeText: string;
@@ -125,6 +183,23 @@ export interface BasketItem {
   isUnboxed?: boolean;
   quantity: number;
   isSampleListing: boolean;
+}
+
+export interface BasketPriceDelta {
+  productId: string;
+  productName: string;
+  size: BottleSize;
+  reason: 'price-changed' | 'special-changed' | 'unavailable';
+  previousUnitPrice: number | null;
+  currentUnitPrice: number | null;
+}
+
+export interface BasketRevalidationResult {
+  validatedItems: BasketItem[];
+  hasStalePrices: boolean;
+  hasUnavailableItems: boolean;
+  hasUnverifiedItems: boolean;
+  staleChanges: BasketPriceDelta[];
 }
 
 export interface GiftHamper {
@@ -186,6 +261,34 @@ export interface WeeklyFiveMlSpecial {
 
 export type WeeklyFiveMlPackMode = '4-for-100' | '2-for-50';
 
+export type AuditAction = 'create' | 'update' | 'delete' | 'import';
+
+export type AuditSection =
+  | 'perfume'
+  | 'specials'
+  | 'weekly-special'
+  | 'coupon'
+  | 'combo'
+  | 'layering'
+  | 'hamper'
+  | 'referral'
+  | 'referral-sale'
+  | 'referral-attribution';
+
+export interface AuditLogEntry {
+  id: string;
+  actorEmail: string;
+  actorUsername: string;
+  action: AuditAction;
+  section: AuditSection;
+  targetId: string;
+  targetLabel: string;
+  summary: string;
+  changes: string[];
+  ownerUid: string;
+  createdAtMs: number;
+}
+
 export type AppPage =
   | 'home'
   | 'shop'
@@ -196,3 +299,4 @@ export type AppPage =
   | 'stores'
   | 'about'
   | 'admin';
+

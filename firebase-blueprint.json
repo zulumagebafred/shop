@@ -624,6 +624,435 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "InfluencerReferral": {
+      "title": "InfluencerReferral",
+      "description": "An influencer referral code and commission configuration created by the store owner.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase referral code matching document ID"
+        },
+        "influencerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Influencer or creator display name"
+        },
+        "socialHandle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "TikTok, Instagram, or social media handle"
+        },
+        "commissionType": {
+          "type": "string",
+          "enum": ["percentage", "fixed"],
+          "description": "Whether commission is percentage of net order or fixed SZL amount per sale"
+        },
+        "commissionValue": {
+          "type": "number",
+          "description": "Commission percentage (0-90) or flat SZL payout per sale"
+        },
+        "followerDiscountType": {
+          "type": "string",
+          "enum": ["none", "percentage", "fixed"],
+          "description": "Optional discount perk given to followers who order using this referral code"
+        },
+        "followerDiscountValue": {
+          "type": "number",
+          "description": "Follower discount value (0 if none, 1-95 if percentage, 1-50000 if fixed SZL)"
+        },
+        "payoutNote": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Payout handle / schedule or campaign notes"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the referral code is currently active"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the owner who created this referral profile"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "code",
+        "influencerName",
+        "socialHandle",
+        "commissionType",
+        "commissionValue",
+        "followerDiscountType",
+        "followerDiscountValue",
+        "payoutNote",
+        "active",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ReferralSale": {
+      "title": "ReferralSale",
+      "description": "An order attributed to an influencer referral code with calculated commission and payout status.",
+      "type": "object",
+      "properties": {
+        "referralCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase referral code matching /referrals/{referralId}"
+        },
+        "influencerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Influencer display name at time of attribution"
+        },
+        "orderSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Concise item / bottle summary of the referred order"
+        },
+        "orderSubtotal": {
+          "type": "number",
+          "description": "Fragrance subtotal in SZL before referral discount"
+        },
+        "discountAmount": {
+          "type": "number",
+          "description": "Follower discount applied in SZL"
+        },
+        "netOrderAmount": {
+          "type": "number",
+          "description": "Commissionable net order total in SZL"
+        },
+        "commissionAmount": {
+          "type": "number",
+          "description": "Calculated influencer commission in SZL"
+        },
+        "commissionStatus": {
+          "type": "string",
+          "enum": ["pending", "confirmed", "paid", "cancelled"],
+          "description": "Payout approval lifecycle status"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["checkout", "manual"],
+          "description": "Whether logged automatically at WhatsApp checkout or manually by an admin"
+        },
+        "customerRef": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Non-PII delivery branch/town or order reference note"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Verified admin Firebase UID who recorded or approved this sale"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "referralCode",
+        "influencerName",
+        "orderSummary",
+        "orderSubtotal",
+        "discountAmount",
+        "netOrderAmount",
+        "commissionAmount",
+        "commissionStatus",
+        "source",
+        "customerRef",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicReferral": {
+      "title": "PublicReferral",
+      "description": "Non-sensitive public referral metadata enabling storefront code validation and follower discounts without exposing creator commission rates or payout notes.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase referral code matching document ID"
+        },
+        "influencerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Influencer or creator display name"
+        },
+        "socialHandle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "TikTok, Instagram, or social media handle"
+        },
+        "followerDiscountType": {
+          "type": "string",
+          "enum": ["none", "percentage", "fixed"],
+          "description": "Discount perk given to followers using this referral code"
+        },
+        "followerDiscountValue": {
+          "type": "number",
+          "description": "Follower discount value (0 if none, 1-95 if percentage, 1-50000 if fixed SZL)"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the public referral code is currently active"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the admin who published this public projection"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "code",
+        "influencerName",
+        "socialHandle",
+        "followerDiscountType",
+        "followerDiscountValue",
+        "active",
+        "ownerUid",
+        "updatedAt"
+      ]
+    },
+    "ReferralAttribution": {
+      "title": "ReferralAttribution",
+      "description": "Unprivileged storefront referral attribution captured when a customer initiates a WhatsApp checkout with an active referral code. Contains zero trusted commission fields.",
+      "type": "object",
+      "properties": {
+        "referralCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Uppercase active referral code matching /publicReferrals/{referralId}"
+        },
+        "influencerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Display name at checkout attribution time"
+        },
+        "orderSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Summary of items quoted in the WhatsApp checkout"
+        },
+        "reportedSubtotal": {
+          "type": "number",
+          "description": "Client-reported estimated subtotal in SZL pending staff WhatsApp verification"
+        },
+        "reportedDiscount": {
+          "type": "number",
+          "description": "Client-reported estimated follower discount in SZL"
+        },
+        "customerRef": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Delivery method, branch, or non-sensitive customer reference note"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "converted", "dismissed"],
+          "description": "Review status managed by store admins ('pending' on create)"
+        },
+        "convertedSaleId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Authoritative /referralSales document ID once converted by admin (empty string while pending)"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "'guest-checkout' for customer checkouts or verified admin UID"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "referralCode",
+        "influencerName",
+        "orderSummary",
+        "reportedSubtotal",
+        "reportedDiscount",
+        "customerRef",
+        "status",
+        "convertedSaleId",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable administrative audit trail recording which admin username/email performed each catalogue or store configuration change and exact field-level differences.",
+      "type": "object",
+      "properties": {
+        "actorEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160,
+          "description": "Verified email address of the admin who performed the change"
+        },
+        "actorUsername": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display username of the admin who performed the change"
+        },
+        "action": {
+          "type": "string",
+          "enum": ["create", "update", "delete", "import"],
+          "description": "Type of mutation performed"
+        },
+        "section": {
+          "type": "string",
+          "enum": [
+            "perfume",
+            "specials",
+            "weekly-special",
+            "coupon",
+            "combo",
+            "layering",
+            "hamper",
+            "referral",
+            "referral-sale",
+            "referral-attribution"
+          ],
+          "description": "Admin workspace area affected"
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Document or record identifier affected"
+        },
+        "targetLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Human-readable name or code of the affected record"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Concise human-readable description of the change"
+        },
+        "changes": {
+          "type": "array",
+          "description": "List of up to 12 field-level change descriptions (before -> after)"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Authenticated Firebase UID of the admin actor"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp of the audit event"
+        }
+      },
+      "required": [
+        "actorEmail",
+        "actorUsername",
+        "action",
+        "section",
+        "targetId",
+        "targetLabel",
+        "summary",
+        "changes",
+        "ownerUid",
+        "createdAt"
+      ]
+    },
+    "CatalogueSnapshot": {
+      "title": "CatalogueSnapshot",
+      "description": "Compacted public catalogue payload enabling single-read storefront hydration of all perfumes while restricting writes strictly to verified admins.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Snapshot serialization schema version"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000,
+          "description": "Total number of products encoded in itemsJson"
+        },
+        "itemsJson": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 900000,
+          "description": "Compact UTF-8 JSON array encoding storefront catalogue entries"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Verified admin Firebase UID who generated this snapshot"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the snapshot was published"
+        }
+      },
+      "required": ["version", "totalCount", "itemsJson", "ownerUid", "updatedAt"]
     }
   },
   "firestore": {
@@ -633,7 +1062,7 @@
     },
     "/coupons/{couponId}": {
       "schema": { "$ref": "#/entities/Coupon" },
-      "description": "Coupon discount codes. Individual codes can be looked up by exact ID at checkout, while full listing and CRUD are restricted to the owner."
+      "description": "Coupon discount codes. Only active codes can be fetched individually by exact ID at checkout; inactive codes, listing, and CRUD are restricted to the owner."
     },
     "/campaigns/{campaignId}": {
       "schema": { "$ref": "#/entities/SpecialCampaign" },
@@ -658,6 +1087,30 @@
     "/hampers/{hamperId}": {
       "schema": { "$ref": "#/entities/GiftHamper" },
       "description": "Ready-to-gift hampers readable publicly when active and managed strictly by the store owner."
+    },
+    "/referrals/{referralId}": {
+      "schema": { "$ref": "#/entities/InfluencerReferral" },
+      "description": "Private influencer referral codes, commission rates, and payout notes readable and writable strictly by store admins."
+    },
+    "/publicReferrals/{referralId}": {
+      "schema": { "$ref": "#/entities/PublicReferral" },
+      "description": "Public active-only referral projection used at checkout to apply follower discounts without exposing creator commission rates."
+    },
+    "/referralAttributions/{attributionId}": {
+      "schema": { "$ref": "#/entities/ReferralAttribution" },
+      "description": "Write-once checkout referral attributions submitted by shoppers for admin review prior to creating verified commission records."
+    },
+    "/referralSales/{saleId}": {
+      "schema": { "$ref": "#/entities/ReferralSale" },
+      "description": "Authoritative commission ledger readable and writable strictly by verified store admins."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable admin activity and change history ledger readable and appendable strictly by verified store admins."
+    },
+    "/catalogueSnapshots/{snapshotId}": {
+      "schema": { "$ref": "#/entities/CatalogueSnapshot" },
+      "description": "Single-document compacted public catalogue cache (`public`) readable by shoppers in one Firestore read and maintained strictly by verified admins."
     }
   }
 }

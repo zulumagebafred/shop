@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   ArrowRight,
@@ -80,10 +80,22 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
   onAddWeeklyPackToBasket,
   onNavigate,
 }) => {
-  const { perfumes, combos, layeringIdeas } = useStore();
+  const {
+    perfumes,
+    combos,
+    layeringIdeas,
+    ensureSecondaryLoaded,
+    ensureAllPerfumesLoaded,
+  } = useStore();
   const [activeView, setActiveView] = useState<ViewTab>('all');
   const [addedComboIds, setAddedComboIds] = useState<Record<string, boolean>>({});
   const [addedPairIds, setAddedPairIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    void ensureSecondaryLoaded('combos');
+    void ensureSecondaryLoaded('layering');
+    void ensureAllPerfumesLoaded();
+  }, [ensureSecondaryLoaded, ensureAllPerfumesLoaded]);
 
   const visibleCombos = useMemo(
     () =>

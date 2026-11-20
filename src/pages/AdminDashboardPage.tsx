@@ -11,14 +11,17 @@ import {
   EyeOff,
   Flame,
   Gift,
+  History,
   KeyRound,
   Layers,
+  Link2,
   Lock,
   LogOut,
   MailCheck,
   Package,
   Percent,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   Share2,
@@ -27,15 +30,19 @@ import {
   Tag,
   Trash2,
   Upload,
+  Users,
   X,
 } from 'lucide-react';
 import { ResilientImage } from '../components/ResilientImage';
-import { formatPrice, getPrivatePortalSlug, siteConfig } from '../config/siteConfig';
-import { PerfumeInput, resolveAdminLoginEmail, useStore } from '../context/StoreContext';
+import { formatPrice, getConfiguredPortalSlug, siteConfig } from '../config/siteConfig';
+import { PerfumeInput, useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, houseImages } from '../data/catalogue';
 import { DEFAULT_HAMPER_IMAGE, GIFT_HAMPER_OCCASIONS } from '../data/hampers';
-import { isAuthorizedAdminEmail, OWNER_EMAIL } from '../lib/firebase';
+import { isAuthorizedAdminEmail } from '../lib/firebase';
 import {
+  AuditAction,
+  AuditLogEntry,
+  AuditSection,
   AvailabilityStatus,
   BottleSize,
   BranchId,
@@ -47,12 +54,19 @@ import {
   FragranceProduct,
   GiftHamper,
   LayeringIdea,
+  ReferralAttribution,
+  ReferralCommissionType,
+  ReferralFollowerDiscountType,
+  ReferralSale,
+  ReferralSaleStatus,
+  InfluencerReferral,
   STANDARD_BOTTLE_SIZES,
   SizeOption,
   SpecialCampaign,
   WeeklyFiveMlAudience,
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
+import { deriveAdminUsername } from '../utils/auditDiff';
 import {
   ALL_BRANCH_IDS,
   getAvailableBranches,
@@ -60,7 +74,11 @@ import {
   isAvailableAtBranch,
   normalizeBranches,
 } from '../utils/branches';
-import { getEffectiveUnitPrice, getProductPriceSummary } from '../utils/pricing';
+import {
+  calculateReferralCommission,
+  getEffectiveUnitPrice,
+  getProductPriceSummary,
+} from '../utils/pricing';
 import {
   getWeekWindowBounds,
   pickRandomWeeklyAudienceIds,
@@ -72,7 +90,14 @@ interface AdminDashboardPageProps {
   onNotify: (title: string, subtitle: string) => void;
 }
 
-type AdminTab = 'perfumes' | 'specials' | 'combos' | 'hampers' | 'coupons';
+type AdminTab =
+  | 'perfumes'
+  | 'specials'
+  | 'combos'
+  | 'hampers'
+  | 'coupons'
+  | 'referrals'
+  | 'audit';
 type InventoryFilter =
   | 'all'
   | 'Men'
@@ -192,17 +217,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     perfumes,
     livePerfumes,
     catalogueLoading,
+    catalogueComplete,
     catalogueError,
     campaign,
     weeklySpecial,
     coupons,
     couponsLoading,
+    referrals,
+    referralsLoading,
+    referralAttributions,
+    referralAttributionsLoading,
+    referralSales,
+    referralSalesLoading,
+    auditLogs,
+    auditLogsLoading,
     liveCombos,
     combosLoading,
     liveLayeringIdeas,
     layeringLoading,
     liveHampers,
     hampersLoading,
+    snapshotStatus,
+    setAdminConsoleActive,
+    publishCatalogueSnapshot,
+    ensureAllPerfumesLoaded,
+    ensureSecondaryLoaded,
     savePerfume,
     deletePerfume,
     togglePerfumeSpecial,
@@ -210,6 +249,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     saveCoupon,
     toggleCouponActive,
     deleteCoupon,
+    saveReferral,
+    toggleReferralActive,
+    deleteReferral,
+    approveReferralAttribution,
+    dismissReferralAttribution,
+    logManualReferralSale,
+    updateReferralSaleStatus,
+    deleteReferralSale,
     saveCampaign,
     saveWeeklySpecial,
     saveComboDeal,
@@ -222,7 +269,97 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     importStarterHampers,
   } = useStore();
 
+  const [publishingSnapshot, setPublishingSnapshot] = useState(false);
+
+  useEffect(() => {
+    setAdminConsoleActive(true);
+    void ensureAllPerfumesLoaded();
+    void ensureSecondaryLoaded('combos');
+    void ensureSecondaryLoaded('layering');
+    void ensureSecondaryLoaded('hampers');
+    return () => {
+      setAdminConsoleActive(false);
+    };
+  }, [setAdminConsoleActive, ensureAllPerfumesLoaded, ensureSecondaryLoaded]);
+
+  const handlePublishSnapshotClick = async () => {
+    setPublishingSnapshot(true);
+    try {
+      const res = await publishCatalogueSnapshot();
+      if (res.ok) {
+        onNotify(
+          '1-Read Storefront Cache Synced',
+          `${res.count} perfumes packed into ${(res.bytes / 1024).toFixed(1)} KB.`
+        );
+      } else {
+        onNotify('Cache Sync Skipped', 'Ensure catalogue is loaded and you are signed in.');
+      }
+    } catch {
+      onNotify('Cache Sync Failed', 'Could not update the public catalogue snapshot.');
+    } finally {
+      setPublishingSnapshot(false);
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<AdminTab>('perfumes');
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditActorFilter, setAuditActorFilter] = useState('ALL');
+  const [auditSectionFilter, setAuditSectionFilter] = useState<'all' | AuditSection>('all');
+  const [auditActionFilter, setAuditActionFilter] = useState<'all' | AuditAction>('all');
+
+  const currentAdminUsername = useMemo(
+    () => deriveAdminUsername(user?.email, user?.displayName),
+    [user?.email, user?.displayName]
+  );
+
+  const auditActors = useMemo(() => {
+    const counts = new Map<string, { username: string; email: string; count: number }>();
+    for (const log of auditLogs) {
+      const key = log.actorUsername || log.actorEmail || 'admin';
+      const existing = counts.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        counts.set(key, {
+          username: log.actorUsername || 'admin',
+          email: log.actorEmail,
+          count: 1,
+        });
+      }
+    }
+    return Array.from(counts.entries()).map(([key, info]) => ({ key, ...info }));
+  }, [auditLogs]);
+
+  const filteredAuditLogs = useMemo(() => {
+    const q = auditSearch.trim().toLowerCase();
+    return auditLogs.filter((entry) => {
+      if (
+        auditActorFilter !== 'ALL' &&
+        (entry.actorUsername || entry.actorEmail || 'admin') !== auditActorFilter
+      ) {
+        return false;
+      }
+      if (auditSectionFilter !== 'all' && entry.section !== auditSectionFilter) {
+        return false;
+      }
+      if (auditActionFilter !== 'all' && entry.action !== auditActionFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const haystack = [
+        entry.actorUsername,
+        entry.actorEmail,
+        entry.targetLabel,
+        entry.summary,
+        entry.section,
+        entry.action,
+        ...entry.changes,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [auditLogs, auditSearch, auditActorFilter, auditSectionFilter, auditActionFilter]);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -245,10 +382,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const handleCopyPrivatePortalLink = async () => {
     try {
-      const url = `${window.location.origin}/#${getPrivatePortalSlug()}`;
+      const slug =
+        getConfiguredPortalSlug() ?? window.location.hash.replace(/^#/, '').trim();
+      const url = slug
+        ? `${window.location.origin}/#${slug}`
+        : `${window.location.origin}${window.location.pathname}${window.location.hash}`;
       await navigator.clipboard.writeText(url);
       setCopiedPortalLink(true);
-      onNotify('Private Link Copied', `Saved to clipboard: /#${getPrivatePortalSlug()}`);
+      onNotify(
+        'Private Link Copied',
+        slug ? `Saved to clipboard: /#${slug}` : 'Current admin link saved to clipboard.'
+      );
       window.setTimeout(() => setCopiedPortalLink(false), 2200);
     } catch {
       // Ignore clipboard permission denial
@@ -350,6 +494,37 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [confirmDeleteCoupon, setConfirmDeleteCoupon] = useState<string | null>(null);
   const [copiedCouponCode, setCopiedCouponCode] = useState<string | null>(null);
   const [copiedCaptionCode, setCopiedCaptionCode] = useState<string | null>(null);
+
+  // Influencer Referral & Commission state
+  const [editingReferralCode, setEditingReferralCode] = useState<string | null>(null);
+  const [rCode, setRCode] = useState('');
+  const [rInfluencerName, setRInfluencerName] = useState('');
+  const [rSocialHandle, setRSocialHandle] = useState('');
+  const [rCommissionType, setRCommissionType] = useState<ReferralCommissionType>('percentage');
+  const [rCommissionValue, setRCommissionValue] = useState('10');
+  const [rFollowerDiscountType, setRFollowerDiscountType] =
+    useState<ReferralFollowerDiscountType>('none');
+  const [rFollowerDiscountValue, setRFollowerDiscountValue] = useState('0');
+  const [rPayoutNote, setRPayoutNote] = useState('');
+  const [rActive, setRActive] = useState(true);
+  const [savingReferral, setSavingReferral] = useState(false);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [confirmDeleteReferralCode, setConfirmDeleteReferralCode] = useState<string | null>(null);
+  const [copiedReferralLinkCode, setCopiedReferralLinkCode] = useState<string | null>(null);
+  const [copiedReferralPostCode, setCopiedReferralPostCode] = useState<string | null>(null);
+
+  // Manual Referral Sale logging & ledger filters
+  const [saleReferralCode, setSaleReferralCode] = useState('');
+  const [saleOrderSummary, setSaleOrderSummary] = useState('');
+  const [saleSubtotal, setSaleSubtotal] = useState('');
+  const [saleDiscount, setSaleDiscount] = useState('0');
+  const [saleCustomerRef, setSaleCustomerRef] = useState('');
+  const [saleStatus, setSaleStatus] = useState<ReferralSaleStatus>('confirmed');
+  const [savingSale, setSavingSale] = useState(false);
+  const [saleError, setSaleError] = useState<string | null>(null);
+  const [ledgerCodeFilter, setLedgerCodeFilter] = useState<string>('ALL');
+  const [ledgerStatusFilter, setLedgerStatusFilter] = useState<'all' | ReferralSaleStatus>('all');
+  const [confirmDeleteSaleId, setConfirmDeleteSaleId] = useState<string | null>(null);
 
   // Combo Deal & Layering Idea Editor state
   const [editingComboId, setEditingComboId] = useState<string | null>(null);
@@ -515,10 +690,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       msg.includes('auth/wrong-password') ||
       msg.includes('auth/user-not-found')
     ) {
-      return 'Incorrect login or password. Double-check your admin email/username and password, or click "Reset / Set Password" to set a new password via email.';
+      return 'Incorrect email or password. Double-check your authorized admin email and password, or click "Reset / Set Password" to set a new password via email.';
     }
     if (msg.includes('auth/popup-blocked') || msg.includes('auth/popup-closed-by-user')) {
-      return 'Google popup was blocked or closed. Use the email/username + password form above instead (works on any device without popups).';
+      return 'Google popup was blocked or closed. Use the email + password form above instead (works on any device without popups).';
     }
     if (msg.includes('auth/too-many-requests')) {
       return 'Too many sign-in attempts. Please wait a few minutes before trying again.';
@@ -547,7 +722,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setAuthError(null);
     setAuthNotice(null);
     if (!loginId.trim()) {
-      setAuthError('Enter your admin email or username.');
+      setAuthError('Enter your authorized admin email.');
       return;
     }
     if (!loginPassword) {
@@ -569,7 +744,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setAuthError(null);
     setAuthNotice(null);
     if (!loginId.trim()) {
-      setAuthError('Enter your admin email or username first, then click Reset / Set Password.');
+      setAuthError('Enter your authorized admin email first, then click Reset / Set Password.');
       return;
     }
     const targetLogin = loginId.trim();
@@ -593,7 +768,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     try {
       await resendOwnerVerificationEmail();
       setAuthNotice(
-        `Verification link sent to ${user?.email ?? OWNER_EMAIL}. Click the link in your email, then tap "I've Verified — Refresh".`
+        `Verification link sent to ${user?.email ?? 'your authorized admin email'}. Click the link in your email, then tap "I've Verified — Refresh".`
       );
     } catch (err) {
       setAuthError(mapFirebaseAuthError(err, 'Unable to send verification email.'));
@@ -1524,6 +1699,261 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
+  // Influencer Referrals & Commissions Handlers
+  const handleResetReferralForm = () => {
+    setEditingReferralCode(null);
+    setRCode('');
+    setRInfluencerName('');
+    setRSocialHandle('');
+    setRCommissionType('percentage');
+    setRCommissionValue('10');
+    setRFollowerDiscountType('none');
+    setRFollowerDiscountValue('0');
+    setRPayoutNote('');
+    setRActive(true);
+    setReferralError(null);
+  };
+
+  const handleEditReferral = (refItem: InfluencerReferral) => {
+    setEditingReferralCode(refItem.code);
+    setRCode(refItem.code);
+    setRInfluencerName(refItem.influencerName);
+    setRSocialHandle(refItem.socialHandle);
+    setRCommissionType(refItem.commissionType);
+    setRCommissionValue(String(refItem.commissionValue));
+    setRFollowerDiscountType(refItem.followerDiscountType);
+    setRFollowerDiscountValue(String(refItem.followerDiscountValue));
+    setRPayoutNote(refItem.payoutNote);
+    setRActive(refItem.active);
+    setReferralError(null);
+  };
+
+  const handleSaveReferralSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReferralError(null);
+    const cleanedCode = rCode
+      .toUpperCase()
+      .trim()
+      .replace(/[^A-Z0-9_-]/g, '');
+    if (cleanedCode.length < 2) {
+      setReferralError('Referral code must be at least 2 alphanumeric characters.');
+      return;
+    }
+    if (!rInfluencerName.trim()) {
+      setReferralError('Influencer name is required.');
+      return;
+    }
+    const commVal = Number(rCommissionValue);
+    if (Number.isNaN(commVal) || commVal < 0) {
+      setReferralError('Commission rate must be 0 or greater.');
+      return;
+    }
+    if (rCommissionType === 'percentage' && commVal > 90) {
+      setReferralError('Percentage commission cannot exceed 90%.');
+      return;
+    }
+    const discVal =
+      rFollowerDiscountType === 'none' ? 0 : Math.max(0, Number(rFollowerDiscountValue || 0));
+    if (rFollowerDiscountType === 'percentage' && discVal > 95) {
+      setReferralError('Follower percentage discount cannot exceed 95%.');
+      return;
+    }
+
+    setSavingReferral(true);
+    try {
+      await saveReferral(
+        {
+          code: cleanedCode,
+          influencerName: rInfluencerName.trim(),
+          socialHandle: rSocialHandle.trim(),
+          commissionType: rCommissionType,
+          commissionValue: commVal,
+          followerDiscountType: rFollowerDiscountType,
+          followerDiscountValue: discVal,
+          payoutNote: rPayoutNote.trim(),
+          active: rActive,
+        },
+        Boolean(editingReferralCode)
+      );
+      if (!saleReferralCode) {
+        setSaleReferralCode(cleanedCode);
+      }
+      onNotify(
+        editingReferralCode ? 'Influencer Updated' : 'Influencer Code Created',
+        `Referral code "${cleanedCode}" is ready to share.`
+      );
+      handleResetReferralForm();
+    } catch (err) {
+      setReferralError(extractReadableError(err, 'Unable to save influencer referral.'));
+    } finally {
+      setSavingReferral(false);
+    }
+  };
+
+  const handleCopyReferralLink = async (code: string) => {
+    const link = `${window.location.origin}/?ref=${encodeURIComponent(code)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedReferralLinkCode(code);
+      onNotify('Referral Link Copied', link);
+      setTimeout(() => setCopiedReferralLinkCode(null), 2000);
+    } catch {
+      // Ignore clipboard failures
+    }
+  };
+
+  const handleCopyReferralPost = async (refItem: InfluencerReferral) => {
+    const link = `${window.location.origin}/?ref=${encodeURIComponent(refItem.code)}`;
+    const perkLine =
+      refItem.followerDiscountType === 'percentage' && refItem.followerDiscountValue > 0
+        ? ` and enjoy ${refItem.followerDiscountValue}% OFF your fragrance order`
+        : refItem.followerDiscountType === 'fixed' && refItem.followerDiscountValue > 0
+        ? ` and enjoy ${formatPrice(refItem.followerDiscountValue)} OFF your fragrance order`
+        : '';
+    const text = `Shop authentic Arabian perfumes at AuraHut Co. (Manzini & Mbabane)! Use my code ${refItem.code} or tap my link to order${perkLine}: ${link}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedReferralPostCode(refItem.code);
+      onNotify('Influencer Share Caption Copied', `Ready for ${refItem.influencerName}.`);
+      setTimeout(() => setCopiedReferralPostCode(null), 2000);
+    } catch {
+      // Ignore clipboard failures
+    }
+  };
+
+  const selectedManualReferral = useMemo(
+    () =>
+      referrals.find((r) => r.code === (saleReferralCode || referrals[0]?.code)) ??
+      null,
+    [referrals, saleReferralCode]
+  );
+
+  const manualSalePreview = useMemo(() => {
+    const sub = Math.max(0, Number(saleSubtotal || 0));
+    const disc = Math.min(sub, Math.max(0, Number(saleDiscount || 0)));
+    const net = Math.max(0, Math.round((sub - disc) * 100) / 100);
+    const comm = calculateReferralCommission(net, selectedManualReferral);
+    return { sub, disc, net, comm };
+  }, [saleSubtotal, saleDiscount, selectedManualReferral]);
+
+  const handleLogManualSaleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaleError(null);
+    const targetCode = saleReferralCode || referrals[0]?.code || '';
+    if (!targetCode) {
+      setSaleError('Create an influencer referral profile first before logging sales.');
+      return;
+    }
+    if (!saleOrderSummary.trim()) {
+      setSaleError('Enter the fragrance(s) sold.');
+      return;
+    }
+    const sub = Number(saleSubtotal);
+    if (Number.isNaN(sub) || sub <= 0) {
+      setSaleError('Order total must be greater than E0.');
+      return;
+    }
+
+    setSavingSale(true);
+    try {
+      await logManualReferralSale({
+        referralCode: targetCode,
+        orderSummary: saleOrderSummary.trim(),
+        orderSubtotal: sub,
+        discountAmount: Math.max(0, Number(saleDiscount || 0)),
+        customerRef: saleCustomerRef.trim(),
+        commissionStatus: saleStatus,
+      });
+      onNotify(
+        'Referral Sale Logged',
+        `Commission recorded for ${targetCode} (${formatPrice(manualSalePreview.comm)}).`
+      );
+      setSaleOrderSummary('');
+      setSaleSubtotal('');
+      setSaleDiscount('0');
+      setSaleCustomerRef('');
+      setSaleStatus('confirmed');
+    } catch (err) {
+      setSaleError(extractReadableError(err, 'Unable to record referral sale.'));
+    } finally {
+      setSavingSale(false);
+    }
+  };
+
+  const [attributionEdits, setAttributionEdits] = useState<
+    Record<string, { subtotal: string; discount: string }>
+  >({});
+  const [processingAttributionId, setProcessingAttributionId] = useState<string | null>(
+    null
+  );
+
+  const pendingAttributions = useMemo(
+    () => referralAttributions.filter((a) => a.status === 'pending'),
+    [referralAttributions]
+  );
+
+  const referralSummaryStats = useMemo(() => {
+    let totalSalesVolume = 0;
+    let pendingOwed = 0;
+    let confirmedOwed = 0;
+    let paidOut = 0;
+    let pendingCount = pendingAttributions.length;
+    const byCode = new Map<
+      string,
+      { orders: number; sales: number; owed: number; paid: number; pendingCount: number }
+    >();
+
+    for (const s of referralSales) {
+      if (s.commissionStatus === 'cancelled') continue;
+      totalSalesVolume += s.netOrderAmount;
+      const cur = byCode.get(s.referralCode) ?? {
+        orders: 0,
+        sales: 0,
+        owed: 0,
+        paid: 0,
+        pendingCount: 0,
+      };
+      cur.orders += 1;
+      cur.sales += s.netOrderAmount;
+
+      if (s.commissionStatus === 'pending') {
+        pendingOwed += s.commissionAmount;
+        pendingCount += 1;
+        cur.owed += s.commissionAmount;
+        cur.pendingCount += 1;
+      } else if (s.commissionStatus === 'confirmed') {
+        confirmedOwed += s.commissionAmount;
+        cur.owed += s.commissionAmount;
+      } else if (s.commissionStatus === 'paid') {
+        paidOut += s.commissionAmount;
+        cur.paid += s.commissionAmount;
+      }
+      byCode.set(s.referralCode, cur);
+    }
+
+    return {
+      totalSalesVolume,
+      totalOwed: pendingOwed + confirmedOwed,
+      confirmedOwed,
+      pendingOwed,
+      paidOut,
+      pendingCount,
+      byCode,
+    };
+  }, [referralSales, pendingAttributions.length]);
+
+  const filteredReferralSales = useMemo(() => {
+    return referralSales.filter((sale) => {
+      if (ledgerCodeFilter !== 'ALL' && sale.referralCode !== ledgerCodeFilter) {
+        return false;
+      }
+      if (ledgerStatusFilter !== 'all' && sale.commissionStatus !== ledgerStatusFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [referralSales, ledgerCodeFilter, ledgerStatusFilter]);
+
   const previewHeadline = splitHeroHeadline(campaignDraft.title);
   const previewCountdown = getCountdownParts(campaignDraft.endsAt, nowMs);
 
@@ -1579,9 +2009,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
           {user && (
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              <span className="hidden md:inline text-xs text-white/70 truncate max-w-[220px]">
-                {user.email}
-              </span>
+              <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-[260px]">
+                <span className="text-[11px] font-bold text-[#FACC15] truncate">
+                  @{currentAdminUsername}
+                </span>
+                <span className="text-[11px] text-white/65 truncate">
+                  {user.email}
+                </span>
+              </div>
               {isOwner && (
                 <>
                   <button
@@ -1663,7 +2098,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 Store Admin Login
               </h1>
               <p className="text-sm text-[#525252] leading-relaxed">
-                Enter your admin email or username and password to sign in.
+                Enter your authorized admin email and password to sign in.
               </p>
             </div>
 
@@ -1685,23 +2120,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   htmlFor="admin-login-id"
                   className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]"
                 >
-                  Login / Email
+                  Admin Email
                 </label>
                 <input
                   id="admin-login-id"
-                  type="text"
-                  autoComplete="username"
+                  type="email"
+                  autoComplete="email"
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
-                  placeholder="Enter admin email or username"
+                  placeholder="Enter authorized admin email"
                   required
                   className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
                 />
-                {loginId.trim().length > 0 && !loginId.includes('@') && (
-                  <p className="text-[11px] text-[#666666]">
-                    Signing in as <span className="font-medium text-[#0A0A0A]">{resolveAdminLoginEmail(loginId)}</span>
-                  </p>
-                )}
               </div>
 
               <div className="space-y-1.5">
@@ -1870,19 +2300,44 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <div className="space-y-6 border-b border-[#E5E5E5] pb-8">
               <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                 <div className="space-y-1.5">
-                  <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#525252]">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>Real-Time Storefront Sync</span>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#525252]">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <span>Real-Time Storefront Sync</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F4F4F5] border border-[#E5E5E5] text-[11px] font-medium text-[#404040]">
+                      Signed in as <strong className="text-[#0A0A0A]">@{currentAdminUsername}</strong>
+                    </span>
                   </div>
                   <h1 className="text-3xl sm:text-4xl font-bold text-[#0A0A0A] tracking-tight">
                     Store Control Center
                   </h1>
                   <p className="text-sm text-[#525252]">
-                    Manage bottle inventory, seasonal countdown specials, and private social-stream coupon codes.
+                    Manage bottle inventory, seasonal countdown specials, referral partners, and audit history.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handlePublishSnapshotClick}
+                    disabled={publishingSnapshot || !catalogueComplete}
+                    title={
+                      snapshotStatus
+                        ? `Public 1-read cache: ${snapshotStatus.count} perfumes (${(snapshotStatus.bytes / 1024).toFixed(0)} KB)`
+                        : 'Publish 1-read storefront catalogue cache'
+                    }
+                    className="px-4 py-2.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${publishingSnapshot ? 'animate-spin' : ''}`} />
+                    <span>
+                      {publishingSnapshot
+                        ? 'Syncing Cache...'
+                        : snapshotStatus
+                        ? `Sync Cache (${snapshotStatus.count})`
+                        : 'Sync 1-Read Cache'}
+                    </span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1904,7 +2359,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -2000,6 +2455,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     {coupons.length} total social codes
                   </span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('referrals')}
+                  className="col-span-2 lg:col-span-1 text-left bg-white border border-[#E5E5E5] hover:border-[#0A0A0A] rounded-2xl p-4 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="block text-[11px] uppercase tracking-wider text-[#737373] font-medium">
+                      Influencers
+                    </span>
+                    {referralSummaryStats.pendingCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#FEF3C7] text-[#92400E]">
+                        {referralSummaryStats.pendingCount} new
+                      </span>
+                    )}
+                  </div>
+                  <span className="mt-1 block text-2xl sm:text-3xl font-bold text-[#0A0A0A] tabular-nums">
+                    {referrals.filter((r) => r.active).length}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-[#525252] truncate">
+                    Owed {formatPrice(referralSummaryStats.totalOwed)}
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -2012,6 +2490,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   { id: 'combos', label: 'Combos & Layering', icon: Layers },
                   { id: 'hampers', label: `Hampers & Gifts (${liveHampers.length})`, icon: Gift },
                   { id: 'coupons', label: 'Social Coupon Codes', icon: Tag },
+                  { id: 'referrals', label: `Referrals & Commissions (${referrals.length})`, icon: Users },
+                  { id: 'audit', label: `Audit Trail (${auditLogs.length})`, icon: History },
                 ] as const
               ).map((tab) => {
                 const Icon = tab.icon;
@@ -4871,6 +5351,1397 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 </div>
               </div>
             )}
+
+            {/* TAB 6: INFLUENCER REFERRALS & COMMISSIONS */}
+            {activeTab === 'referrals' && (
+              <div className="space-y-6">
+                {/* Summary Stats Bar */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  <div className="bg-white border border-[#E5E5E5] rounded-2xl p-4">
+                    <span className="block text-[11px] uppercase tracking-wider text-[#737373] font-medium">
+                      Referred Sales Volume
+                    </span>
+                    <span className="mt-1 block text-xl sm:text-2xl font-bold text-[#0A0A0A] tabular-nums">
+                      {formatPrice(referralSummaryStats.totalSalesVolume)}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-[#525252]">
+                      Across {referrals.length} influencer{referrals.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+
+                  <div className="bg-white border border-[#E5E5E5] rounded-2xl p-4">
+                    <span className="block text-[11px] uppercase tracking-wider text-[#737373] font-medium">
+                      Commissions Owed
+                    </span>
+                    <span className="mt-1 block text-xl sm:text-2xl font-bold text-[#0A0A0A] tabular-nums">
+                      {formatPrice(referralSummaryStats.totalOwed)}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-[#525252]">
+                      {formatPrice(referralSummaryStats.confirmedOwed)} confirmed ·{' '}
+                      {formatPrice(referralSummaryStats.pendingOwed)} pending
+                    </span>
+                  </div>
+
+                  <div className="bg-white border border-[#E5E5E5] rounded-2xl p-4">
+                    <span className="block text-[11px] uppercase tracking-wider text-[#737373] font-medium">
+                      Commissions Paid Out
+                    </span>
+                    <span className="mt-1 block text-xl sm:text-2xl font-bold text-[#166534] tabular-nums">
+                      {formatPrice(referralSummaryStats.paidOut)}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-[#525252]">
+                      Settled creator payouts
+                    </span>
+                  </div>
+
+                  <div className="bg-white border border-[#E5E5E5] rounded-2xl p-4">
+                    <span className="block text-[11px] uppercase tracking-wider text-[#737373] font-medium">
+                      Awaiting Review
+                    </span>
+                    <span className="mt-1 block text-xl sm:text-2xl font-bold text-[#0A0A0A] tabular-nums">
+                      {referralSummaryStats.pendingCount}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-[#525252]">
+                      WhatsApp checkout attributions
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  {/* LEFT COLUMN: Influencer Setup + Log Referred Sale */}
+                  <div className="lg:col-span-5 space-y-6">
+                    <form
+                      onSubmit={handleSaveReferralSubmit}
+                      className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-7 space-y-4"
+                    >
+                      <div className="flex items-center justify-between border-b border-[#E5E5E5] pb-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
+                            {editingReferralCode ? 'Edit Influencer' : 'Creator Partner'}
+                          </p>
+                          <h2 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
+                            {editingReferralCode
+                              ? `Editing ${editingReferralCode}`
+                              : 'Add Influencer Code'}
+                          </h2>
+                        </div>
+                        {editingReferralCode && (
+                          <button
+                            type="button"
+                            onClick={handleResetReferralForm}
+                            className="text-xs underline text-[#525252] hover:text-[#0A0A0A]"
+                          >
+                            Cancel Edit
+                          </button>
+                        )}
+                      </div>
+
+                      {!editingReferralCode && (
+                        <div className="space-y-1.5">
+                          <span className="block text-[11px] uppercase tracking-wider text-[#666666] font-medium">
+                            Quick Commission Presets
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { label: '10% Sale', type: 'percentage' as const, val: '10' },
+                              { label: '15% Sale', type: 'percentage' as const, val: '15' },
+                              { label: '20% Sale', type: 'percentage' as const, val: '20' },
+                              { label: 'E30 / Order', type: 'fixed' as const, val: '30' },
+                              { label: 'E50 / Order', type: 'fixed' as const, val: '50' },
+                            ].map((preset) => (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() => {
+                                  setRCommissionType(preset.type);
+                                  setRCommissionValue(preset.val);
+                                }}
+                                className="px-3 py-1 rounded-full border border-[#D4D4D4] hover:border-[#0A0A0A] text-[11px] font-medium text-[#0A0A0A]"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {referralError && (
+                        <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium">
+                          {referralError}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Influencer Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={rInfluencerName}
+                            onChange={(e) => setRInfluencerName(e.target.value)}
+                            placeholder="e.g. Nomsa Dlamini"
+                            maxLength={120}
+                            required
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Social Handle
+                          </label>
+                          <input
+                            type="text"
+                            value={rSocialHandle}
+                            onChange={(e) => setRSocialHandle(e.target.value)}
+                            placeholder="@nomsaglow · TikTok"
+                            maxLength={100}
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Shareable Referral Code *
+                        </label>
+                        <input
+                          type="text"
+                          disabled={Boolean(editingReferralCode)}
+                          value={rCode}
+                          onChange={(e) => setRCode(e.target.value.toUpperCase())}
+                          placeholder="e.g. NOMSA10"
+                          maxLength={32}
+                          required
+                          className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm font-mono uppercase disabled:bg-[#F5F5F5] focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                        <p className="text-[11px] text-[#666666]">
+                          Followers can enter this code at checkout or tap their personal{' '}
+                          <span className="font-mono">?ref=CODE</span> link.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Commission Type
+                          </label>
+                          <select
+                            value={rCommissionType}
+                            onChange={(e) =>
+                              setRCommissionType(e.target.value as ReferralCommissionType)
+                            }
+                            className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          >
+                            <option value="percentage">% of Order Sales</option>
+                            <option value="fixed">Flat E per Sale</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            {rCommissionType === 'percentage'
+                              ? 'Commission (%)'
+                              : 'Commission (E)'}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={rCommissionType === 'percentage' ? 90 : 50000}
+                            step="any"
+                            value={rCommissionValue}
+                            onChange={(e) => setRCommissionValue(e.target.value)}
+                            required
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Follower Perk
+                          </label>
+                          <select
+                            value={rFollowerDiscountType}
+                            onChange={(e) =>
+                              setRFollowerDiscountType(
+                                e.target.value as ReferralFollowerDiscountType
+                              )
+                            }
+                            className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          >
+                            <option value="none">No Discount (Track Only)</option>
+                            <option value="percentage">Followers % Off</option>
+                            <option value="fixed">Followers E Off</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            {rFollowerDiscountType === 'percentage'
+                              ? 'Follower % Off'
+                              : rFollowerDiscountType === 'fixed'
+                              ? 'Follower E Off'
+                              : 'Follower Discount'}
+                          </label>
+                          <input
+                            type="number"
+                            disabled={rFollowerDiscountType === 'none'}
+                            min={0}
+                            max={rFollowerDiscountType === 'percentage' ? 95 : 50000}
+                            step="any"
+                            value={
+                              rFollowerDiscountType === 'none'
+                                ? '0'
+                                : rFollowerDiscountValue
+                            }
+                            onChange={(e) => setRFollowerDiscountValue(e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums disabled:bg-[#F5F5F5] focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Payout Note (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={rPayoutNote}
+                          onChange={(e) => setRPayoutNote(e.target.value)}
+                          placeholder="e.g. MoMo 76xx xxxx · Settle every Friday"
+                          maxLength={200}
+                          className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+
+                      <label className="inline-flex items-center gap-2 text-xs font-medium cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rActive}
+                          onChange={(e) => setRActive(e.target.checked)}
+                          className="accent-[#0A0A0A] w-4 h-4"
+                        />
+                        <span>Referral link &amp; code active for storefront orders</span>
+                      </label>
+
+                      <button
+                        type="submit"
+                        disabled={savingReferral}
+                        className="w-full py-3.5 px-5 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                      >
+                        {savingReferral
+                          ? 'Saving...'
+                          : editingReferralCode
+                          ? 'Update Influencer'
+                          : 'Create Influencer Code'}
+                      </button>
+                    </form>
+
+                    {/* Manual Referred Sale Form */}
+                    <form
+                      onSubmit={handleLogManualSaleSubmit}
+                      className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-7 space-y-4"
+                    >
+                      <div className="border-b border-[#E5E5E5] pb-3.5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
+                          DM, Walk-In &amp; Manual Orders
+                        </p>
+                        <h3 className="text-lg font-bold text-[#0A0A0A]">
+                          Log Referred Sale
+                        </h3>
+                      </div>
+
+                      {saleError && (
+                        <div className="p-3 bg-[#FEE2E2] border border-[#DC2626] rounded-xl text-xs text-[#991B1B] font-medium">
+                          {saleError}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Influencer Code
+                        </label>
+                        <select
+                          value={saleReferralCode || referrals[0]?.code || ''}
+                          onChange={(e) => setSaleReferralCode(e.target.value)}
+                          disabled={referrals.length === 0}
+                          className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A] disabled:bg-[#F5F5F5]"
+                        >
+                          {referrals.length === 0 ? (
+                            <option value="">Create an influencer above first</option>
+                          ) : (
+                            referrals.map((r) => (
+                              <option key={r.code} value={r.code}>
+                                {r.code} — {r.influencerName} (
+                                {r.commissionType === 'percentage'
+                                  ? `${r.commissionValue}%`
+                                  : formatPrice(r.commissionValue)}
+                                )
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold uppercase tracking-wider">
+                          Perfume(s) Sold *
+                        </label>
+                        <input
+                          type="text"
+                          value={saleOrderSummary}
+                          onChange={(e) => setSaleOrderSummary(e.target.value)}
+                          placeholder="e.g. Lattafa Khamrah 100ml + Yara 10ml"
+                          maxLength={240}
+                          required
+                          className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Order Total (E) *
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={250000}
+                            step="any"
+                            value={saleSubtotal}
+                            onChange={(e) => setSaleSubtotal(e.target.value)}
+                            placeholder="550"
+                            required
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Discount Given (E)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={250000}
+                            step="any"
+                            value={saleDiscount}
+                            onChange={(e) => setSaleDiscount(e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Status
+                          </label>
+                          <select
+                            value={saleStatus}
+                            onChange={(e) =>
+                              setSaleStatus(e.target.value as ReferralSaleStatus)
+                            }
+                            className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          >
+                            <option value="confirmed">Confirmed (Owed)</option>
+                            <option value="pending">Pending Verification</option>
+                            <option value="paid">Already Paid Out</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold uppercase tracking-wider">
+                            Branch / Note
+                          </label>
+                          <input
+                            type="text"
+                            value={saleCustomerRef}
+                            onChange={(e) => setSaleCustomerRef(e.target.value)}
+                            placeholder="Manzini Pickup"
+                            maxLength={120}
+                            className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
+                          />
+                        </div>
+                      </div>
+
+                      {selectedManualReferral && manualSalePreview.sub > 0 && (
+                        <div className="p-3 bg-[#F6F6F7] border border-[#E5E5E5] rounded-xl flex items-center justify-between text-xs">
+                          <span className="text-[#525252]">
+                            Net {formatPrice(manualSalePreview.net)} ·{' '}
+                            {selectedManualReferral.commissionType === 'percentage'
+                              ? `${selectedManualReferral.commissionValue}% rate`
+                              : 'Flat payout'}
+                          </span>
+                          <span className="font-bold text-[#0A0A0A] tabular-nums">
+                            Commission: {formatPrice(manualSalePreview.comm)}
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={savingSale || referrals.length === 0}
+                        className="w-full py-3 px-5 border border-[#0A0A0A] bg-white text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white disabled:opacity-40 transition-colors rounded-full text-xs font-semibold uppercase tracking-[0.14em]"
+                      >
+                        {savingSale ? 'Recording Sale...' : 'Log Referred Sale'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* RIGHT COLUMN: Influencers Directory & Commission Ledger */}
+                  <div className="lg:col-span-7 space-y-6">
+                    {/* Influencer Codes Directory */}
+                    <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                      <div className="border-b border-[#E5E5E5] pb-4">
+                        <h2 className="text-2xl font-bold text-[#0A0A0A]">
+                          Influencer Partners ({referrals.length})
+                        </h2>
+                        <p className="text-xs text-[#666666] mt-0.5">
+                          Copy any creator&apos;s <span className="font-mono">?ref=CODE</span> link or caption to track sales and commissions automatically.
+                        </p>
+                      </div>
+
+                      {referralsLoading ? (
+                        <p className="text-sm text-[#666666] py-6">Loading influencers...</p>
+                      ) : referrals.length === 0 ? (
+                        <div className="py-10 text-center space-y-2 border border-dashed border-[#D4D4D4] rounded-2xl">
+                          <Users className="w-6 h-6 mx-auto text-[#737373]" />
+                          <p className="text-xl font-bold text-[#0A0A0A]">
+                            No Influencers Configured Yet
+                          </p>
+                          <p className="text-xs text-[#666666] max-w-sm mx-auto">
+                            Create a referral code for your first brand ambassador on the left to generate their trackable link and commission rate.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {referrals.map((refItem) => {
+                            const stats = referralSummaryStats.byCode.get(refItem.code) ?? {
+                              orders: 0,
+                              sales: 0,
+                              owed: 0,
+                              paid: 0,
+                              pendingCount: 0,
+                            };
+
+                            return (
+                              <div
+                                key={refItem.code}
+                                className="p-4 border border-[#E5E5E5] bg-[#F7F7F8] rounded-2xl space-y-3"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                  <div className="space-y-1 min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-mono text-sm font-bold tracking-wider px-3 py-1 bg-[#0A0A0A] text-white rounded-full">
+                                        {refItem.code}
+                                      </span>
+                                      <span className="text-sm font-bold text-[#0A0A0A]">
+                                        {refItem.influencerName}
+                                      </span>
+                                      {refItem.socialHandle && (
+                                        <span className="text-xs text-[#525252]">
+                                          {refItem.socialHandle}
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full ${
+                                          refItem.active
+                                            ? 'bg-[#FACC15] text-[#0A0A0A]'
+                                            : 'bg-[#E5E5E5] text-[#737373]'
+                                        }`}
+                                      >
+                                        {refItem.active ? 'Active' : 'Paused'}
+                                      </span>
+                                    </div>
+
+                                    <p className="text-xs text-[#404040]">
+                                      <strong className="text-[#0A0A0A]">
+                                        Commission:{' '}
+                                        {refItem.commissionType === 'percentage'
+                                          ? `${refItem.commissionValue}% per sale`
+                                          : `${formatPrice(refItem.commissionValue)} per sale`}
+                                      </strong>{' '}
+                                      ·{' '}
+                                      <span>
+                                        {refItem.followerDiscountType === 'percentage' &&
+                                        refItem.followerDiscountValue > 0
+                                          ? `Followers get ${refItem.followerDiscountValue}% Off`
+                                          : refItem.followerDiscountType === 'fixed' &&
+                                            refItem.followerDiscountValue > 0
+                                          ? `Followers get ${formatPrice(
+                                              refItem.followerDiscountValue
+                                            )} Off`
+                                          : 'No follower discount (track only)'}
+                                      </span>
+                                    </p>
+
+                                    {refItem.payoutNote && (
+                                      <p className="text-[11px] text-[#666666]">
+                                        {refItem.payoutNote}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* Quick per-influencer totals */}
+                                  <div className="flex sm:flex-col items-center sm:items-end justify-between gap-1 shrink-0 text-right">
+                                    <span className="text-xs font-semibold text-[#0A0A0A] tabular-nums">
+                                      {stats.orders} sale{stats.orders === 1 ? '' : 's'} ·{' '}
+                                      {formatPrice(stats.sales)}
+                                    </span>
+                                    <span className="text-[11px] text-[#525252] tabular-nums">
+                                      Owed{' '}
+                                      <strong className="text-[#0A0A0A]">
+                                        {formatPrice(stats.owed)}
+                                      </strong>{' '}
+                                      · Paid{' '}
+                                      <strong className="text-[#166534]">
+                                        {formatPrice(stats.paid)}
+                                      </strong>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E5E5E5]">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyReferralLink(refItem.code)}
+                                    className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium inline-flex items-center gap-1.5"
+                                  >
+                                    {copiedReferralLinkCode === refItem.code ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Link2 className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>
+                                      {copiedReferralLinkCode === refItem.code
+                                        ? 'Link Copied'
+                                        : 'Copy Link'}
+                                    </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyReferralPost(refItem)}
+                                    className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium inline-flex items-center gap-1.5"
+                                  >
+                                    {copiedReferralPostCode === refItem.code ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Share2 className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>Copy Post</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSaleReferralCode(refItem.code);
+                                      setLedgerCodeFilter(refItem.code);
+                                    }}
+                                    className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                  >
+                                    Filter / Log Sale
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await toggleReferralActive(refItem);
+                                        onNotify(
+                                          refItem.active
+                                            ? 'Influencer Paused'
+                                            : 'Influencer Activated',
+                                          `${refItem.code} updated.`
+                                        );
+                                      } catch (err) {
+                                        onNotify(
+                                          'Update Failed',
+                                          extractReadableError(
+                                            err,
+                                            'Could not toggle referral status.'
+                                          )
+                                        );
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                  >
+                                    {refItem.active ? 'Pause' : 'Activate'}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditReferral(refItem)}
+                                    className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                  >
+                                    Edit
+                                  </button>
+
+                                  {confirmDeleteReferralCode === refItem.code ? (
+                                    <div className="inline-flex gap-1 ml-auto">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          try {
+                                            await deleteReferral(refItem.code);
+                                            setConfirmDeleteReferralCode(null);
+                                            onNotify(
+                                              'Influencer Removed',
+                                              `${refItem.code} deleted.`
+                                            );
+                                          } catch (err) {
+                                            onNotify(
+                                              'Delete Failed',
+                                              extractReadableError(
+                                                err,
+                                                'Could not delete referral.'
+                                              )
+                                            );
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-[#DC2626] text-white rounded-full text-xs font-semibold"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteReferralCode(null)}
+                                        className="px-2.5 py-1.5 border border-[#D4D4D4] bg-white rounded-full text-xs"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setConfirmDeleteReferralCode(refItem.code)
+                                      }
+                                      aria-label={`Delete referral ${refItem.code}`}
+                                      className="p-2 ml-auto bg-white border border-[#D4D4D4] rounded-full text-[#525252] hover:text-[#DC2626] hover:border-[#DC2626]"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pending WhatsApp Attributions Verification Queue */}
+                    <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5E5E5] pb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
+                              Pending WhatsApp Attributions ({pendingAttributions.length})
+                            </h2>
+                            {pendingAttributions.length > 0 && (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]">
+                                Needs Verification
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#666666] mt-0.5">
+                            Verify payment on WhatsApp first, confirm or adjust the order amount, then approve to calculate authoritative creator commission.
+                          </p>
+                        </div>
+                      </div>
+
+                      {referralAttributionsLoading ? (
+                        <p className="text-sm text-[#666666] py-4">
+                          Loading pending WhatsApp referral attributions...
+                        </p>
+                      ) : pendingAttributions.length === 0 ? (
+                        <div className="py-8 text-center space-y-1.5 border border-dashed border-[#D4D4D4] rounded-2xl">
+                          <Clock className="w-5 h-5 mx-auto text-[#737373]" />
+                          <p className="text-sm font-bold text-[#0A0A0A]">
+                            No Pending WhatsApp Attributions
+                          </p>
+                          <p className="text-xs text-[#666666] max-w-sm mx-auto">
+                            New customer WhatsApp checkouts with a referral code land here unconfirmed until verified by an admin.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {pendingAttributions.map((attr: ReferralAttribution) => {
+                            const draft = attributionEdits[attr.id] ?? {
+                              subtotal: String(attr.reportedSubtotal),
+                              discount: String(attr.reportedDiscount),
+                            };
+                            const verifiedSub = Math.max(0, Number(draft.subtotal || 0));
+                            const verifiedDisc = Math.min(
+                              verifiedSub,
+                              Math.max(0, Number(draft.discount || 0))
+                            );
+                            const verifiedNet = Math.max(
+                              0,
+                              Math.round((verifiedSub - verifiedDisc) * 100) / 100
+                            );
+                            const refObj =
+                              referrals.find((r) => r.code === attr.referralCode) ?? null;
+                            const estComm = calculateReferralCommission(verifiedNet, refObj);
+                            const busy = processingAttributionId === attr.id;
+
+                            return (
+                              <div
+                                key={attr.id}
+                                className="p-4 border border-[#FCD34D] bg-[#FFFBEB] rounded-2xl space-y-3"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono text-xs font-bold px-2.5 py-0.5 bg-[#0A0A0A] text-white rounded-full">
+                                      {attr.referralCode}
+                                    </span>
+                                    <span className="text-xs font-semibold text-[#92400E]">
+                                      Unverified WhatsApp Quote
+                                    </span>
+                                    <span className="text-[11px] text-[#737373]">
+                                      {new Date(attr.createdAtMs).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {refObj ? (
+                                    <span className="text-xs font-semibold text-[#0A0A0A] tabular-nums">
+                                      Auth. Commission Preview: {formatPrice(estComm)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] text-[#991B1B] font-medium">
+                                      Code profile deleted
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <p className="text-sm font-semibold text-[#0A0A0A]">
+                                    {attr.orderSummary}
+                                  </p>
+                                  <p className="text-xs text-[#525252]">
+                                    Client Quote: {formatPrice(attr.reportedSubtotal)} · Disc:{' '}
+                                    {formatPrice(attr.reportedDiscount)}
+                                    {attr.customerRef ? ` · ${attr.customerRef}` : ''}
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end pt-1">
+                                  <div className="space-y-1">
+                                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
+                                      Verified Subtotal (E)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0.01}
+                                      max={250000}
+                                      step="any"
+                                      value={draft.subtotal}
+                                      onChange={(e) =>
+                                        setAttributionEdits((prev) => ({
+                                          ...prev,
+                                          [attr.id]: {
+                                            subtotal: e.target.value,
+                                            discount: draft.discount,
+                                          },
+                                        }))
+                                      }
+                                      className="w-full px-3 py-1.5 bg-white border border-[#D4D4D4] rounded-xl text-xs tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                                    />
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
+                                      Verified Discount (E)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={250000}
+                                      step="any"
+                                      value={draft.discount}
+                                      onChange={(e) =>
+                                        setAttributionEdits((prev) => ({
+                                          ...prev,
+                                          [attr.id]: {
+                                            subtotal: draft.subtotal,
+                                            discount: e.target.value,
+                                          },
+                                        }))
+                                      }
+                                      className="w-full px-3 py-1.5 bg-white border border-[#D4D4D4] rounded-xl text-xs tabular-nums focus:outline-none focus:border-[#0A0A0A]"
+                                    />
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    disabled={busy || !refObj || verifiedSub <= 0}
+                                    onClick={async () => {
+                                      setProcessingAttributionId(attr.id);
+                                      try {
+                                        await approveReferralAttribution(
+                                          attr,
+                                          verifiedSub,
+                                          verifiedDisc
+                                        );
+                                        onNotify(
+                                          'Referral Sale Approved',
+                                          `Confirmed ${formatPrice(estComm)} commission for ${attr.referralCode}.`
+                                        );
+                                      } catch (err) {
+                                        onNotify(
+                                          'Approval Failed',
+                                          extractReadableError(
+                                            err,
+                                            'Could not approve referral attribution.'
+                                          )
+                                        );
+                                      } finally {
+                                        setProcessingAttributionId(null);
+                                      }
+                                    }}
+                                    className="px-3.5 py-2 bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-45 rounded-full text-xs font-semibold whitespace-nowrap"
+                                  >
+                                    {busy ? 'Approving...' : 'Approve & Create Commission'}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={async () => {
+                                      setProcessingAttributionId(attr.id);
+                                      try {
+                                        await dismissReferralAttribution(attr.id);
+                                        onNotify(
+                                          'Attribution Dismissed',
+                                          `Marked ${attr.referralCode} quote dismissed.`
+                                        );
+                                      } catch (err) {
+                                        onNotify(
+                                          'Dismiss Failed',
+                                          extractReadableError(
+                                            err,
+                                            'Could not dismiss attribution.'
+                                          )
+                                        );
+                                      } finally {
+                                        setProcessingAttributionId(null);
+                                      }
+                                    }}
+                                    className="px-3.5 py-2 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] disabled:opacity-45 rounded-full text-xs font-medium whitespace-nowrap"
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Commission Ledger & Payout Queue */}
+                    <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E5E5E5] pb-4">
+                        <div>
+                          <h2 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
+                            Sales &amp; Payout Ledger ({filteredReferralSales.length})
+                          </h2>
+                          <p className="text-xs text-[#666666]">
+                            Confirmed influencer commissions and settlement payouts verified by an admin.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <select
+                            value={ledgerCodeFilter}
+                            onChange={(e) => setLedgerCodeFilter(e.target.value)}
+                            aria-label="Filter sales by influencer"
+                            className="px-3 py-1.5 border border-[#D4D4D4] rounded-full bg-white text-xs font-medium focus:outline-none focus:border-[#0A0A0A]"
+                          >
+                            <option value="ALL">All Influencers</option>
+                            {referrals.map((r) => (
+                              <option key={r.code} value={r.code}>
+                                {r.code}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={ledgerStatusFilter}
+                            onChange={(e) =>
+                              setLedgerStatusFilter(
+                                e.target.value as 'all' | ReferralSaleStatus
+                              )
+                            }
+                            aria-label="Filter sales by status"
+                            className="px-3 py-1.5 border border-[#D4D4D4] rounded-full bg-white text-xs font-medium focus:outline-none focus:border-[#0A0A0A]"
+                          >
+                            <option value="all">All Statuses</option>
+                            <option value="pending">Pending Review</option>
+                            <option value="confirmed">Confirmed (Owed)</option>
+                            <option value="paid">Paid Out</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {referralSalesLoading ? (
+                        <p className="text-sm text-[#666666] py-6">
+                          Loading referral sales ledger...
+                        </p>
+                      ) : filteredReferralSales.length === 0 ? (
+                        <div className="py-10 text-center space-y-2 border border-dashed border-[#D4D4D4] rounded-2xl">
+                          <Receipt className="w-6 h-6 mx-auto text-[#737373]" />
+                          <p className="text-lg font-bold text-[#0A0A0A]">
+                            No Referral Sales Recorded Yet
+                          </p>
+                          <p className="text-xs text-[#666666] max-w-sm mx-auto">
+                            Orders placed using a follower link or code appear here automatically, or you can log sales manually using the form on the left.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {filteredReferralSales.map((sale: ReferralSale) => {
+                            const statusBadge =
+                              sale.commissionStatus === 'paid'
+                                ? 'bg-[#DCFCE7] text-[#166534] border-[#BBF7D0]'
+                                : sale.commissionStatus === 'confirmed'
+                                ? 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]'
+                                : sale.commissionStatus === 'cancelled'
+                                ? 'bg-[#F4F4F5] text-[#737373] border-[#E5E5E5]'
+                                : 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]';
+
+                            return (
+                              <div
+                                key={sale.id}
+                                className="p-4 border border-[#E5E5E5] bg-[#F7F7F8] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                              >
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono text-xs font-bold px-2.5 py-0.5 bg-[#0A0A0A] text-white rounded-full">
+                                      {sale.referralCode}
+                                    </span>
+                                    <span
+                                      className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border ${statusBadge}`}
+                                    >
+                                      {sale.commissionStatus === 'confirmed'
+                                        ? 'Confirmed · Owed'
+                                        : sale.commissionStatus}
+                                    </span>
+                                    <span className="text-[11px] text-[#737373]">
+                                      {sale.source === 'checkout'
+                                        ? 'Auto Checkout'
+                                        : 'Manual Log'}{' '}
+                                      ·{' '}
+                                      {new Date(sale.createdAtMs).toLocaleDateString()}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-sm font-semibold text-[#0A0A0A] truncate">
+                                    {sale.orderSummary}
+                                  </p>
+
+                                  <p className="text-xs text-[#525252]">
+                                    Order Net:{' '}
+                                    <strong className="text-[#0A0A0A] tabular-nums">
+                                      {formatPrice(sale.netOrderAmount)}
+                                    </strong>{' '}
+                                    · Commission:{' '}
+                                    <strong className="text-[#0A0A0A] tabular-nums">
+                                      {formatPrice(sale.commissionAmount)}
+                                    </strong>
+                                    {sale.customerRef ? ` · ${sale.customerRef}` : ''}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                  {sale.commissionStatus === 'pending' && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await updateReferralSaleStatus(
+                                            sale.id,
+                                            'confirmed'
+                                          );
+                                          onNotify(
+                                            'Sale Confirmed',
+                                            `Commission ${formatPrice(
+                                              sale.commissionAmount
+                                            )} confirmed for ${sale.referralCode}.`
+                                          );
+                                        } catch (err) {
+                                          onNotify(
+                                            'Update Failed',
+                                            extractReadableError(
+                                              err,
+                                              'Could not confirm sale.'
+                                            )
+                                          );
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 bg-[#0A0A0A] text-white hover:bg-[#262626] rounded-full text-xs font-semibold"
+                                    >
+                                      Confirm
+                                    </button>
+                                  )}
+
+                                  {(sale.commissionStatus === 'pending' ||
+                                    sale.commissionStatus === 'confirmed') && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await updateReferralSaleStatus(sale.id, 'paid');
+                                          onNotify(
+                                            'Commission Marked Paid',
+                                            `Settled ${formatPrice(
+                                              sale.commissionAmount
+                                            )} for ${sale.referralCode}.`
+                                          );
+                                        } catch (err) {
+                                          onNotify(
+                                            'Update Failed',
+                                            extractReadableError(
+                                              err,
+                                              'Could not mark commission paid.'
+                                            )
+                                          );
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 bg-[#166534] text-white hover:opacity-90 rounded-full text-xs font-semibold"
+                                    >
+                                      Mark Paid
+                                    </button>
+                                  )}
+
+                                  {sale.commissionStatus === 'paid' && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await updateReferralSaleStatus(
+                                            sale.id,
+                                            'confirmed'
+                                          );
+                                        } catch (err) {
+                                          onNotify(
+                                            'Update Failed',
+                                            extractReadableError(
+                                              err,
+                                              'Could not revert status.'
+                                            )
+                                          );
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                    >
+                                      Reopen
+                                    </button>
+                                  )}
+
+                                  {sale.commissionStatus !== 'cancelled' &&
+                                    sale.commissionStatus !== 'paid' && (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          try {
+                                            await updateReferralSaleStatus(
+                                              sale.id,
+                                              'cancelled'
+                                            );
+                                          } catch (err) {
+                                            onNotify(
+                                              'Update Failed',
+                                              extractReadableError(
+                                                err,
+                                                'Could not cancel entry.'
+                                              )
+                                            );
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                      >
+                                        Cancel
+                                      </button>
+                                    )}
+
+                                  {confirmDeleteSaleId === sale.id ? (
+                                    <div className="inline-flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          try {
+                                            await deleteReferralSale(sale.id);
+                                            setConfirmDeleteSaleId(null);
+                                          } catch (err) {
+                                            onNotify(
+                                              'Delete Failed',
+                                              extractReadableError(
+                                                err,
+                                                'Could not delete ledger entry.'
+                                              )
+                                            );
+                                          }
+                                        }}
+                                        className="px-2.5 py-1.5 bg-[#DC2626] text-white rounded-full text-xs font-semibold"
+                                      >
+                                        Delete
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteSaleId(null)}
+                                        className="px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-full text-xs"
+                                      >
+                                        No
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteSaleId(sale.id)}
+                                      aria-label={`Delete sale ${sale.orderSummary}`}
+                                      className="p-1.5 bg-white border border-[#D4D4D4] rounded-full text-[#525252] hover:text-[#DC2626] hover:border-[#DC2626]"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 7: ADMIN AUDIT TRAIL */}
+            {activeTab === 'audit' && (
+              <div className="space-y-6">
+                <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E5E5E5] pb-5">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#525252]">
+                        <History className="w-3.5 h-3.5 text-[#0A0A0A]" />
+                        <span>Immutable Change Log</span>
+                      </div>
+                      <h2 className="text-2xl font-bold text-[#0A0A0A]">
+                        Admin Audit Trail ({filteredAuditLogs.length})
+                      </h2>
+                      <p className="text-xs text-[#666666]">
+                        Every create, edit, status toggle, import, or delete action is permanently recorded with the admin username and exact field changes.
+                      </p>
+                    </div>
+
+                    {auditActors.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAuditActorFilter('ALL')}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                            auditActorFilter === 'ALL'
+                              ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                              : 'bg-white text-[#525252] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                          }`}
+                        >
+                          All Admins ({auditLogs.length})
+                        </button>
+                        {auditActors.map((actor) => (
+                          <button
+                            key={actor.key}
+                            type="button"
+                            onClick={() =>
+                              setAuditActorFilter(
+                                auditActorFilter === actor.key ? 'ALL' : actor.key
+                              )
+                            }
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                              auditActorFilter === actor.key
+                                ? 'bg-[#0A0A0A] text-[#FACC15] border-[#0A0A0A]'
+                                : 'bg-[#F7F7F8] text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                            }`}
+                          >
+                            @{actor.username} ({actor.count})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Filter Controls */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-[#737373] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={auditSearch}
+                        onChange={(e) => setAuditSearch(e.target.value)}
+                        placeholder="Search user, perfume, price, or change..."
+                        aria-label="Search audit trail"
+                        className="w-full pl-10 pr-4 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
+                      />
+                    </div>
+
+                    <select
+                      value={auditActorFilter}
+                      onChange={(e) => setAuditActorFilter(e.target.value)}
+                      aria-label="Filter by admin username"
+                      className="px-3.5 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                    >
+                      <option value="ALL">All Admin Usernames</option>
+                      {auditActors.map((actor) => (
+                        <option key={actor.key} value={actor.key}>
+                          @{actor.username} ({actor.email})
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={auditSectionFilter}
+                      onChange={(e) =>
+                        setAuditSectionFilter(e.target.value as 'all' | AuditSection)
+                      }
+                      aria-label="Filter by dashboard section"
+                      className="px-3.5 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                    >
+                      <option value="all">All Sections</option>
+                      <option value="perfume">Perfumes & Pricing</option>
+                      <option value="specials">Seasonal Specials</option>
+                      <option value="weekly-special">Weekly 5ml Special</option>
+                      <option value="coupon">Social Coupons</option>
+                      <option value="combo">Combo Deals</option>
+                      <option value="layering">Layering Rituals</option>
+                      <option value="hamper">Gift Hampers</option>
+                      <option value="referral">Influencer Codes</option>
+                      <option value="referral-attribution">Referral Attributions</option>
+                      <option value="referral-sale">Referral Sales Ledger</option>
+                    </select>
+
+                    <select
+                      value={auditActionFilter}
+                      onChange={(e) =>
+                        setAuditActionFilter(e.target.value as 'all' | AuditAction)
+                      }
+                      aria-label="Filter by action type"
+                      className="px-3.5 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                    >
+                      <option value="all">All Actions</option>
+                      <option value="create">Created</option>
+                      <option value="update">Updated</option>
+                      <option value="delete">Deleted</option>
+                      <option value="import">Imported</option>
+                    </select>
+                  </div>
+
+                  {/* Audit Timeline Feed */}
+                  {auditLogsLoading ? (
+                    <p className="text-sm text-[#666666] py-8">Loading audit history...</p>
+                  ) : filteredAuditLogs.length === 0 ? (
+                    <div className="py-12 text-center space-y-2 border border-dashed border-[#D4D4D4] rounded-2xl">
+                      <History className="w-7 h-7 mx-auto text-[#737373]" />
+                      <p className="text-xl font-bold text-[#0A0A0A]">
+                        {auditLogs.length === 0
+                          ? 'No Admin Changes Recorded Yet'
+                          : 'No Matching Audit Entries'}
+                      </p>
+                      <p className="text-xs text-[#666666] max-w-md mx-auto">
+                        {auditLogs.length === 0
+                          ? 'Whenever an admin adds, updates, or deletes a perfume, price, special, coupon, hamper, or referral code, the change will appear here automatically.'
+                          : 'Try clearing your search or changing the admin, section, or action filter.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredAuditLogs.map((entry: AuditLogEntry) => {
+                        const actionBadgeClass =
+                          entry.action === 'create'
+                            ? 'bg-[#DCFCE7] text-[#166534] border-[#BBF7D0]'
+                            : entry.action === 'delete'
+                            ? 'bg-[#FEE2E2] text-[#991B1B] border-[#FCA5A5]'
+                            : entry.action === 'import'
+                            ? 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]'
+                            : 'bg-[#DBEAFE] text-[#1E40AF] border-[#BFDBFE]';
+
+                        const actionLabel =
+                          entry.action === 'create'
+                            ? 'Created'
+                            : entry.action === 'delete'
+                            ? 'Deleted'
+                            : entry.action === 'import'
+                            ? 'Imported'
+                            : 'Updated';
+
+                        const sectionLabelMap: Record<AuditSection, string> = {
+                          perfume: 'Perfume',
+                          specials: 'Specials',
+                          'weekly-special': 'Weekly 5ml',
+                          coupon: 'Coupon',
+                          combo: 'Combo Deal',
+                          layering: 'Layering',
+                          hamper: 'Gift Hamper',
+                          referral: 'Referral Code',
+                          'referral-attribution': 'Referral Attrib.',
+                          'referral-sale': 'Referral Sale',
+                        };
+
+                        return (
+                          <div
+                            key={entry.id}
+                            className="p-4 sm:p-5 border border-[#E5E5E5] bg-[#FAFAFB] rounded-2xl space-y-3"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-full bg-[#0A0A0A] text-[#FACC15] text-xs font-bold font-mono">
+                                  @{entry.actorUsername}
+                                </span>
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${actionBadgeClass}`}
+                                >
+                                  {actionLabel}
+                                </span>
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-white border border-[#D4D4D4] text-[#404040]">
+                                  {sectionLabelMap[entry.section] ?? entry.section}
+                                </span>
+                                <span className="text-xs text-[#737373]">
+                                  {entry.actorEmail}
+                                </span>
+                              </div>
+
+                              <span className="text-[11px] font-medium text-[#737373] tabular-nums shrink-0">
+                                {new Date(entry.createdAtMs).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <div>
+                              <p className="text-sm font-bold text-[#0A0A0A]">
+                                {entry.summary}
+                              </p>
+                              <p className="text-xs text-[#525252]">
+                                Target: <span className="font-medium text-[#0A0A0A]">{entry.targetLabel}</span>
+                              </p>
+                            </div>
+
+                            {entry.changes.length > 0 && (
+                              <ul className="bg-white border border-[#E5E5E5] rounded-xl p-3 space-y-1">
+                                {entry.changes.map((line, idx) => (
+                                  <li
+                                    key={`${entry.id}-chg-${idx}`}
+                                    className="text-xs text-[#262626] flex items-start gap-2 leading-relaxed"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#0A0A0A] mt-1.5 shrink-0" />
+                                    <span>{line}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -5503,7 +7374,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                 <form onSubmit={handleSaveOwnerPassword} className="p-6 space-y-4">
                   <p className="text-xs text-[#525252] leading-relaxed">
-                    Set or update the manual login password for <strong className="text-[#0A0A0A]">{user?.email ?? OWNER_EMAIL}</strong> so you can sign in on any device.
+                    Set or update the manual login password for <strong className="text-[#0A0A0A]">{user?.email ?? 'your authorized admin email'}</strong> so you can sign in on any device.
                   </p>
 
                   <div className="space-y-1.5">
