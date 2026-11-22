@@ -100,6 +100,24 @@ export interface InfluencerReferral {
   followerDiscountValue: number;
   payoutNote: string;
   active: boolean;
+  partnerUid?: string;
+}
+
+export type ReferralPartnerStatus = 'pending' | 'active' | 'paused';
+export type ReferralPayoutMethod = 'momo' | 'bank' | 'store-credit';
+
+export interface ReferralPartnerProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  socialHandle: string;
+  requestedCode: string;
+  assignedCode: string;
+  payoutMethod: ReferralPayoutMethod;
+  payoutAccount: string;
+  status: ReferralPartnerStatus;
+  createdAtMs: number;
+  updatedAtMs: number;
 }
 
 export interface PublicReferral {
@@ -139,6 +157,7 @@ export interface ReferralSale {
   commissionStatus: ReferralSaleStatus;
   source: ReferralSaleSource;
   customerRef: string;
+  partnerUid?: string;
   createdAtMs: number;
 }
 
@@ -273,7 +292,8 @@ export type AuditSection =
   | 'hamper'
   | 'referral'
   | 'referral-sale'
-  | 'referral-attribution';
+  | 'referral-attribution'
+  | 'referral-partner';
 
 export interface AuditLogEntry {
   id: string;
@@ -298,5 +318,7 @@ export type AppPage =
   | 'gifts'
   | 'stores'
   | 'about'
+  | 'referral-auth'
+  | 'referral-dashboard'
   | 'admin';
 

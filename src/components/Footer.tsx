@@ -1,6 +1,7 @@
 import React from 'react';
 import { Facebook, Instagram, MapPin, ShoppingCart } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
+import { useStore } from '../context/StoreContext';
 import { AppPage, FragranceCategory } from '../types/fragrance';
 
 interface FooterProps {
@@ -23,6 +24,10 @@ const TikTokIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5
 );
 
 export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
+  const { user } = useStore();
+  const partnerPage: AppPage =
+    user && user.emailVerified ? 'referral-dashboard' : 'referral-auth';
+
   return (
     <footer className="bg-[#0A0A0A] text-white border-t border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 lg:py-16">
@@ -198,6 +203,17 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
                   className="hover:text-white transition-colors"
                 >
                   Our Stores
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(partnerPage)}
+                  className="hover:text-white transition-colors text-[#FACC15]"
+                >
+                  {user && user.emailVerified
+                    ? 'Partner Referral Dashboard'
+                    : 'Referral Partner Program'}
                 </button>
               </li>
               <li>

@@ -39,6 +39,12 @@ const AboutPage = lazy(() =>
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage }))
 );
+const ReferralAuthPage = lazy(() =>
+  import('./pages/ReferralAuthPage').then((m) => ({ default: m.ReferralAuthPage }))
+);
+const ReferralDashboardPage = lazy(() =>
+  import('./pages/ReferralDashboardPage').then((m) => ({ default: m.ReferralDashboardPage }))
+);
 const BasketDrawer = lazy(() =>
   import('./components/BasketDrawer').then((m) => ({ default: m.BasketDrawer }))
 );
@@ -200,6 +206,9 @@ function detectInitialPage(): AppPage {
   if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
     return 'admin';
   }
+  const hash = window.location.hash.toLowerCase();
+  if (hash === '#referral-dashboard') return 'referral-dashboard';
+  if (hash === '#referral-auth' || hash === '#partners') return 'referral-auth';
   return 'home';
 }
 
@@ -379,6 +388,13 @@ function AppContent() {
     const syncPortalFromLocation = () => {
       if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
         setCurrentPage('admin');
+        return;
+      }
+      const hash = window.location.hash.toLowerCase();
+      if (hash === '#referral-dashboard') {
+        setCurrentPage('referral-dashboard');
+      } else if (hash === '#referral-auth' || hash === '#partners') {
+        setCurrentPage('referral-auth');
       }
     };
     window.addEventListener('hashchange', syncPortalFromLocation);
@@ -510,7 +526,16 @@ function AppContent() {
         if (configured) {
           window.history.replaceState(null, '', `#${configured}`);
         }
-      } else if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
+      } else if (page === 'referral-auth') {
+        window.history.replaceState(null, '', '#referral-auth');
+      } else if (page === 'referral-dashboard') {
+        window.history.replaceState(null, '', '#referral-dashboard');
+      } else if (
+        isPrivatePortalLocation(window.location.pathname, window.location.hash) ||
+        ['#referral-auth', '#referral-dashboard', '#partners'].includes(
+          window.location.hash.toLowerCase()
+        )
+      ) {
         window.history.replaceState(null, '', '/');
       }
       setCurrentPage(page);
@@ -957,6 +982,14 @@ function AppContent() {
 
               {currentPage === 'about' && (
                 <AboutPage onNavigate={(p) => handleNavigate(p)} />
+              )}
+
+              {currentPage === 'referral-auth' && (
+                <ReferralAuthPage onNavigate={handleNavigate} onNotify={showToast} />
+              )}
+
+              {currentPage === 'referral-dashboard' && (
+                <ReferralDashboardPage onNavigate={handleNavigate} onNotify={showToast} />
               )}
             </Suspense>
           </ErrorBoundary>

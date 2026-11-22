@@ -10,6 +10,7 @@ import {
   Search,
   ShoppingCart,
   Sparkles,
+  Users,
   X,
 } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
@@ -49,7 +50,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearch,
   onOpenBasket,
 }) => {
-  const { campaign, perfumes } = useStore();
+  const { campaign, perfumes, user } = useStore();
+  const partnerTargetPage: AppPage =
+    user && user.emailVerified ? 'referral-dashboard' : 'referral-auth';
+  const isPartnerPage =
+    currentPage === 'referral-auth' || currentPage === 'referral-dashboard';
   const [showAnnouncement, setShowAnnouncement] = useState(siteContent.announcementBar.enabled);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<DesktopDropdownId>(null);
@@ -265,10 +270,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{siteConfig.brandName}</span>
           </motion.button>
 
-          {/* Clean 6-Item Primary Desktop Navigation with Dropdown Menus */}
+          {/* Clean Primary Desktop Navigation with Dropdown Menus */}
           <nav
             aria-label="Primary Navigation"
-            className="hidden lg:flex items-center justify-center gap-5 xl:gap-7"
+            className="hidden lg:flex items-center justify-center gap-4 xl:gap-6"
           >
             {/* 1. Home */}
             <button
@@ -532,6 +537,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 />
               )}
             </button>
+
+            {/* 7. Referral Partners */}
+            <button
+              type="button"
+              onClick={() => navigateClean(partnerTargetPage)}
+              className={`relative py-1.5 text-[13px] tracking-wide whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+                isPartnerPage
+                  ? 'text-[#0A0A0A] font-semibold'
+                  : 'text-[#525252] hover:text-[#0A0A0A] font-medium'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{user && user.emailVerified ? 'Partner Hub' : 'Refer & Earn'}</span>
+              {isPartnerPage && (
+                <motion.span
+                  layoutId="nav-underline"
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute left-0 right-0 -bottom-0.5 h-[1.5px] bg-[#0A0A0A]"
+                />
+              )}
+            </button>
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
@@ -699,8 +725,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                     { label: 'Home', page: 'home' as AppPage },
                     { label: 'Our Stores (Manzini & Mbabane)', page: 'stores' as AppPage },
                     { label: 'About AuraHut Co.', page: 'about' as AppPage },
+                    {
+                      label:
+                        user && user.emailVerified
+                          ? 'Partner Referral Dashboard'
+                          : 'Referral Partner Program',
+                      page: partnerTargetPage,
+                    },
                   ].map((item) => {
-                    const active = currentPage === item.page;
+                    const active =
+                      item.page === partnerTargetPage ? isPartnerPage : currentPage === item.page;
                     return (
                       <button
                         key={item.page}

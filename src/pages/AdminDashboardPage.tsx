@@ -57,6 +57,8 @@ import {
   ReferralAttribution,
   ReferralCommissionType,
   ReferralFollowerDiscountType,
+  ReferralPartnerProfile,
+  ReferralPartnerStatus,
   ReferralSale,
   ReferralSaleStatus,
   InfluencerReferral,
@@ -67,6 +69,7 @@ import {
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 import { deriveAdminUsername } from '../utils/auditDiff';
+import { sanitizePromoCode } from '../utils/sanitize';
 import {
   ALL_BRANCH_IDS,
   getAvailableBranches,
@@ -225,6 +228,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     couponsLoading,
     referrals,
     referralsLoading,
+    partnerApplications,
+    partnerApplicationsLoading,
     referralAttributions,
     referralAttributionsLoading,
     referralSales,
@@ -252,6 +257,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     saveReferral,
     toggleReferralActive,
     deleteReferral,
+    approvePartnerApplication,
+    updatePartnerApplicationStatus,
     approveReferralAttribution,
     dismissReferralAttribution,
     logManualReferralSale,
@@ -512,6 +519,60 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [confirmDeleteReferralCode, setConfirmDeleteReferralCode] = useState<string | null>(null);
   const [copiedReferralLinkCode, setCopiedReferralLinkCode] = useState<string | null>(null);
   const [copiedReferralPostCode, setCopiedReferralPostCode] = useState<string | null>(null);
+
+  // Partner Applications approval drafts
+  const [partnerDrafts, setPartnerDrafts] = useState<
+    Record<
+      string,
+      {
+        code: string;
+        commissionType: ReferralCommissionType;
+        commissionValue: string;
+        followerDiscountType: ReferralFollowerDiscountType;
+        followerDiscountValue: string;
+        active: boolean;
+      }
+    >
+  >({});
+  const [approvingPartnerUid, setApprovingPartnerUid] = useState<string | null>(null);
+  const [updatingPartnerStatusUid, setUpdatingPartnerStatusUid] = useState<string | null>(null);
+
+  const getPartnerDraft = (partner: ReferralPartnerProfile) => {
+    const existing = partnerDrafts[partner.uid];
+    if (existing) return existing;
+    const defaultCode =
+      sanitizePromoCode(partner.assignedCode || partner.requestedCode) ||
+      sanitizePromoCode(partner.displayName.split(/\s+/)[0] || '').slice(0, 12);
+    return {
+      code: defaultCode,
+      commissionType: 'percentage' as ReferralCommissionType,
+      commissionValue: '10',
+      followerDiscountType: 'none' as ReferralFollowerDiscountType,
+      followerDiscountValue: '0',
+      active: true,
+    };
+  };
+
+  const updatePartnerDraft = (
+    uid: string,
+    partner: ReferralPartnerProfile,
+    patch: Partial<{
+      code: string;
+      commissionType: ReferralCommissionType;
+      commissionValue: string;
+      followerDiscountType: ReferralFollowerDiscountType;
+      followerDiscountValue: string;
+      active: boolean;
+    }>
+  ) => {
+    setPartnerDrafts((prev) => ({
+      ...prev,
+      [uid]: {
+        ...(prev[uid] ?? getPartnerDraft(partner)),
+        ...patch,
+      },
+    }));
+  };
 
   // Manual Referral Sale logging & ledger filters
   const [saleReferralCode, setSaleReferralCode] = useState('');
@@ -5787,8 +5848,263 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </form>
                   </div>
 
-                  {/* RIGHT COLUMN: Influencers Directory & Commission Ledger */}
+                  {/* RIGHT COLUMN: Partner Applications, Influencers Directory & Commission Ledger */}
                   <div className="lg:col-span-7 space-y-6">
+                    {/* Creator Partner Portal Applications */}
+                    <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5E5E5] pb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-xl sm:text-2xl font-bold text-[#0A0A0A]">
+                              Partner Portal Sign-Ups ({partnerApplications.length})
+                            </h2>
+                            {partnerApplications.some((p) => p.status === 'pending') && (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]">
+                                {partnerApplications.filter((p) => p.status === 'pending').length} Pending
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#666666] mt-0.5">
+                            Creators who signed up via the Referral Partner Portal. Assign or link a promo code to unlock their live sales &amp; commission dashboard.
+                          </p>
+                        </div>
+                      </div>
+
+                      {partnerApplicationsLoading ? (
+                        <p className="text-sm text-[#666666] py-4">Loading partner applications...</p>
+                      ) : partnerApplications.length === 0 ? (
+                        <div className="py-7 text-center border border-dashed border-[#D4D4D4] rounded-2xl">
+                          <p className="text-xs text-[#666666]">
+                            No creator sign-ups via the Referral Portal yet. Share <span className="font-mono font-semibold text-[#0A0A0A]">/#referral-auth</span> to onboard partners.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {partnerApplications.map((app) => {
+                            const draft = getPartnerDraft(app);
+                            const isApproving = approvingPartnerUid === app.uid;
+                            const isToggling = updatingPartnerStatusUid === app.uid;
+                            const statusBadgeClass =
+                              app.status === 'active'
+                                ? 'bg-[#DCFCE7] text-[#166534] border-[#BBF7D0]'
+                                : app.status === 'paused'
+                                ? 'bg-[#F4F4F5] text-[#525252] border-[#D4D4D4]'
+                                : 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]';
+
+                            return (
+                              <div
+                                key={app.uid}
+                                className="p-4 border border-[#E5E5E5] bg-[#FAFAFB] rounded-2xl space-y-3"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                                  <div className="space-y-1 min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-sm font-bold text-[#0A0A0A]">
+                                        {app.displayName}
+                                      </span>
+                                      {app.socialHandle && (
+                                        <span className="text-xs text-[#525252]">
+                                          {app.socialHandle}
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}
+                                      >
+                                        {app.status}
+                                      </span>
+                                      {app.assignedCode && (
+                                        <span className="font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#0A0A0A] text-[#FACC15]">
+                                          Code: {app.assignedCode}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-[#525252]">
+                                      {app.email}
+                                      {app.requestedCode ? ` · Requested: ${app.requestedCode}` : ''}
+                                      {` · Payout: ${app.payoutMethod.toUpperCase()}`}
+                                      {app.payoutAccount ? ` (${app.payoutAccount})` : ''}
+                                    </p>
+                                  </div>
+
+                                  {app.assignedCode && app.status !== 'pending' && (
+                                    <button
+                                      type="button"
+                                      disabled={isToggling}
+                                      onClick={async () => {
+                                        const nextStatus: ReferralPartnerStatus =
+                                          app.status === 'active' ? 'paused' : 'active';
+                                        setUpdatingPartnerStatusUid(app.uid);
+                                        try {
+                                          await updatePartnerApplicationStatus(app.uid, nextStatus);
+                                          onNotify(
+                                            nextStatus === 'active'
+                                              ? 'Partner Portal Activated'
+                                              : 'Partner Portal Paused',
+                                            `${app.displayName} portal access is now ${nextStatus}.`
+                                          );
+                                        } catch (err) {
+                                          onNotify(
+                                            'Status Update Failed',
+                                            extractReadableError(
+                                              err,
+                                              'Could not update partner access status.'
+                                            )
+                                          );
+                                        } finally {
+                                          setUpdatingPartnerStatusUid(null);
+                                        }
+                                      }}
+                                      className="px-3 py-1.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-medium shrink-0 disabled:opacity-60"
+                                    >
+                                      {isToggling
+                                        ? 'Saving...'
+                                        : app.status === 'active'
+                                        ? 'Pause Portal'
+                                        : 'Reactivate Portal'}
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-2 border-t border-[#E5E5E5] items-end">
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="block text-[10px] uppercase tracking-wider text-[#666666] font-semibold">
+                                      Assign Code
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={draft.code}
+                                      onChange={(e) =>
+                                        updatePartnerDraft(app.uid, app, {
+                                          code: sanitizePromoCode(e.target.value),
+                                        })
+                                      }
+                                      placeholder="e.g. LULU10"
+                                      className="w-full px-2.5 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs font-mono uppercase text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
+                                    />
+                                  </div>
+
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="block text-[10px] uppercase tracking-wider text-[#666666] font-semibold">
+                                      Commission
+                                    </label>
+                                    <div className="flex gap-1">
+                                      <select
+                                        value={draft.commissionType}
+                                        onChange={(e) =>
+                                          updatePartnerDraft(app.uid, app, {
+                                            commissionType: e.target
+                                              .value as ReferralCommissionType,
+                                          })
+                                        }
+                                        className="px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs text-[#0A0A0A]"
+                                      >
+                                        <option value="percentage">%</option>
+                                        <option value="fixed">E</option>
+                                      </select>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        value={draft.commissionValue}
+                                        onChange={(e) =>
+                                          updatePartnerDraft(app.uid, app, {
+                                            commissionValue: e.target.value,
+                                          })
+                                        }
+                                        className="w-full px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs tabular-nums text-[#0A0A0A]"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="sm:col-span-3 space-y-1">
+                                    <label className="block text-[10px] uppercase tracking-wider text-[#666666] font-semibold">
+                                      Follower Perk
+                                    </label>
+                                    <div className="flex gap-1">
+                                      <select
+                                        value={draft.followerDiscountType}
+                                        onChange={(e) =>
+                                          updatePartnerDraft(app.uid, app, {
+                                            followerDiscountType: e.target
+                                              .value as ReferralFollowerDiscountType,
+                                          })
+                                        }
+                                        className="px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs text-[#0A0A0A]"
+                                      >
+                                        <option value="none">None</option>
+                                        <option value="percentage">% Off</option>
+                                        <option value="fixed">E Off</option>
+                                      </select>
+                                      {draft.followerDiscountType !== 'none' && (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          value={draft.followerDiscountValue}
+                                          onChange={(e) =>
+                                            updatePartnerDraft(app.uid, app, {
+                                              followerDiscountValue: e.target.value,
+                                            })
+                                          }
+                                          className="w-full px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs tabular-nums text-[#0A0A0A]"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="sm:col-span-3 flex justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={isApproving || draft.code.trim().length < 2}
+                                      onClick={async () => {
+                                        setApprovingPartnerUid(app.uid);
+                                        try {
+                                          await approvePartnerApplication(app, {
+                                            code: draft.code,
+                                            commissionType: draft.commissionType,
+                                            commissionValue: Number(draft.commissionValue || 0),
+                                            followerDiscountType: draft.followerDiscountType,
+                                            followerDiscountValue: Number(
+                                              draft.followerDiscountValue || 0
+                                            ),
+                                            payoutNote: `${app.payoutMethod.toUpperCase()}${
+                                              app.payoutAccount ? ` · ${app.payoutAccount}` : ''
+                                            }`,
+                                            active: draft.active,
+                                          });
+                                          onNotify(
+                                            'Partner Approved & Linked',
+                                            `${app.displayName} is now linked to ${draft.code}.`
+                                          );
+                                        } catch (err) {
+                                          onNotify(
+                                            'Approval Failed',
+                                            extractReadableError(
+                                              err,
+                                              'Could not approve partner application.'
+                                            )
+                                          );
+                                        } finally {
+                                          setApprovingPartnerUid(null);
+                                        }
+                                      }}
+                                      className="w-full px-3 py-2 rounded-xl bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
+                                    >
+                                      {isApproving
+                                        ? 'Linking...'
+                                        : app.assignedCode
+                                        ? 'Update Link'
+                                        : 'Approve & Link'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Influencer Codes Directory */}
                     <div className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-8 space-y-5">
                       <div className="border-b border-[#E5E5E5] pb-4">
@@ -5851,6 +6167,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       >
                                         {refItem.active ? 'Active' : 'Paused'}
                                       </span>
+                                      {refItem.partnerUid && (
+                                        <span className="text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534]">
+                                          Portal Linked
+                                        </span>
+                                      )}
                                     </div>
 
                                     <p className="text-xs text-[#404040]">
@@ -6615,6 +6936,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <option value="referral">Influencer Codes</option>
                       <option value="referral-attribution">Referral Attributions</option>
                       <option value="referral-sale">Referral Sales Ledger</option>
+                      <option value="referral-partner">Partner Portal</option>
                     </select>
 
                     <select
@@ -6682,6 +7004,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           referral: 'Referral Code',
                           'referral-attribution': 'Referral Attrib.',
                           'referral-sale': 'Referral Sale',
+                          'referral-partner': 'Partner Portal',
                         };
 
                         return (

@@ -675,6 +675,12 @@
           "type": "boolean",
           "description": "Whether the referral code is currently active"
         },
+        "partnerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$",
+          "description": "Optional verified Firebase UID of the linked creator partner for scoped dashboard access"
+        },
         "ownerUid": {
           "type": "string",
           "maxLength": 128,
@@ -761,6 +767,12 @@
           "type": "string",
           "maxLength": 120,
           "description": "Non-PII delivery branch/town or order reference note"
+        },
+        "partnerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]*$",
+          "description": "Optional verified Firebase UID of the linked creator partner for scoped payout ledger access"
         },
         "ownerUid": {
           "type": "string",
@@ -966,7 +978,8 @@
             "hamper",
             "referral",
             "referral-sale",
-            "referral-attribution"
+            "referral-attribution",
+            "referral-partner"
           ],
           "description": "Admin workspace area affected"
         },
@@ -1053,6 +1066,95 @@
         }
       },
       "required": ["version", "totalCount", "itemsJson", "ownerUid", "updatedAt"]
+    },
+    "ReferralPartner": {
+      "title": "ReferralPartner",
+      "description": "Creator / influencer referral partner onboarding and payout profile keyed strictly by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID matching document ID"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160,
+          "description": "Verified Firebase Auth email address"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Partner display name"
+        },
+        "socialHandle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "TikTok, Instagram, or social handle"
+        },
+        "requestedCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$",
+          "description": "Preferred uppercase referral code requested during onboarding"
+        },
+        "assignedCode": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^(|[A-Z0-9_\\-]{2,32})$",
+          "description": "Authoritative admin-assigned /referrals code (empty until approved)"
+        },
+        "payoutMethod": {
+          "type": "string",
+          "enum": ["momo", "bank", "store-credit"],
+          "description": "Preferred commission settlement method"
+        },
+        "payoutAccount": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "MoMo number, bank account reference, or branch note"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "active", "paused"],
+          "description": "Admin-controlled partner account status"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase UID of the partner account owner"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "socialHandle",
+        "requestedCode",
+        "assignedCode",
+        "payoutMethod",
+        "payoutAccount",
+        "status",
+        "ownerUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -1090,7 +1192,7 @@
     },
     "/referrals/{referralId}": {
       "schema": { "$ref": "#/entities/InfluencerReferral" },
-      "description": "Private influencer referral codes, commission rates, and payout notes readable and writable strictly by store admins."
+      "description": "Influencer referral codes, commission rates, and payout notes managed by store admins and readable individually by the linked partnerUid."
     },
     "/publicReferrals/{referralId}": {
       "schema": { "$ref": "#/entities/PublicReferral" },
@@ -1102,7 +1204,11 @@
     },
     "/referralSales/{saleId}": {
       "schema": { "$ref": "#/entities/ReferralSale" },
-      "description": "Authoritative commission ledger readable and writable strictly by verified store admins."
+      "description": "Authoritative commission ledger written strictly by store admins and readable only by admins or the linked partnerUid."
+    },
+    "/referralPartners/{partnerId}": {
+      "schema": { "$ref": "#/entities/ReferralPartner" },
+      "description": "Partner creator onboarding applications and payout preferences keyed by Firebase Auth UID."
     },
     "/auditLogs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },

@@ -300,7 +300,7 @@ service cloud.firestore {
       data.keys().hasOnly([
         'code', 'influencerName', 'socialHandle', 'commissionType', 'commissionValue',
         'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active',
-        'ownerUid', 'createdAt', 'updatedAt'
+        'partnerUid', 'ownerUid', 'createdAt', 'updatedAt'
       ]) &&
       data.code is string && data.code.size() >= 2 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9_\\-]+$') &&
       data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
@@ -314,6 +314,7 @@ service cloud.firestore {
       (data.followerDiscountType != 'percentage' || data.followerDiscountValue <= 95) &&
       data.payoutNote is string && data.payoutNote.size() <= 200 &&
       data.active is bool &&
+      (!('partnerUid' in data) || (data.partnerUid is string && data.partnerUid.size() <= 128 && data.partnerUid.matches('^[a-zA-Z0-9_\\-]*$'))) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
@@ -375,7 +376,7 @@ service cloud.firestore {
       data.keys().hasOnly([
         'referralCode', 'influencerName', 'orderSummary', 'orderSubtotal', 'discountAmount',
         'netOrderAmount', 'commissionAmount', 'commissionStatus', 'source', 'customerRef',
-        'ownerUid', 'createdAt', 'updatedAt'
+        'partnerUid', 'ownerUid', 'createdAt', 'updatedAt'
       ]) &&
       data.referralCode is string && data.referralCode.size() >= 2 && data.referralCode.size() <= 32 && data.referralCode.matches('^[A-Z0-9_\\-]+$') &&
       data.influencerName is string && data.influencerName.size() >= 1 && data.influencerName.size() <= 120 &&
@@ -387,7 +388,32 @@ service cloud.firestore {
       data.commissionStatus in ['pending', 'confirmed', 'paid', 'cancelled'] &&
       data.source in ['checkout', 'manual'] &&
       data.customerRef is string && data.customerRef.size() <= 120 &&
+      (!('partnerUid' in data) || (data.partnerUid is string && data.partnerUid.size() <= 128 && data.partnerUid.matches('^[a-zA-Z0-9_\\-]*$'))) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidReferralPartner(data) {
+      return data.keys().hasAll([
+        'uid', 'email', 'displayName', 'socialHandle', 'requestedCode', 'assignedCode',
+        'payoutMethod', 'payoutAccount', 'status', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'email', 'displayName', 'socialHandle', 'requestedCode', 'assignedCode',
+        'payoutMethod', 'payoutAccount', 'status', 'ownerUid', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+      data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+      data.socialHandle is string && data.socialHandle.size() <= 100 &&
+      data.requestedCode is string && data.requestedCode.size() >= 2 && data.requestedCode.size() <= 32 && data.requestedCode.matches('^[A-Z0-9_\\-]+$') &&
+      data.assignedCode is string && data.assignedCode.size() <= 32 &&
+      (data.assignedCode == '' || (data.assignedCode.size() >= 2 && data.assignedCode.matches('^[A-Z0-9_\\-]+$'))) &&
+      data.payoutMethod in ['momo', 'bank', 'store-credit'] &&
+      data.payoutAccount is string && data.payoutAccount.size() <= 160 &&
+      data.status in ['pending', 'active', 'paused'] &&
+      isValidId(data.ownerUid) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
@@ -416,7 +442,7 @@ service cloud.firestore {
       data.action in ['create', 'update', 'delete', 'import'] &&
       data.section in [
         'perfume', 'specials', 'weekly-special', 'coupon',
-        'combo', 'layering', 'hamper', 'referral', 'referral-sale', 'referral-attribution'
+        'combo', 'layering', 'hamper', 'referral', 'referral-sale', 'referral-attribution', 'referral-partner'
       ] &&
       data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 160 &&
       data.targetLabel is string && data.targetLabel.size() >= 1 && data.targetLabel.size() <= 160 &&
@@ -619,9 +645,12 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(specialId);
     }
 
-    // Private admin-only influencer referral configuration (commission rates & payout notes protected)
+    // Private influencer referral configuration (readable by store admins or linked partnerUid)
     match /referrals/{referralId} {
-      allow get: if isOwnerEmail();
+      allow get: if isValidId(referralId) && (
+        isOwnerEmail() ||
+        (isVerifiedUser() && resource != null && 'partnerUid' in existing() && existing().partnerUid == request.auth.uid)
+      );
       allow list: if isOwnerEmail();
       allow create: if isAdmin() &&
         isValidId(referralId) &&
@@ -639,7 +668,7 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'influencerName', 'socialHandle', 'commissionType', 'commissionValue',
-          'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active', 'updatedAt'
+          'followerDiscountType', 'followerDiscountValue', 'payoutNote', 'active', 'partnerUid', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(referralId);
     }
@@ -697,10 +726,15 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(attributionId);
     }
 
-    // Authoritative commission ledger locked strictly to verified store admins
+    // Authoritative commission ledger written strictly by store admins; readable by admins or scoped partnerUid
     match /referralSales/{saleId} {
-      allow get: if isOwnerEmail();
-      allow list: if isOwnerEmail();
+      allow get: if isValidId(saleId) && (
+        isOwnerEmail() ||
+        (isVerifiedUser() && resource != null && 'partnerUid' in existing() && existing().partnerUid == request.auth.uid)
+      );
+      allow list: if isOwnerEmail() || (
+        isVerifiedUser() && 'partnerUid' in resource.data && resource.data.partnerUid == request.auth.uid
+      );
       allow create: if isAdmin() &&
         isValidId(saleId) &&
         isValidReferralSale(incoming()) &&
@@ -718,9 +752,56 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'influencerName', 'orderSummary', 'orderSubtotal', 'discountAmount',
-          'netOrderAmount', 'commissionAmount', 'commissionStatus', 'customerRef', 'updatedAt'
+          'netOrderAmount', 'commissionAmount', 'commissionStatus', 'customerRef', 'partnerUid', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(saleId);
+    }
+
+    // Referral partner creator onboarding & payout profiles keyed by Firebase Auth UID
+    match /referralPartners/{partnerId} {
+      allow get: if isValidId(partnerId) && (
+        isOwnerEmail() ||
+        (isVerifiedUser() && request.auth.uid == partnerId)
+      );
+      allow list: if isOwnerEmail();
+      allow create: if isVerifiedUser() &&
+        isValidId(partnerId) &&
+        request.auth.uid == partnerId &&
+        isValidReferralPartner(incoming()) &&
+        incoming().uid == partnerId &&
+        incoming().email.lower() == request.auth.token.email.lower() &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().assignedCode == '' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(partnerId) &&
+        isValidReferralPartner(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'socialHandle', 'requestedCode', 'assignedCode',
+              'payoutMethod', 'payoutAccount', 'status', 'updatedAt'
+            ])
+          ) ||
+          (
+            isVerifiedUser() &&
+            request.auth.uid == partnerId &&
+            incoming().status == existing().status &&
+            incoming().assignedCode == existing().assignedCode &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'socialHandle', 'requestedCode',
+              'payoutMethod', 'payoutAccount', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(partnerId);
     }
 
     match /auditLogs/{logId} {

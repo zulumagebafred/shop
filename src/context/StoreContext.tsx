@@ -10,6 +10,7 @@ import React, {
 import {
   EmailAuthProvider,
   User,
+  createUserWithEmailAndPassword,
   linkWithCredential,
   onAuthStateChanged,
   sendEmailVerification,
@@ -18,6 +19,7 @@ import {
   signInWithPopup,
   signOut,
   updatePassword,
+  updateProfile,
 } from 'firebase/auth';
 import {
   DocumentData,
@@ -63,6 +65,9 @@ import {
   PublicReferral,
   ReferralAttribution,
   ReferralAttributionStatus,
+  ReferralPartnerProfile,
+  ReferralPartnerStatus,
+  ReferralPayoutMethod,
   ReferralSale,
   ReferralSaleStatus,
   SpecialCampaign,
@@ -135,6 +140,24 @@ export interface SnapshotStatusInfo {
   bytes: number;
 }
 
+export type PartnerApplicationInput = {
+  displayName: string;
+  socialHandle: string;
+  requestedCode: string;
+  payoutMethod: ReferralPayoutMethod;
+  payoutAccount: string;
+};
+
+export type ApprovePartnerInput = {
+  code: string;
+  commissionType: 'percentage' | 'fixed';
+  commissionValue: number;
+  followerDiscountType: 'none' | 'percentage' | 'fixed';
+  followerDiscountValue: number;
+  payoutNote: string;
+  active: boolean;
+};
+
 interface StoreContextValue {
   // Auth
   user: User | null;
@@ -147,6 +170,36 @@ interface StoreContextValue {
   refreshAuthUser: () => Promise<boolean>;
   setOwnerPasswordCredential: (newPassword: string) => Promise<void>;
   signOutOwner: () => Promise<void>;
+
+  // Referral Partner Auth & Scoped Portal
+  signUpPartnerWithPassword: (
+    displayName: string,
+    email: string,
+    password: string
+  ) => Promise<void>;
+  signInPartnerWithPassword: (email: string, password: string) => Promise<void>;
+  signInPartnerWithGoogle: () => Promise<void>;
+  sendPartnerPasswordReset: (email: string) => Promise<string>;
+  setPartnerPortalActive: (active: boolean) => void;
+  partnerProfile: ReferralPartnerProfile | null;
+  partnerProfileLoading: boolean;
+  partnerReferral: InfluencerReferral | null;
+  partnerSales: ReferralSale[];
+  partnerSalesLoading: boolean;
+  submitPartnerApplication: (input: PartnerApplicationInput) => Promise<void>;
+  updatePartnerProfile: (input: PartnerApplicationInput) => Promise<void>;
+
+  // Admin Partner Applications Queue
+  partnerApplications: ReferralPartnerProfile[];
+  partnerApplicationsLoading: boolean;
+  approvePartnerApplication: (
+    partner: ReferralPartnerProfile,
+    config: ApprovePartnerInput
+  ) => Promise<void>;
+  updatePartnerApplicationStatus: (
+    partnerUid: string,
+    status: ReferralPartnerStatus
+  ) => Promise<void>;
 
   // Live Catalogue & Specials
   perfumes: FragranceProduct[];
@@ -703,6 +756,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const [authReady, setAuthReady] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
   const [adminConsoleActive, setAdminConsoleActive] = useState(false);
+  const [partnerPortalActive, setPartnerPortalActive] = useState(false);
+
+  const [partnerProfile, setPartnerProfile] = useState<ReferralPartnerProfile | null>(null);
+  const [partnerProfileLoading, setPartnerProfileLoading] = useState(false);
+  const [partnerReferral, setPartnerReferral] = useState<InfluencerReferral | null>(null);
+  const [partnerSales, setPartnerSales] = useState<ReferralSale[]>([]);
+  const [partnerSalesLoading, setPartnerSalesLoading] = useState(false);
+
+  const [partnerApplications, setPartnerApplications] = useState<ReferralPartnerProfile[]>([]);
+  const [partnerApplicationsLoading, setPartnerApplicationsLoading] = useState(false);
 
   const [livePerfumes, setLivePerfumes] = useState<FragranceProduct[]>(
     initialPerfumeCache.items
@@ -1274,6 +1337,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             followerDiscountValue: Number(d.followerDiscountValue ?? 0),
             payoutNote: String(d.payoutNote ?? ''),
             active: Boolean(d.active),
+            partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
           };
         });
         items.sort((a, b) => a.code.localeCompare(b.code));
@@ -1420,6 +1484,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             commissionStatus: status,
             source: d.source === 'manual' ? 'manual' : 'checkout',
             customerRef: String(d.customerRef ?? ''),
+            partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
             createdAtMs,
           };
         });
@@ -1438,6 +1503,223 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     return unsub;
   }, [authReady, isOwner, adminConsoleActive]);
+
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      setPartnerApplications([]);
+      setPartnerApplicationsLoading(false);
+      return;
+    }
+
+    setPartnerApplicationsLoading(true);
+    const unsub = onSnapshot(
+      query(collection(db, 'referralPartners')),
+      (snapshot) => {
+        const items: ReferralPartnerProfile[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+          const rawUpdated = d.updatedAt as { toMillis?: () => number } | undefined;
+          const status: ReferralPartnerStatus =
+            d.status === 'active' || d.status === 'paused' ? d.status : 'pending';
+          const payoutMethod: ReferralPayoutMethod =
+            d.payoutMethod === 'bank' || d.payoutMethod === 'store-credit'
+              ? d.payoutMethod
+              : 'momo';
+          return {
+            uid: String(d.uid ?? docSnap.id),
+            email: String(d.email ?? ''),
+            displayName: String(d.displayName ?? ''),
+            socialHandle: String(d.socialHandle ?? ''),
+            requestedCode: String(d.requestedCode ?? ''),
+            assignedCode: String(d.assignedCode ?? ''),
+            payoutMethod,
+            payoutAccount: String(d.payoutAccount ?? ''),
+            status,
+            createdAtMs:
+              rawCreated && typeof rawCreated.toMillis === 'function'
+                ? rawCreated.toMillis()
+                : Date.now(),
+            updatedAtMs:
+              rawUpdated && typeof rawUpdated.toMillis === 'function'
+                ? rawUpdated.toMillis()
+                : Date.now(),
+          };
+        });
+        items.sort((a, b) => {
+          if (a.status === 'pending' && b.status !== 'pending') return -1;
+          if (a.status !== 'pending' && b.status === 'pending') return 1;
+          return b.createdAtMs - a.createdAtMs;
+        });
+        setPartnerApplications(items);
+        setPartnerApplicationsLoading(false);
+      },
+      (error) => {
+        setPartnerApplicationsLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'referralPartners');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+    return unsub;
+  }, [authReady, isOwner, adminConsoleActive]);
+
+  // 4b. Scoped Creator Referral Partner Listeners (only active when Partner Dashboard is open & email verified!)
+  useEffect(() => {
+    if (!authReady || !user || !user.emailVerified || !partnerPortalActive) {
+      setPartnerProfile(null);
+      setPartnerProfileLoading(false);
+      return;
+    }
+
+    setPartnerProfileLoading(true);
+    const profilePath = `referralPartners/${user.uid}`;
+    const unsub = onSnapshot(
+      doc(db, 'referralPartners', user.uid),
+      (docSnap) => {
+        if (!docSnap.exists()) {
+          setPartnerProfile(null);
+          setPartnerProfileLoading(false);
+          return;
+        }
+        const d = docSnap.data();
+        const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+        const rawUpdated = d.updatedAt as { toMillis?: () => number } | undefined;
+        const status: ReferralPartnerStatus =
+          d.status === 'active' || d.status === 'paused' ? d.status : 'pending';
+        const payoutMethod: ReferralPayoutMethod =
+          d.payoutMethod === 'bank' || d.payoutMethod === 'store-credit'
+            ? d.payoutMethod
+            : 'momo';
+        setPartnerProfile({
+          uid: String(d.uid ?? docSnap.id),
+          email: String(d.email ?? ''),
+          displayName: String(d.displayName ?? ''),
+          socialHandle: String(d.socialHandle ?? ''),
+          requestedCode: String(d.requestedCode ?? ''),
+          assignedCode: String(d.assignedCode ?? ''),
+          payoutMethod,
+          payoutAccount: String(d.payoutAccount ?? ''),
+          status,
+          createdAtMs:
+            rawCreated && typeof rawCreated.toMillis === 'function'
+              ? rawCreated.toMillis()
+              : Date.now(),
+          updatedAtMs:
+            rawUpdated && typeof rawUpdated.toMillis === 'function'
+              ? rawUpdated.toMillis()
+              : Date.now(),
+        });
+        setPartnerProfileLoading(false);
+      },
+      (error) => {
+        setPartnerProfileLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.GET, profilePath);
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+    return unsub;
+  }, [authReady, user, partnerPortalActive]);
+
+  useEffect(() => {
+    const code = partnerProfile?.assignedCode?.trim() ?? '';
+    if (!authReady || !user || !user.emailVerified || !partnerPortalActive || !code) {
+      setPartnerReferral(null);
+      setPartnerSales([]);
+      setPartnerSalesLoading(false);
+      return;
+    }
+
+    const unsubRef = onSnapshot(
+      doc(db, 'referrals', code),
+      (docSnap) => {
+        if (!docSnap.exists()) {
+          setPartnerReferral(null);
+          return;
+        }
+        const d = docSnap.data();
+        setPartnerReferral({
+          id: docSnap.id,
+          code: String(d.code ?? docSnap.id),
+          influencerName: String(d.influencerName ?? ''),
+          socialHandle: String(d.socialHandle ?? ''),
+          commissionType: d.commissionType === 'fixed' ? 'fixed' : 'percentage',
+          commissionValue: Number(d.commissionValue ?? 0),
+          followerDiscountType:
+            d.followerDiscountType === 'percentage' || d.followerDiscountType === 'fixed'
+              ? d.followerDiscountType
+              : 'none',
+          followerDiscountValue: Number(d.followerDiscountValue ?? 0),
+          payoutNote: String(d.payoutNote ?? ''),
+          active: Boolean(d.active),
+          partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
+        });
+      },
+      () => {
+        setPartnerReferral(null);
+      }
+    );
+
+    setPartnerSalesLoading(true);
+    const salesQuery = query(
+      collection(db, 'referralSales'),
+      where('partnerUid', '==', user.uid)
+    );
+    const unsubSales = onSnapshot(
+      salesQuery,
+      (snapshot) => {
+        const items: ReferralSale[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          const rawCreated = d.createdAt as { toMillis?: () => number } | undefined;
+          const createdAtMs =
+            rawCreated && typeof rawCreated.toMillis === 'function'
+              ? rawCreated.toMillis()
+              : Date.now();
+          const status: ReferralSaleStatus =
+            d.commissionStatus === 'confirmed' ||
+            d.commissionStatus === 'paid' ||
+            d.commissionStatus === 'cancelled'
+              ? d.commissionStatus
+              : 'pending';
+          return {
+            id: docSnap.id,
+            referralCode: String(d.referralCode ?? ''),
+            influencerName: String(d.influencerName ?? ''),
+            orderSummary: String(d.orderSummary ?? ''),
+            orderSubtotal: Number(d.orderSubtotal ?? 0),
+            discountAmount: Number(d.discountAmount ?? 0),
+            netOrderAmount: Number(d.netOrderAmount ?? 0),
+            commissionAmount: Number(d.commissionAmount ?? 0),
+            commissionStatus: status,
+            source: d.source === 'manual' ? 'manual' : 'checkout',
+            customerRef: String(d.customerRef ?? ''),
+            partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
+            createdAtMs,
+          };
+        });
+        items.sort((a, b) => b.createdAtMs - a.createdAtMs);
+        setPartnerSales(items);
+        setPartnerSalesLoading(false);
+      },
+      (error) => {
+        setPartnerSalesLoading(false);
+        try {
+          handleFirestoreError(error, OperationType.LIST, 'referralSales');
+        } catch {
+          // Diagnostic error logged
+        }
+      }
+    );
+
+    return () => {
+      unsubRef();
+      unsubSales();
+    };
+  }, [authReady, user, partnerPortalActive, partnerProfile?.assignedCode]);
 
   useEffect(() => {
     if (!authReady || !isOwner || !adminConsoleActive) {
@@ -1474,7 +1756,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             d.section === 'hamper' ||
             d.section === 'referral' ||
             d.section === 'referral-sale' ||
-            d.section === 'referral-attribution'
+            d.section === 'referral-attribution' ||
+            d.section === 'referral-partner'
               ? d.section
               : 'perfume';
 
@@ -1814,6 +2097,120 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const signOutOwner = useCallback(async () => {
     await signOut(auth);
   }, []);
+
+  const signUpPartnerWithPassword = useCallback(
+    async (displayName: string, email: string, password: string) => {
+      const cleanName = sanitizeText(displayName, 120);
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanName) throw new Error('Enter your full name or creator name.');
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        throw new Error('Enter a valid email address.');
+      }
+      if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters.');
+      }
+      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      await updateProfile(cred.user, { displayName: cleanName });
+      await sendEmailVerification(cred.user);
+      setAuthRevision((r) => r + 1);
+    },
+    []
+  );
+
+  const signInPartnerWithPassword = useCallback(async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Enter your account email address.');
+    }
+    if (!password) {
+      throw new Error('Enter your password.');
+    }
+    await signInWithEmailAndPassword(auth, cleanEmail, password);
+  }, []);
+
+  const signInPartnerWithGoogle = useCallback(async () => {
+    await signInWithPopup(auth, googleProvider);
+  }, []);
+
+  const sendPartnerPasswordReset = useCallback(async (email: string): Promise<string> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Enter your account email address first.');
+    }
+    await sendPasswordResetEmail(auth, cleanEmail);
+    return cleanEmail;
+  }, []);
+
+  const submitPartnerApplication = useCallback(
+    async (input: PartnerApplicationInput): Promise<void> => {
+      const current = auth.currentUser;
+      if (!current || !current.emailVerified || !current.email) {
+        throw new Error('Please sign in and verify your email first.');
+      }
+      const cleanName = sanitizeText(input.displayName, 120);
+      if (!cleanName) throw new Error('Your name is required.');
+      const cleanCode = sanitizePromoCode(input.requestedCode);
+      if (cleanCode.length < 2) {
+        throw new Error('Preferred referral code must be at least 2 letters or numbers.');
+      }
+      const cleanHandle = sanitizeText(input.socialHandle, 100);
+      const cleanAccount = sanitizeText(input.payoutAccount, 160);
+      const path = `referralPartners/${current.uid}`;
+
+      try {
+        await setDoc(doc(db, 'referralPartners', current.uid), {
+          uid: current.uid,
+          email: current.email.toLowerCase(),
+          displayName: cleanName,
+          socialHandle: cleanHandle,
+          requestedCode: cleanCode,
+          assignedCode: '',
+          payoutMethod: input.payoutMethod,
+          payoutAccount: cleanAccount,
+          status: 'pending',
+          ownerUid: current.uid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, path);
+      }
+    },
+    []
+  );
+
+  const updatePartnerProfile = useCallback(
+    async (input: PartnerApplicationInput): Promise<void> => {
+      const current = auth.currentUser;
+      if (!current || !current.emailVerified) {
+        throw new Error('Please sign in and verify your email first.');
+      }
+      const cleanName = sanitizeText(input.displayName, 120);
+      if (!cleanName) throw new Error('Display name is required.');
+      const cleanCode = sanitizePromoCode(input.requestedCode);
+      if (cleanCode.length < 2) {
+        throw new Error('Preferred referral code must be at least 2 letters or numbers.');
+      }
+      const path = `referralPartners/${current.uid}`;
+      try {
+        await setDoc(
+          doc(db, 'referralPartners', current.uid),
+          {
+            displayName: cleanName,
+            socialHandle: sanitizeText(input.socialHandle, 100),
+            requestedCode: cleanCode,
+            payoutMethod: input.payoutMethod,
+            payoutAccount: sanitizeText(input.payoutAccount, 160),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    []
+  );
 
   const lookupCouponByCode = useCallback(
     async (rawCode: string): Promise<{ coupon: Coupon | null; error?: string }> => {
@@ -2534,6 +2931,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         followerDiscountValue,
         payoutNote: sanitizeText(input.payoutNote, 200),
         active: Boolean(input.active),
+        partnerUid:
+          input.partnerUid !== undefined
+            ? input.partnerUid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128)
+            : prevReferral?.partnerUid ?? '',
       };
 
       const mutablePayload = {
@@ -2545,6 +2946,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         followerDiscountValue,
         payoutNote: cleanReferral.payoutNote,
         active: cleanReferral.active,
+        partnerUid: cleanReferral.partnerUid ?? '',
         updatedAt: serverTimestamp(),
       };
 
@@ -2698,6 +3100,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           followerDiscountValue: Number(d.followerDiscountValue ?? 0),
           payoutNote: String(d.payoutNote ?? ''),
           active: Boolean(d.active),
+          partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
         };
       }
 
@@ -2732,6 +3135,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           commissionStatus: 'confirmed',
           source: 'checkout',
           customerRef: sanitizeText(attribution.customerRef, 120),
+          partnerUid: targetReferral.partnerUid ?? '',
           ownerUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -2826,6 +3230,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           followerDiscountValue: 0,
           payoutNote: String(d.payoutNote ?? ''),
           active: Boolean(d.active),
+          partnerUid: typeof d.partnerUid === 'string' ? d.partnerUid : '',
         };
       }
 
@@ -2864,6 +3269,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           commissionStatus: status,
           source: 'manual',
           customerRef: sanitizeText(input.customerRef ?? '', 120),
+          partnerUid: targetReferral.partnerUid ?? '',
           ownerUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -2949,6 +3355,165 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     },
     [referralSales, requireOwnerUid, writeAuditLog]
+  );
+
+  const approvePartnerApplication = useCallback(
+    async (
+      partner: ReferralPartnerProfile,
+      config: ApprovePartnerInput
+    ): Promise<void> => {
+      const ownerUid = requireOwnerUid();
+      const code = sanitizePromoCode(config.code);
+      if (code.length < 2) {
+        throw new Error('Assigned referral code must be at least 2 characters.');
+      }
+      const maxComm = config.commissionType === 'percentage' ? 90 : 50000;
+      const commissionValue = Math.min(
+        maxComm,
+        Math.max(0, Math.round(Number(config.commissionValue || 0) * 100) / 100)
+      );
+      const followerDiscountType = config.followerDiscountType;
+      const maxDisc = followerDiscountType === 'percentage' ? 95 : 50000;
+      const followerDiscountValue =
+        followerDiscountType === 'none'
+          ? 0
+          : Math.min(
+              maxDisc,
+              Math.max(0, Math.round(Number(config.followerDiscountValue || 0) * 100) / 100)
+            );
+
+      const refDoc = doc(db, 'referrals', code);
+      const pubDoc = doc(db, 'publicReferrals', code);
+      const partnerDoc = doc(db, 'referralPartners', partner.uid);
+      const existingRefSnap = await getDoc(refDoc);
+
+      const payoutSummary =
+        sanitizeText(config.payoutNote, 200) ||
+        `${partner.payoutMethod.toUpperCase()}${
+          partner.payoutAccount ? ` · ${partner.payoutAccount}` : ''
+        }`.slice(0, 200);
+
+      try {
+        const batch = writeBatch(db);
+        if (existingRefSnap.exists()) {
+          batch.set(
+            refDoc,
+            {
+              influencerName: sanitizeText(partner.displayName, 120) || code,
+              socialHandle: sanitizeText(partner.socialHandle, 100),
+              commissionType: config.commissionType,
+              commissionValue,
+              followerDiscountType,
+              followerDiscountValue,
+              payoutNote: payoutSummary,
+              active: Boolean(config.active),
+              partnerUid: partner.uid,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } else {
+          batch.set(refDoc, {
+            code,
+            influencerName: sanitizeText(partner.displayName, 120) || code,
+            socialHandle: sanitizeText(partner.socialHandle, 100),
+            commissionType: config.commissionType,
+            commissionValue,
+            followerDiscountType,
+            followerDiscountValue,
+            payoutNote: payoutSummary,
+            active: Boolean(config.active),
+            partnerUid: partner.uid,
+            ownerUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        batch.set(pubDoc, {
+          code,
+          influencerName: sanitizeText(partner.displayName, 120) || code,
+          socialHandle: sanitizeText(partner.socialHandle, 100),
+          followerDiscountType,
+          followerDiscountValue,
+          active: Boolean(config.active),
+          ownerUid,
+          updatedAt: serverTimestamp(),
+        });
+
+        batch.set(
+          partnerDoc,
+          {
+            assignedCode: code,
+            status: config.active ? 'active' : 'paused',
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // Backfill partnerUid on any existing referralSales matching this code so historical earnings display on dashboard
+        const matchingSales = referralSales
+          .filter((s) => s.referralCode === code && s.partnerUid !== partner.uid)
+          .slice(0, 120);
+        for (const s of matchingSales) {
+          batch.set(
+            doc(db, 'referralSales', s.id),
+            { partnerUid: partner.uid, updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        }
+
+        await batch.commit();
+        clearSessionLookupCache(REFERRAL_LOOKUP_CACHE_KEY, code);
+
+        await writeAuditLog({
+          action: 'update',
+          section: 'referral-partner',
+          targetId: partner.uid,
+          targetLabel: `${code} · ${partner.displayName}`,
+          summary: `Approved creator partner "${partner.displayName}" and linked code ${code}`,
+          changes: [
+            `Assigned Code: ${code} (${config.active ? 'Active' : 'Paused'})`,
+            `Commission: ${
+              config.commissionType === 'percentage'
+                ? `${commissionValue}%`
+                : `E${commissionValue}`
+            } · Backfilled ${matchingSales.length} existing sales`,
+          ],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `referralPartners/${partner.uid}`);
+      }
+    },
+    [referralSales, requireOwnerUid, writeAuditLog]
+  );
+
+  const updatePartnerApplicationStatus = useCallback(
+    async (partnerUid: string, status: ReferralPartnerStatus): Promise<void> => {
+      requireOwnerUid();
+      const target = partnerApplications.find((p) => p.uid === partnerUid);
+      const path = `referralPartners/${partnerUid}`;
+      try {
+        await setDoc(
+          doc(db, 'referralPartners', partnerUid),
+          { status, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        await writeAuditLog({
+          action: 'update',
+          section: 'referral-partner',
+          targetId: partnerUid,
+          targetLabel: target ? `${target.displayName} (${target.assignedCode || target.requestedCode})` : partnerUid,
+          summary: `Updated partner portal access status to "${status}"`,
+          changes: [
+            `Partner Status: ${target?.status ?? 'unknown'} → ${status}`,
+          ],
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [partnerApplications, requireOwnerUid, writeAuditLog]
   );
 
   const saveCampaign = useCallback(
@@ -3490,6 +4055,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       refreshAuthUser,
       setOwnerPasswordCredential,
       signOutOwner,
+      signUpPartnerWithPassword,
+      signInPartnerWithPassword,
+      signInPartnerWithGoogle,
+      sendPartnerPasswordReset,
+      setPartnerPortalActive,
+      partnerProfile,
+      partnerProfileLoading,
+      partnerReferral,
+      partnerSales,
+      partnerSalesLoading,
+      submitPartnerApplication,
+      updatePartnerProfile,
+      partnerApplications,
+      partnerApplicationsLoading,
+      approvePartnerApplication,
+      updatePartnerApplicationStatus,
       perfumes,
       livePerfumes,
       usingSampleFallback,
@@ -3570,6 +4151,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       refreshAuthUser,
       setOwnerPasswordCredential,
       signOutOwner,
+      signUpPartnerWithPassword,
+      signInPartnerWithPassword,
+      signInPartnerWithGoogle,
+      sendPartnerPasswordReset,
+      partnerProfile,
+      partnerProfileLoading,
+      partnerReferral,
+      partnerSales,
+      partnerSalesLoading,
+      submitPartnerApplication,
+      updatePartnerProfile,
+      partnerApplications,
+      partnerApplicationsLoading,
+      approvePartnerApplication,
+      updatePartnerApplicationStatus,
       perfumes,
       livePerfumes,
       usingSampleFallback,

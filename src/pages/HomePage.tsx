@@ -219,7 +219,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onSelectBranchAndBasket,
   onAddWeeklyPackToBasket,
 }) => {
-  const { perfumes, campaign, campaignLoading, catalogueLoading } = useStore();
+  const { perfumes, campaign, campaignLoading, catalogueLoading, usingSampleHampers } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
   const availablePerfumes = useMemo(
     () => perfumes.filter((p) => p.availability !== 'Out of Stock'),
@@ -1613,20 +1613,26 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="sm:col-span-7 space-y-3">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FACC15]">
                 <Gift className="w-3.5 h-3.5" />
-                <span>Curated Gifting</span>
+                <span>
+                  {usingSampleHampers ? 'Curated Gifting · Coming Soon' : 'Curated Gifting'}
+                </span>
               </span>
               <h3 className="text-xl sm:text-2xl font-bold text-white">
                 Luxury Perfume Gift Hampers
               </h3>
               <p className="text-xs sm:text-sm text-white/75 leading-relaxed">
-                Ready-to-gift satin boxes pairing bottles, body mists, decants &amp; personal cards for birthdays, anniversaries &amp; celebrations.
+                {usingSampleHampers
+                  ? 'Preview our upcoming luxury satin boxes pairing bottles, body mists & personal cards — or request a custom box on WhatsApp.'
+                  : 'Ready-to-gift satin boxes pairing bottles, body mists, decants & personal cards for birthdays, anniversaries & celebrations.'}
               </p>
               <button
                 type="button"
                 onClick={() => onNavigate('gifts')}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-wider"
               >
-                <span>Explore Gift Hampers</span>
+                <span>
+                  {usingSampleHampers ? 'Preview Gift Hampers' : 'Explore Gift Hampers'}
+                </span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
