@@ -406,6 +406,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    document.title = 'AuraHut Co.- Scents Just For You';
     const metaId = 'aurahut-private-robots-meta';
     const existing = document.getElementById(metaId);
     if (currentPage === 'admin') {

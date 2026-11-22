@@ -481,7 +481,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         {heroBooting ? (
           <div
             aria-label="Loading featured collection"
-            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[430px] sm:min-h-[460px] lg:min-h-[480px] flex items-center"
+            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
           >
             <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
               <div className="lg:col-span-6 space-y-5 flex flex-col items-center lg:items-start">
@@ -518,7 +518,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               }
               setHeroTouchStartX(null);
             }}
-            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14"
+            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
           >
             {/* Subtle Warm Gold & Monochrome Ambient Rim Lighting */}
             <div
@@ -568,9 +568,9 @@ export const HomePage: React.FC<HomePageProps> = ({
               const activeBranchLabel = getBranchAvailabilityLabel(activeSlideProduct);
 
               return (
-                <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+                <div className="relative z-10 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
                   {/* Left Column — Campaign Headline, Special Countdown, Spotlight Prices & Buy Now */}
-                  <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start">
+                  <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start min-w-0">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
                       {campaign.enabled && campaign.badgeText
                         ? campaign.badgeText
@@ -586,24 +586,24 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <HeroCountdown endsAt={campaign.endsAt} />
 
                     {/* Spotlight Perfume Name, Branch Tag & Transparent Size Prices */}
-                    <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left">
-                      <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
-                        <p className="text-xs font-semibold text-white/90 truncate">
+                    <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left min-h-[46px]">
+                      <div className="flex items-center justify-center lg:justify-start gap-2 min-w-0 h-[22px]">
+                        <p className="text-xs font-semibold text-white/90 truncate min-w-0">
                           {activeSlideProduct.name}{' '}
                           <span className="text-white/55 font-normal">
                             · {activeSlideProduct.brand}
                           </span>
                         </p>
                         {activeSlideProduct.availability !== 'Out of Stock' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/12 border border-white/25 text-[10px] font-semibold text-white">
-                            <MapPin className="w-2.5 h-2.5 text-[#FACC15]" aria-hidden="true" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/12 border border-white/25 text-[10px] font-semibold text-white shrink-0 whitespace-nowrap">
+                            <MapPin className="w-2.5 h-2.5 text-[#FACC15] shrink-0" aria-hidden="true" />
                             <span>{activeBranchLabel}</span>
                           </span>
                         )}
                       </div>
-                      {activeSizes.length > 0 && (
-                        <p className="text-xs text-white/75 tabular-nums">
-                          {activeSizes.map((s, idx) => {
+                      <p className="text-xs text-white/75 tabular-nums truncate min-h-[18px]">
+                        {activeSizes.length > 0 ? (
+                          activeSizes.map((s, idx) => {
                             const eff = getEffectiveUnitPrice(
                               s.price,
                               activeSlideProduct.onSpecial,
@@ -620,9 +620,11 @@ export const HomePage: React.FC<HomePageProps> = ({
                                 )}
                               </React.Fragment>
                             );
-                          })}
-                        </p>
-                      )}
+                          })
+                        ) : (
+                          <span className="text-white/55">Tap Buy Now for available bottle sizes</span>
+                        )}
+                      </p>
                     </div>
 
                     {/* Hero Actions: Buy Now & Explore Special */}
