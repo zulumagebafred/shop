@@ -81,11 +81,11 @@ export const AdminPWAInstallButton: React.FC<AdminPWAInstallButtonProps> = ({
           aria-modal="true"
           aria-label="Install AuraHut Admin App"
           onClick={() => setShowGuideModal(false)}
-          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-white text-[#0A0A0A] border border-[#E5E5E5] rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5"
+            className="w-full max-w-md bg-white text-[#0A0A0A] border border-[#E5E5E5] rounded-2xl sm:rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 max-h-[90dvh] overflow-y-auto"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -174,10 +174,10 @@ export const AdminOfflineIndicator: React.FC = () => {
   return (
     <div
       role="status"
-      className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full bg-[#0A0A0A] border border-[#FACC15] px-4 py-2 text-xs font-semibold text-white shadow-xl"
+      className="fixed bottom-3 left-3 sm:bottom-4 sm:left-4 z-50 max-w-[calc(100vw-1.5rem)] flex items-center gap-2 rounded-full bg-[#0A0A0A] border border-[#FACC15] px-3.5 sm:px-4 py-2 text-xs font-semibold text-white shadow-xl"
     >
       <WifiOff className="w-3.5 h-3.5 text-[#FACC15] shrink-0" aria-hidden="true" />
-      <span>Offline Mode — Viewing cached admin data</span>
+      <span className="truncate">Offline Mode — Cached admin view</span>
     </div>
   );
 };
