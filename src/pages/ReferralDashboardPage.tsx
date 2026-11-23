@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  CheckCircle2,
   Clock,
   Copy,
   Link2,
@@ -88,6 +89,33 @@ export const ReferralDashboardPage: React.FC<ReferralDashboardPageProps> = ({
   }, [partnerProfile, user]);
 
   const activeCode = partnerProfile?.assignedCode?.trim() ?? '';
+
+  const [approvalBannerDismissed, setApprovalBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!partnerProfile?.uid || !activeCode) {
+      setApprovalBannerDismissed(false);
+      return;
+    }
+    try {
+      const ackKey = `aurahut_partner_approved_ack_${partnerProfile.uid}_${activeCode}`;
+      setApprovalBannerDismissed(localStorage.getItem(ackKey) === '1');
+    } catch {
+      setApprovalBannerDismissed(false);
+    }
+  }, [partnerProfile?.uid, activeCode]);
+
+  const handleDismissApprovalBanner = () => {
+    setApprovalBannerDismissed(true);
+    if (!partnerProfile?.uid || !activeCode) return;
+    try {
+      localStorage.setItem(
+        `aurahut_partner_approved_ack_${partnerProfile.uid}_${activeCode}`,
+        '1'
+      );
+    } catch {
+      // Ignore storage failures
+    }
+  };
 
   const stats = useMemo(() => {
     let salesCount = 0;
@@ -599,6 +627,48 @@ export const ReferralDashboardPage: React.FC<ReferralDashboardPageProps> = ({
             >
               Update Application
             </button>
+          </section>
+        )}
+
+        {partnerProfile.status === 'active' && activeCode && !approvalBannerDismissed && (
+          <section className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-3xl p-6 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <p className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#065F46]">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>Application Approved · Partner Account Active</span>
+              </p>
+              <h2 className="text-lg sm:text-xl font-bold text-[#0A0A0A]">
+                You&apos;re approved! Share code{' '}
+                <span className="font-mono">{activeCode}</span> to start earning
+              </h2>
+              <p className="text-xs sm:text-sm text-[#065F46]/90 max-w-2xl leading-relaxed">
+                Confirmed for <strong className="text-[#0A0A0A]">{partnerProfile.email}</strong>.
+                {partnerReferral
+                  ? ` Your commission rate is ${
+                      partnerReferral.commissionType === 'percentage'
+                        ? `${partnerReferral.commissionValue}%`
+                        : formatPrice(partnerReferral.commissionValue)
+                    } per verified sale.`
+                  : ' Your custom storefront referral link and live ledger are ready below.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="px-4 py-2.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] text-xs font-semibold uppercase tracking-wider inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedLink ? 'Copied' : 'Copy Referral Link'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissApprovalBanner}
+                className="px-3.5 py-2.5 text-xs font-medium text-[#065F46] underline"
+              >
+                Dismiss
+              </button>
+            </div>
           </section>
         )}
 

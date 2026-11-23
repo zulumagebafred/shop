@@ -23,7 +23,7 @@ export const siteConfig = {
    * Left intentionally blank until the confirmed AuraHut Co. business number is supplied.
    */
   whatsapp: {
-    businessNumber: '79774262',
+    businessNumber: '76223903',
     displayLabel: 'Configure WhatsApp Number in src/config/siteConfig.ts',
     defaultGreeting: 'Hello AuraHut Co., I would like to place a fragrance order:',
   },

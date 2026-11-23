@@ -17,6 +17,7 @@ import {
   Link2,
   Lock,
   LogOut,
+  Mail,
   MailCheck,
   Package,
   Percent,
@@ -69,6 +70,11 @@ import {
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 import { deriveAdminUsername } from '../utils/auditDiff';
+import {
+  PartnerApprovalEmailContent,
+  dispatchPartnerApprovalEmail,
+  isAutoPartnerEmailConfigured,
+} from '../utils/partnerEmail';
 import { sanitizePromoCode } from '../utils/sanitize';
 import {
   ALL_BRANCH_IDS,
@@ -536,6 +542,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   >({});
   const [approvingPartnerUid, setApprovingPartnerUid] = useState<string | null>(null);
   const [updatingPartnerStatusUid, setUpdatingPartnerStatusUid] = useState<string | null>(null);
+  const [sendingEmailPartnerUid, setSendingEmailPartnerUid] = useState<string | null>(null);
+  const [partnerEmailNotices, setPartnerEmailNotices] = useState<
+    Record<
+      string,
+      {
+        status: 'sent' | 'manual-ready' | 'failed';
+        error?: string;
+        content: PartnerApprovalEmailContent;
+        copied?: boolean;
+      }
+    >
+  >({});
 
   const getPartnerDraft = (partner: ReferralPartnerProfile) => {
     const existing = partnerDrafts[partner.uid];
@@ -5926,43 +5944,114 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     </p>
                                   </div>
 
-                                  {app.assignedCode && app.status !== 'pending' && (
-                                    <button
-                                      type="button"
-                                      disabled={isToggling}
-                                      onClick={async () => {
-                                        const nextStatus: ReferralPartnerStatus =
-                                          app.status === 'active' ? 'paused' : 'active';
-                                        setUpdatingPartnerStatusUid(app.uid);
-                                        try {
-                                          await updatePartnerApplicationStatus(app.uid, nextStatus);
-                                          onNotify(
-                                            nextStatus === 'active'
-                                              ? 'Partner Portal Activated'
-                                              : 'Partner Portal Paused',
-                                            `${app.displayName} portal access is now ${nextStatus}.`
+                                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                    {app.status === 'active' && app.assignedCode && (
+                                      <button
+                                        type="button"
+                                        disabled={sendingEmailPartnerUid === app.uid}
+                                        onClick={async () => {
+                                          const linkedRef = referrals.find(
+                                            (r) => r.code === app.assignedCode
                                           );
-                                        } catch (err) {
-                                          onNotify(
-                                            'Status Update Failed',
-                                            extractReadableError(
-                                              err,
-                                              'Could not update partner access status.'
-                                            )
-                                          );
-                                        } finally {
-                                          setUpdatingPartnerStatusUid(null);
-                                        }
-                                      }}
-                                      className="px-3 py-1.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-medium shrink-0 disabled:opacity-60"
-                                    >
-                                      {isToggling
-                                        ? 'Saving...'
-                                        : app.status === 'active'
-                                        ? 'Pause Portal'
-                                        : 'Reactivate Portal'}
-                                    </button>
-                                  )}
+                                          setSendingEmailPartnerUid(app.uid);
+                                          try {
+                                            const result = await dispatchPartnerApprovalEmail({
+                                              toEmail: app.email,
+                                              displayName: app.displayName,
+                                              assignedCode: app.assignedCode,
+                                              commissionType:
+                                                linkedRef?.commissionType ?? draft.commissionType,
+                                              commissionValue:
+                                                linkedRef?.commissionValue ??
+                                                Number(draft.commissionValue || 0),
+                                              followerDiscountType:
+                                                linkedRef?.followerDiscountType ??
+                                                draft.followerDiscountType,
+                                              followerDiscountValue:
+                                                linkedRef?.followerDiscountValue ??
+                                                Number(draft.followerDiscountValue || 0),
+                                            });
+                                            if (result.status === 'sent') {
+                                              setPartnerEmailNotices((prev) => ({
+                                                ...prev,
+                                                [app.uid]: {
+                                                  status: 'sent',
+                                                  content: result.content,
+                                                },
+                                              }));
+                                              onNotify(
+                                                'Confirmation Email Sent',
+                                                `Approval email sent to ${app.email}.`
+                                              );
+                                            } else {
+                                              setPartnerEmailNotices((prev) => ({
+                                                ...prev,
+                                                [app.uid]: {
+                                                  status:
+                                                    result.status === 'failed'
+                                                      ? 'failed'
+                                                      : 'manual-ready',
+                                                  error:
+                                                    result.status === 'failed'
+                                                      ? result.error
+                                                      : undefined,
+                                                  content: result.content,
+                                                },
+                                              }));
+                                            }
+                                          } finally {
+                                            setSendingEmailPartnerUid(null);
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-medium inline-flex items-center gap-1.5 shrink-0 disabled:opacity-60"
+                                      >
+                                        <Mail className="w-3.5 h-3.5" />
+                                        <span>
+                                          {sendingEmailPartnerUid === app.uid
+                                            ? 'Sending...'
+                                            : 'Email Confirmation'}
+                                        </span>
+                                      </button>
+                                    )}
+
+                                    {app.assignedCode && app.status !== 'pending' && (
+                                      <button
+                                        type="button"
+                                        disabled={isToggling}
+                                        onClick={async () => {
+                                          const nextStatus: ReferralPartnerStatus =
+                                            app.status === 'active' ? 'paused' : 'active';
+                                          setUpdatingPartnerStatusUid(app.uid);
+                                          try {
+                                            await updatePartnerApplicationStatus(app.uid, nextStatus);
+                                            onNotify(
+                                              nextStatus === 'active'
+                                                ? 'Partner Portal Activated'
+                                                : 'Partner Portal Paused',
+                                              `${app.displayName} portal access is now ${nextStatus}.`
+                                            );
+                                          } catch (err) {
+                                            onNotify(
+                                              'Status Update Failed',
+                                              extractReadableError(
+                                                err,
+                                                'Could not update partner access status.'
+                                              )
+                                            );
+                                          } finally {
+                                            setUpdatingPartnerStatusUid(null);
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-medium shrink-0 disabled:opacity-60"
+                                      >
+                                        {isToggling
+                                          ? 'Saving...'
+                                          : app.status === 'active'
+                                          ? 'Pause Portal'
+                                          : 'Reactivate Portal'}
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-2 border-t border-[#E5E5E5] items-end">
@@ -6059,23 +6148,64 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       onClick={async () => {
                                         setApprovingPartnerUid(app.uid);
                                         try {
+                                          const commVal = Number(draft.commissionValue || 0);
+                                          const discVal = Number(
+                                            draft.followerDiscountValue || 0
+                                          );
                                           await approvePartnerApplication(app, {
                                             code: draft.code,
                                             commissionType: draft.commissionType,
-                                            commissionValue: Number(draft.commissionValue || 0),
+                                            commissionValue: commVal,
                                             followerDiscountType: draft.followerDiscountType,
-                                            followerDiscountValue: Number(
-                                              draft.followerDiscountValue || 0
-                                            ),
+                                            followerDiscountValue: discVal,
                                             payoutNote: `${app.payoutMethod.toUpperCase()}${
                                               app.payoutAccount ? ` · ${app.payoutAccount}` : ''
                                             }`,
                                             active: draft.active,
                                           });
-                                          onNotify(
-                                            'Partner Approved & Linked',
-                                            `${app.displayName} is now linked to ${draft.code}.`
-                                          );
+
+                                          const emailResult = await dispatchPartnerApprovalEmail({
+                                            toEmail: app.email,
+                                            displayName: app.displayName,
+                                            assignedCode: draft.code,
+                                            commissionType: draft.commissionType,
+                                            commissionValue: commVal,
+                                            followerDiscountType: draft.followerDiscountType,
+                                            followerDiscountValue: discVal,
+                                          });
+
+                                          if (emailResult.status === 'sent') {
+                                            setPartnerEmailNotices((prev) => ({
+                                              ...prev,
+                                              [app.uid]: {
+                                                status: 'sent',
+                                                content: emailResult.content,
+                                              },
+                                            }));
+                                            onNotify(
+                                              'Partner Approved & Emailed',
+                                              `Code ${draft.code} activated and confirmation sent to ${app.email}.`
+                                            );
+                                          } else {
+                                            setPartnerEmailNotices((prev) => ({
+                                              ...prev,
+                                              [app.uid]: {
+                                                status:
+                                                  emailResult.status === 'failed'
+                                                    ? 'failed'
+                                                    : 'manual-ready',
+                                                error:
+                                                  emailResult.status === 'failed'
+                                                    ? emailResult.error
+                                                    : undefined,
+                                                content: emailResult.content,
+                                              },
+                                            }));
+                                            onNotify(
+                                              'Partner Approved · Send Email',
+                                              `${app.displayName} linked to ${draft.code}. Tap "Open Email App" below to confirm via ${app.email}.`
+                                            );
+                                          }
                                         } catch (err) {
                                           onNotify(
                                             'Approval Failed',
@@ -6098,6 +6228,92 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     </button>
                                   </div>
                                 </div>
+
+                                {partnerEmailNotices[app.uid] && (() => {
+                                  const notice = partnerEmailNotices[app.uid];
+                                  return (
+                                    <div
+                                      className={`rounded-2xl p-3.5 border text-xs space-y-2.5 ${
+                                        notice.status === 'sent'
+                                          ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46]'
+                                          : 'bg-[#FFFBEB] border-[#FCD34D] text-[#78350F]'
+                                      }`}
+                                    >
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 font-semibold">
+                                          <MailCheck className="w-4 h-4 shrink-0" />
+                                          <span>
+                                            {notice.status === 'sent'
+                                              ? `Approval email automatically sent to ${notice.content.toEmail}`
+                                              : notice.status === 'failed'
+                                              ? `Auto-email failed (${notice.error}). Send manually to ${notice.content.toEmail}:`
+                                              : `Ready to email confirmation to ${notice.content.toEmail}`}
+                                          </span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setPartnerEmailNotices((prev) => {
+                                              const next = { ...prev };
+                                              delete next[app.uid];
+                                              return next;
+                                            })
+                                          }
+                                          className="text-[11px] underline self-start sm:self-auto"
+                                        >
+                                          Dismiss
+                                        </button>
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <a
+                                          href={notice.content.mailtoUrl}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] font-semibold"
+                                        >
+                                          <Mail className="w-3.5 h-3.5 text-[#FACC15]" />
+                                          <span>Open Email App</span>
+                                        </a>
+
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              await navigator.clipboard.writeText(
+                                                `Subject: ${notice.content.subject}\n\n${notice.content.body}`
+                                              );
+                                              setPartnerEmailNotices((prev) => ({
+                                                ...prev,
+                                                [app.uid]: { ...notice, copied: true },
+                                              }));
+                                              onNotify(
+                                                'Email Copied',
+                                                `Approval email for ${notice.content.toEmail} copied to clipboard.`
+                                              );
+                                            } catch {
+                                              // Ignore clipboard errors
+                                            }
+                                          }}
+                                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#D4D4D4] hover:border-[#0A0A0A] text-[#0A0A0A] font-medium"
+                                        >
+                                          {notice.copied ? (
+                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                          ) : (
+                                            <Copy className="w-3.5 h-3.5" />
+                                          )}
+                                          <span>
+                                            {notice.copied ? 'Email Copied' : 'Copy Email Text'}
+                                          </span>
+                                        </button>
+
+                                        {!isAutoPartnerEmailConfigured() && notice.status !== 'sent' && (
+                                          <span className="text-[11px] text-[#78350F]/85">
+                                            Tip: Add EmailJS keys in <span className="font-mono">.env</span> for automatic inbox delivery.
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             );
                           })}
