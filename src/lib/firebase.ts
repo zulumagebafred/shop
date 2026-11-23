@@ -1,9 +1,4 @@
 import { initializeApp } from 'firebase/app';
-import {
-  AppCheck,
-  ReCaptchaV3Provider,
-  initializeAppCheck,
-} from 'firebase/app-check';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   Firestore,
@@ -30,39 +25,6 @@ export function isAuthorizedAdminEmail(email: string | null | undefined): boolea
 }
 
 const app = initializeApp(firebaseConfig);
-
-function getRecaptchaSiteKey(): string {
-  const envKey =
-    typeof import.meta !== 'undefined' && import.meta.env?.VITE_RECAPTCHA_SITE_KEY
-      ? String(import.meta.env.VITE_RECAPTCHA_SITE_KEY).trim()
-      : '';
-  const configKey = String(
-    (firebaseConfig as { recaptchaSiteKey?: string }).recaptchaSiteKey ?? ''
-  ).trim();
-  return envKey || configKey;
-}
-
-function initOptionalAppCheck(): AppCheck | null {
-  if (typeof window === 'undefined') return null;
-  const siteKey = getRecaptchaSiteKey();
-  if (!siteKey) return null;
-  try {
-    return initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(siteKey),
-      isTokenAutoRefreshEnabled: true,
-    });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Firebase App Check client instance (monitoring-safe: initializes only when
- * a reCAPTCHA v3 site key is supplied via VITE_RECAPTCHA_SITE_KEY or
- * firebase-applet-config.json, and fails open if blocked on a client browser).
- */
-export const appCheck: AppCheck | null = initOptionalAppCheck();
-export const appCheckConfigured: boolean = Boolean(getRecaptchaSiteKey());
 
 function createFirestoreClient(): Firestore {
   try {

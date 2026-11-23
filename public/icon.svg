@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#0A0A0A" />
+  <rect x="24" y="24" width="464" height="464" rx="92" stroke="#FACC15" stroke-opacity="0.35" stroke-width="6" />
+  <!-- Geometric quatrefoil inspired by the AuraHut Co. emblem -->
+  <g transform="translate(256 226)" fill="#FFFFFF">
+    <path d="M0 -116 C38 -116 62 -92 62 -54 C62 -24 22 0 0 0 C-22 0 -62 -24 -62 -54 C-62 -92 -38 -116 0 -116 Z" />
+    <path d="M116 0 C116 38 92 62 54 62 C24 62 0 22 0 0 C0 -22 24 -62 54 -62 C92 -62 116 -38 116 0 Z" />
+    <path d="M0 116 C-38 116 -62 92 -62 54 C-62 24 -22 0 0 0 C22 0 62 24 62 54 C62 92 38 116 0 116 Z" />
+    <path d="M-116 0 C-116 -38 -92 -62 -54 -62 C-24 -62 0 -22 0 0 C0 22 -24 62 -54 62 C-92 62 -116 38 -116 0 Z" />
+    <circle cx="0" cy="-56" r="18" fill="#0A0A0A" />
+    <circle cx="56" cy="0" r="18" fill="#0A0A0A" />
+    <circle cx="0" cy="56" r="18" fill="#0A0A0A" />
+    <circle cx="-56" cy="0" r="18" fill="#0A0A0A" />
+    <circle cx="0" cy="0" r="14" fill="#FACC15" />
+  </g>
+  <rect x="148" y="380" width="216" height="52" rx="26" fill="#FACC15" />
+  <text x="256" y="414" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="800" letter-spacing="5" fill="#0A0A0A">ADMIN</text>
+</svg>

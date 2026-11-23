@@ -34,6 +34,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { AdminOfflineIndicator, AdminPWAInstallButton } from '../components/AdminPWAControls';
 import { ResilientImage } from '../components/ResilientImage';
 import { formatPrice, getConfiguredPortalSlug, siteConfig } from '../config/siteConfig';
 import { PerfumeInput, useStore } from '../context/StoreContext';
@@ -2086,58 +2087,69 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
           </div>
 
-          {user && (
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-              <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-[260px]">
-                <span className="text-[11px] font-bold text-[#FACC15] truncate">
-                  @{currentAdminUsername}
-                </span>
-                <span className="text-[11px] text-white/65 truncate">
-                  {user.email}
-                </span>
-              </div>
-              {isOwner && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCopyPrivatePortalLink}
-                    title="Copy private owner portal link"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
-                  >
-                    {copiedPortalLink ? (
-                      <Check className="w-3.5 h-3.5 text-[#FACC15]" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">
-                      {copiedPortalLink ? 'Copied' : 'Portal Link'}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPasswordModalError(null);
-                      setNewOwnerPassword('');
-                      setConfirmOwnerPassword('');
-                      setPasswordModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Password</span>
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={signOutOwner}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-white/30 hover:border-white text-xs font-medium text-white rounded-full transition-colors"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <AdminPWAInstallButton
+              variant="header"
+              onInstalled={() =>
+                onNotify(
+                  'Admin App Installed',
+                  'AuraHut Co. Owner Admin is now ready on your device.'
+                )
+              }
+            />
+            {user && (
+              <>
+                <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-[260px]">
+                  <span className="text-[11px] font-bold text-[#FACC15] truncate">
+                    @{currentAdminUsername}
+                  </span>
+                  <span className="text-[11px] text-white/65 truncate">
+                    {user.email}
+                  </span>
+                </div>
+                {isOwner && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCopyPrivatePortalLink}
+                      title="Copy private owner portal link"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
+                    >
+                      {copiedPortalLink ? (
+                        <Check className="w-3.5 h-3.5 text-[#FACC15]" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span className="hidden sm:inline">
+                        {copiedPortalLink ? 'Copied' : 'Portal Link'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordModalError(null);
+                        setNewOwnerPassword('');
+                        setConfirmOwnerPassword('');
+                        setPasswordModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-white/25 hover:border-[#FACC15] hover:text-[#FACC15] text-xs font-medium text-white rounded-full transition-colors"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Password</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={signOutOwner}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-white/30 hover:border-white text-xs font-medium text-white rounded-full transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -2264,6 +2276,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {signingInPassword ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
+
+            <AdminPWAInstallButton
+              variant="card"
+              onInstalled={() =>
+                onNotify(
+                  'Admin App Installed',
+                  'AuraHut Co. Owner Admin is now ready on your device.'
+                )
+              }
+            />
 
             <button
               type="button"
@@ -7996,6 +8018,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </>
         )}
       </AnimatePresence>
+      <AdminOfflineIndicator />
     </div>
   );
 };

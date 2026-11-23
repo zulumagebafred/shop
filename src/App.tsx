@@ -201,9 +201,26 @@ function isPrivatePortalLocation(pathname: string, hash: string): boolean {
   return matchesPrivatePortalSlug(hash) || matchesPrivatePortalSlug(pathname);
 }
 
+function isAdminPwaLaunchLocation(search: string, hash: string): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(search);
+  if (params.get('app')?.toLowerCase() === 'admin') return true;
+  const lowerHash = hash.toLowerCase();
+  if (lowerHash === '#referral-dashboard' || lowerHash === '#referral-auth' || lowerHash === '#partners') {
+    return false;
+  }
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+  return isStandalone && !params.get('ref');
+}
+
 function detectInitialPage(): AppPage {
   if (typeof window === 'undefined') return 'home';
-  if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
+  if (
+    isPrivatePortalLocation(window.location.pathname, window.location.hash) ||
+    isAdminPwaLaunchLocation(window.location.search, window.location.hash)
+  ) {
     return 'admin';
   }
   const hash = window.location.hash.toLowerCase();
@@ -386,7 +403,10 @@ function AppContent() {
 
   useEffect(() => {
     const syncPortalFromLocation = () => {
-      if (isPrivatePortalLocation(window.location.pathname, window.location.hash)) {
+      if (
+        isPrivatePortalLocation(window.location.pathname, window.location.hash) ||
+        new URLSearchParams(window.location.search).get('app')?.toLowerCase() === 'admin'
+      ) {
         setCurrentPage('admin');
         return;
       }
@@ -406,7 +426,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    document.title = 'AuraHut Co.- Scents Just For You';
+    document.title =
+      currentPage === 'admin'
+        ? 'AuraHut Co. Owner Admin'
+        : 'AuraHut Co.- Scents Just For You';
     const metaId = 'aurahut-private-robots-meta';
     const existing = document.getElementById(metaId);
     if (currentPage === 'admin') {
@@ -533,6 +556,7 @@ function AppContent() {
         window.history.replaceState(null, '', '#referral-dashboard');
       } else if (
         isPrivatePortalLocation(window.location.pathname, window.location.hash) ||
+        new URLSearchParams(window.location.search).get('app')?.toLowerCase() === 'admin' ||
         ['#referral-auth', '#referral-dashboard', '#partners'].includes(
           window.location.hash.toLowerCase()
         )
