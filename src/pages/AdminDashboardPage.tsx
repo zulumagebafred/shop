@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { AdminOfflineIndicator, AdminPWAInstallButton } from '../components/AdminPWAControls';
 import { ResilientImage } from '../components/ResilientImage';
+import { SearchablePerfumeSelect } from '../components/SearchablePerfumeSelect';
 import { formatPrice, getConfiguredPortalSlug, siteConfig } from '../config/siteConfig';
 import { PerfumeInput, useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, houseImages } from '../data/catalogue';
@@ -3468,6 +3469,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               const chosenCandidate =
                                 activeAudienceLineup.under500Picks[slotIdx];
                               const chosenId = chosenCandidate?.product.id ?? '';
+                              const pickedElsewhereIds = new Set(
+                                activeAudienceLineup.under500Picks
+                                  .filter((_, idx) => idx !== slotIdx)
+                                  .map((c) => c.product.id)
+                              );
                               return (
                                 <div
                                   key={`${weeklyAudienceTab}-u500-slot-${slotIdx}`}
@@ -3476,62 +3482,51 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
                                     For {weeklyAudienceTab} Under E500 Option {slotIdx + 1}
                                   </label>
-                                  <div className="flex items-center gap-2.5">
-                                    {chosenCandidate && (
-                                      <div className="w-10 h-10 rounded-lg bg-white border border-[#E5E5E5] overflow-hidden shrink-0">
-                                        <ResilientImage
-                                          src={chosenCandidate.product.image}
-                                          alt={chosenCandidate.product.name}
-                                          className="w-full h-full object-cover"
-                                        />
-                                      </div>
-                                    )}
-                                    <select
-                                      value={chosenId}
-                                      onChange={(e) => {
-                                        const nextId = e.target.value;
-                                        setWeeklyDraft((prev) => {
-                                          const currentIds =
-                                            activeAudienceLineup.under500Picks.map(
-                                              (c) => c.product.id
-                                            );
-                                          currentIds[slotIdx] = nextId;
-                                          const next500: string[] = [];
-                                          const seen = new Set<string>();
-                                          // Keep clicked slot priority first if duplicate existed in another slot
-                                          for (let i = 0; i < currentIds.length; i += 1) {
-                                            const id = currentIds[i];
-                                            if (!id) continue;
-                                            if (i !== slotIdx && id === nextId) continue;
-                                            if (!seen.has(id)) {
-                                              seen.add(id);
-                                              next500.push(id);
-                                            }
+                                  <SearchablePerfumeSelect
+                                    value={chosenId}
+                                    ariaLabel={`Select For ${weeklyAudienceTab} Under E500 Option ${slotIdx + 1}`}
+                                    searchPlaceholder="Search perfume name or house..."
+                                    options={activeAudienceLineup.under500Pool.map((opt) => ({
+                                      product: opt.product,
+                                      detailLabel:
+                                        opt.tierPrice !== null
+                                          ? `${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                          : undefined,
+                                      badgeText: pickedElsewhereIds.has(opt.product.id)
+                                        ? 'Another slot'
+                                        : undefined,
+                                    }))}
+                                    onChange={(nextId) => {
+                                      setWeeklyDraft((prev) => {
+                                        const currentIds =
+                                          activeAudienceLineup.under500Picks.map(
+                                            (c) => c.product.id
+                                          );
+                                        currentIds[slotIdx] = nextId;
+                                        const next500: string[] = [];
+                                        const seen = new Set<string>();
+                                        for (let i = 0; i < currentIds.length; i += 1) {
+                                          const id = currentIds[i];
+                                          if (!id) continue;
+                                          if (i !== slotIdx && id === nextId) continue;
+                                          if (!seen.has(id)) {
+                                            seen.add(id);
+                                            next500.push(id);
                                           }
-                                          const capped500 = next500.slice(0, 3);
-                                          const next800 = activeAudienceLineup.under800Picks
-                                            .map((c) => c.product.id)
-                                            .filter((id) => !capped500.includes(id));
-                                          return {
-                                            ...prev,
-                                            weekKey: resolvedWeeklyDraft.weekKey,
-                                            [key500]: capped500,
-                                            [key800]: next800,
-                                          };
-                                        });
-                                      }}
-                                      className="flex-1 min-w-0 w-full px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
-                                    >
-                                      {activeAudienceLineup.under500Pool.map((opt) => (
-                                        <option key={opt.product.id} value={opt.product.id}>
-                                          {opt.product.name} ({opt.product.brand} · {opt.product.category})
-                                          {opt.tierPrice !== null
-                                            ? ` · ${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
-                                            : ''}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                        }
+                                        const capped500 = next500.slice(0, 3);
+                                        const next800 = activeAudienceLineup.under800Picks
+                                          .map((c) => c.product.id)
+                                          .filter((id) => !capped500.includes(id));
+                                        return {
+                                          ...prev,
+                                          weekKey: resolvedWeeklyDraft.weekKey,
+                                          [key500]: capped500,
+                                          [key800]: next800,
+                                        };
+                                      });
+                                    }}
+                                  />
                                 </div>
                               );
                             })}
@@ -3554,6 +3549,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               const chosenCandidate =
                                 activeAudienceLineup.under800Picks[slotIdx];
                               const chosenId = chosenCandidate?.product.id ?? '';
+                              const pickedElsewhereIds = new Set(
+                                activeAudienceLineup.under800Picks
+                                  .filter((_, idx) => idx !== slotIdx)
+                                  .map((c) => c.product.id)
+                              );
                               return (
                                 <div
                                   key={`${weeklyAudienceTab}-u800-slot-${slotIdx}`}
@@ -3562,60 +3562,50 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
                                     For {weeklyAudienceTab} Under E800 Slot {slotIdx + 1}
                                   </label>
-                                  <div className="flex items-center gap-2.5">
-                                    {chosenCandidate && (
-                                      <div className="w-10 h-10 rounded-lg bg-white border border-[#E5E5E5] overflow-hidden shrink-0">
-                                        <ResilientImage
-                                          src={chosenCandidate.product.image}
-                                          alt={chosenCandidate.product.name}
-                                          className="w-full h-full object-cover"
-                                        />
-                                      </div>
-                                    )}
-                                    <select
-                                      value={chosenId}
-                                      onChange={(e) => {
-                                        const nextId = e.target.value;
-                                        setWeeklyDraft((prev) => {
-                                          const currentIds =
-                                            activeAudienceLineup.under800Picks.map(
-                                              (c) => c.product.id
-                                            );
-                                          currentIds[slotIdx] = nextId;
-                                          const other800 =
-                                            slotIdx === 0 ? currentIds[1] : currentIds[0];
-                                          const fixed500 =
-                                            activeAudienceLineup.under500Picks.map(
-                                              (c) => c.product.id
-                                            );
-                                          const next800 = currentIds
-                                            .filter(
-                                              (id, i) =>
-                                                id &&
-                                                !fixed500.includes(id) &&
-                                                (i === slotIdx || id !== other800)
-                                            )
-                                            .slice(0, 2);
-                                          return {
-                                            ...prev,
-                                            weekKey: resolvedWeeklyDraft.weekKey,
-                                            [key500]: fixed500,
-                                            [key800]: next800,
-                                          };
-                                        });
-                                      }}
-                                      className="flex-1 min-w-0 w-full px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
-                                    >
-                                      {activeAudienceLineup.under800Pool.map((opt) => (
-                                        <option key={opt.product.id} value={opt.product.id}>
-                                          {opt.product.name} ({opt.product.brand} · {opt.product.category})
-                                          {opt.tierPrice !== null
-                                            ? ` · ${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
-                                            : ''}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                  <SearchablePerfumeSelect
+                                    value={chosenId}
+                                    ariaLabel={`Select For ${weeklyAudienceTab} Under E800 Slot ${slotIdx + 1}`}
+                                    searchPlaceholder="Search perfume name or house..."
+                                    options={activeAudienceLineup.under800Pool.map((opt) => ({
+                                      product: opt.product,
+                                      detailLabel:
+                                        opt.tierPrice !== null
+                                          ? `${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                          : undefined,
+                                      badgeText: pickedElsewhereIds.has(opt.product.id)
+                                        ? 'Another slot'
+                                        : undefined,
+                                    }))}
+                                    onChange={(nextId) => {
+                                      setWeeklyDraft((prev) => {
+                                        const currentIds =
+                                          activeAudienceLineup.under800Picks.map(
+                                            (c) => c.product.id
+                                          );
+                                        currentIds[slotIdx] = nextId;
+                                        const other800 =
+                                          slotIdx === 0 ? currentIds[1] : currentIds[0];
+                                        const fixed500 =
+                                          activeAudienceLineup.under500Picks.map(
+                                            (c) => c.product.id
+                                          );
+                                        const next800 = currentIds
+                                          .filter(
+                                            (id, i) =>
+                                              id &&
+                                              !fixed500.includes(id) &&
+                                              (i === slotIdx || id !== other800)
+                                          )
+                                          .slice(0, 2);
+                                        return {
+                                          ...prev,
+                                          weekKey: resolvedWeeklyDraft.weekKey,
+                                          [key500]: fixed500,
+                                          [key800]: next800,
+                                        };
+                                      });
+                                    }}
+                                  />
                                 </div>
                               );
                             })}
@@ -3830,17 +3820,26 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
                                 Select Perfume
                               </label>
-                              <select
+                              <SearchablePerfumeSelect
                                 value={effectivePickerId}
-                                onChange={(e) => setExclusivePickerId(e.target.value)}
-                                className="w-full min-w-0 px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
-                              >
-                                {availableToAdd.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name} ({p.brand} · {p.category})
-                                  </option>
-                                ))}
-                              </select>
+                                ariaLabel="Select perfume for Exclusive 5ml Special"
+                                searchPlaceholder="Search any perfume by name, house, or category..."
+                                options={availableToAdd.map((p) => {
+                                  const fiveMl = p.sizes.find(
+                                    (s) =>
+                                      s.available &&
+                                      s.price !== null &&
+                                      s.size.trim().toLowerCase().startsWith('5ml')
+                                  );
+                                  return {
+                                    product: p,
+                                    detailLabel: fiveMl?.price
+                                      ? `Reg. 5ml ${formatPrice(fiveMl.price)}`
+                                      : undefined,
+                                  };
+                                })}
+                                onChange={(nextId) => setExclusivePickerId(nextId)}
+                              />
                             </div>
 
                             <div className="w-full sm:w-36 space-y-1">
