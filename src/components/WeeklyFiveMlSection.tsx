@@ -253,7 +253,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
               <div
                 role="tablist"
                 aria-label="Choose Women or Men Weekly 5ml lineup"
-                className="inline-flex p-1 rounded-2xl bg-white/[0.06] border border-white/15 w-full sm:w-auto"
+                className="grid grid-cols-2 sm:inline-flex gap-1 p-1 rounded-2xl bg-white/[0.06] border border-white/15 w-full sm:w-auto"
               >
                 {(['Women', 'Men'] as const).map((tabAudience) => {
                   const isSelected = activeAudience === tabAudience;
@@ -269,13 +269,20 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       aria-selected={isSelected}
                       disabled={disabled}
                       onClick={() => setAudience(tabAudience)}
-                      className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-[0.14em] transition-all whitespace-nowrap disabled:opacity-40 ${
+                      className={`min-w-0 px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold uppercase tracking-[0.06em] sm:tracking-[0.14em] transition-all flex flex-col sm:flex-row items-center justify-center sm:gap-1.5 text-center leading-tight disabled:opacity-40 ${
                         isSelected
                           ? 'bg-[#FACC15] text-[#0A0A0A] shadow-sm'
                           : 'text-white/80 hover:text-white hover:bg-white/[0.06]'
                       }`}
                     >
-                      For {tabAudience} ({lineupTotal} options)
+                      <span>For {tabAudience}</span>
+                      <span
+                        className={`text-[10px] sm:text-xs font-semibold sm:font-bold tracking-normal sm:tracking-[0.14em] ${
+                          isSelected ? 'text-[#0A0A0A]/80' : 'text-white/60'
+                        }`}
+                      >
+                        ({lineupTotal} {lineupTotal === 1 ? 'option' : 'options'})
+                      </span>
                     </button>
                   );
                 })}
@@ -663,7 +670,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                 type="button"
                 disabled={!hasValidUnder500Choice}
                 onClick={handleAddPack}
-                className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] disabled:opacity-45 disabled:cursor-not-allowed transition-colors text-xs font-bold uppercase tracking-[0.14em] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.25)]"
+                className="w-full sm:w-auto px-5 sm:px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] disabled:opacity-45 disabled:cursor-not-allowed transition-colors text-xs font-bold uppercase tracking-[0.12em] sm:tracking-[0.14em] inline-flex items-center justify-center gap-2 sm:whitespace-nowrap text-center shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.25)]"
               >
                 {justAddedKey === currentAddKey ? (
                   <>
@@ -858,7 +865,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       setJustAddedKey((cur) => (cur === 'exclusive-bundle' ? null : cur));
                     }, 1600);
                   }}
-                  className="px-6 py-3 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.14em] inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+                  className="w-full sm:w-auto px-5 sm:px-6 py-3 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] sm:tracking-[0.14em] inline-flex items-center justify-center gap-2 sm:whitespace-nowrap text-center shrink-0"
                 >
                   {justAddedKey === 'exclusive-bundle' ? (
                     <>
