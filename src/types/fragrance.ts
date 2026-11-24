@@ -1,4 +1,4 @@
-export type FragranceCategory = 'Men' | 'Women' | 'Unisex';
+export type FragranceCategory = 'Men' | 'Women' | 'Unisex' | 'Kiddies';
 
 export type BottleSize = string;
 
@@ -65,10 +65,16 @@ export interface FragranceProduct {
   bestseller: boolean;
   concentration: string;
   isUnboxed?: boolean;
+  isNewArrival?: boolean;
+  createdAtMs?: number;
   onSpecial?: boolean;
   specialLabel?: string;
+  specialDiscountType?: SpecialDiscountType;
   specialDiscountPercent?: number;
+  specialDiscountAmount?: number;
 }
+
+export type SpecialDiscountType = 'percentage' | 'fixed';
 
 export type CouponDiscountType = 'percentage' | 'fixed';
 export type CouponScope = 'all' | 'specials' | 'full-bottles';
@@ -161,6 +167,8 @@ export interface ReferralSale {
   createdAtMs: number;
 }
 
+export type HeroDisplayMode = 'auto' | 'specials' | 'new-arrivals';
+
 export interface SpecialCampaign {
   title: string;
   badgeText: string;
@@ -169,6 +177,10 @@ export interface SpecialCampaign {
   promoCodeHint: string;
   endsAt: string;
   enabled: boolean;
+  heroMode?: HeroDisplayMode;
+  newArrivalsTitle?: string;
+  newArrivalsBadge?: string;
+  newArrivalsSubtitle?: string;
 }
 
 export interface StoreBranch {
@@ -198,7 +210,9 @@ export interface BasketItem {
   unitPrice: number | null;
   originalUnitPrice?: number | null;
   onSpecial?: boolean;
+  specialDiscountType?: SpecialDiscountType;
   specialDiscountPercent?: number;
+  specialDiscountAmount?: number;
   isUnboxed?: boolean;
   quantity: number;
   isSampleListing: boolean;
@@ -263,6 +277,11 @@ export interface LayeringIdea {
 
 export type WeeklyFiveMlAudience = 'Women' | 'Men';
 
+export interface ExclusiveFiveMlItem {
+  perfumeId: string;
+  customPrice: number;
+}
+
 export interface WeeklyFiveMlSpecial {
   enabled: boolean;
   autoRotateWeekly: boolean;
@@ -276,9 +295,31 @@ export interface WeeklyFiveMlSpecial {
   menUnder800Ids: string[];
   fourPackPrice: number;
   twoPackPrice: number;
+  exclusiveEnabled: boolean;
+  exclusiveTitle: string;
+  exclusiveBadge: string;
+  exclusiveSubtitle: string;
+  exclusiveBundleEnabled: boolean;
+  exclusiveBundlePrice: number;
+  exclusiveItems: ExclusiveFiveMlItem[];
 }
 
 export type WeeklyFiveMlPackMode = '4-for-100' | '2-for-50';
+
+export type ExclusiveFiveMlBasketPayload =
+  | {
+      type: 'item';
+      product: FragranceProduct;
+      price: number;
+      regularPrice: number | null;
+    }
+  | {
+      type: 'bundle';
+      title: string;
+      products: FragranceProduct[];
+      price: number;
+      regularPrice: number | null;
+    };
 
 export type AuditAction = 'create' | 'update' | 'delete' | 'import';
 

@@ -28,6 +28,7 @@ import {
 import {
   calculateCouponDiscount,
   calculateReferralBenefit,
+  formatSpecialDiscountTag,
   revalidateBasketItems,
 } from '../utils/pricing';
 import {
@@ -456,9 +457,15 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                                 <div className="min-w-0">
                                   <p className="text-[11px] uppercase tracking-wider text-[#525252]">
                                     {item.brand} · {item.size}
-                                    {item.onSpecial && item.specialDiscountPercent
-                                      ? ` · -${item.specialDiscountPercent}%`
-                                      : ''}
+                                    {(() => {
+                                      const tag = formatSpecialDiscountTag(
+                                        item.onSpecial,
+                                        item.specialDiscountPercent,
+                                        item.specialDiscountType,
+                                        item.specialDiscountAmount
+                                      );
+                                      return tag ? ` · ${tag}` : '';
+                                    })()}
                                   </p>
                                   <h3 className="text-sm font-semibold text-[#0A0A0A] truncate">
                                     {item.productName}

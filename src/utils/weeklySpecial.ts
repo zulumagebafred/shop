@@ -49,6 +49,12 @@ export interface ResolvedWeeklyFiveMl {
   isManualOverrideForWeek: boolean;
 }
 
+export interface ResolvedExclusiveFiveMlItem {
+  product: FragranceProduct;
+  customPrice: number;
+  catalogueFiveMlPrice: number | null;
+}
+
 export const DEFAULT_WEEKLY_FIVE_ML_SPECIAL: WeeklyFiveMlSpecial = {
   enabled: true,
   autoRotateWeekly: true,
@@ -62,6 +68,14 @@ export const DEFAULT_WEEKLY_FIVE_ML_SPECIAL: WeeklyFiveMlSpecial = {
   menUnder800Ids: [],
   fourPackPrice: 100,
   twoPackPrice: 50,
+  exclusiveEnabled: false,
+  exclusiveTitle: 'Exclusive 5ml Owner Reserve',
+  exclusiveBadge: 'OWNER EXCLUSIVE',
+  exclusiveSubtitle:
+    'Special 5ml decants hand-picked and individually priced by AuraHut Co.',
+  exclusiveBundleEnabled: false,
+  exclusiveBundlePrice: 0,
+  exclusiveItems: [],
 };
 
 /**
@@ -159,7 +173,9 @@ function buildTierCandidate(
     tierPrice = getEffectiveUnitPrice(
       chosen.price,
       product.onSpecial,
-      product.specialDiscountPercent
+      product.specialDiscountPercent,
+      product.specialDiscountType,
+      product.specialDiscountAmount
     );
   } else {
     const summary = getProductPriceSummary(product);
@@ -174,7 +190,9 @@ function buildTierCandidate(
     ? getEffectiveUnitPrice(
         fiveMlOption.price,
         product.onSpecial,
-        product.specialDiscountPercent
+        product.specialDiscountPercent,
+        product.specialDiscountType,
+        product.specialDiscountAmount
       )
     : null;
 
@@ -216,7 +234,7 @@ function buildTierPoolsFromProducts(eligibleProducts: FragranceProduct[]): {
   let under800Pool = [...strictUnder800];
   let usingFallbackTiers = false;
 
-  if (under500Pool.length < 2) {
+  if (under500Pool.length < 3) {
     usingFallbackTiers = true;
     const usedIds = new Set([
       ...under500Pool.map((c) => c.product.id),
@@ -232,7 +250,7 @@ function buildTierPoolsFromProducts(eligibleProducts: FragranceProduct[]): {
 
     under500Pool = [...under500Pool, ...budgetFallback];
 
-    if (under500Pool.length < 2) {
+    if (under500Pool.length < 3) {
       const stillUsed = new Set([
         ...under500Pool.map((c) => c.product.id),
         ...under800Pool.map((c) => c.product.id),
@@ -242,7 +260,7 @@ function buildTierPoolsFromProducts(eligibleProducts: FragranceProduct[]): {
         .sort((a, b) => (a.tierPrice ?? 99999) - (b.tierPrice ?? 99999))
         .map((c) => ({ ...c, isStrictTierMatch: false }));
       for (const candidate of sortedRest) {
-        if (under500Pool.length >= Math.max(2, Math.floor(baseCandidates.length / 2))) {
+        if (under500Pool.length >= Math.max(3, Math.floor(baseCandidates.length / 2))) {
           break;
         }
         under500Pool.push(candidate);
@@ -315,9 +333,9 @@ export function buildWeeklyTierPoolsForAudience(
 
   const strictAttempt = buildTierPoolsFromProducts(strictAudience);
   const strictHasEnough =
-    strictAttempt.under500Pool.length >= 2 &&
+    strictAttempt.under500Pool.length >= 3 &&
     strictAttempt.under800Pool.length >= 2 &&
-    strictAudience.length >= 4;
+    strictAudience.length >= 5;
 
   // Include Unisex in the admin dropdown / supplemental pool when strict pool lacks depth,
   // while keeping strict audience picks prioritized in random selection.
@@ -386,7 +404,7 @@ export function pickRandomWeeklyAudienceIds(
 
   const tag = audience.toLowerCase();
   const shuffled500 = sortBucketed(under500Pool, `${weekKey}:${tag}:u500:${seedOffset}`);
-  const picked500 = shuffled500.slice(0, 2);
+  const picked500 = shuffled500.slice(0, 3);
   const picked500Ids = new Set(picked500.map((c) => c.product.id));
 
   const distinct800Pool = under800Pool.filter((c) => !picked500Ids.has(c.product.id));
@@ -466,7 +484,7 @@ function resolveAudienceLineup(
 
   if (shouldUseSavedOverrides) {
     for (const id of savedUnder500Ids) {
-      if (resolved500.length >= 2) break;
+      if (resolved500.length >= 3) break;
       if (chosenIds.has(id)) continue;
       const candidate = findCandidate(id, pool500ById);
       if (candidate) {
@@ -477,7 +495,7 @@ function resolveAudienceLineup(
   }
 
   for (const id of randomFallback.under500Ids) {
-    if (resolved500.length >= 2) break;
+    if (resolved500.length >= 3) break;
     if (chosenIds.has(id)) continue;
     const candidate = pool500ById.get(id) ?? anyInStockById.get(id);
     if (candidate) {
@@ -514,7 +532,7 @@ function resolveAudienceLineup(
     audience,
     under500Picks: resolved500,
     under800Picks: resolved800,
-    allFourPicks: [...resolved500, ...resolved800],
+    allFourPicks: [...resolved500.slice(0, 2), ...resolved800],
     under500Pool,
     under800Pool,
     usingFallbackTiers,
@@ -593,4 +611,48 @@ export function resolveWeeklyFiveMlSelection(
     isManualOverrideForWeek:
       womenLineup.isManualOverrideForWeek || menLineup.isManualOverrideForWeek,
   };
+}
+
+/**
+ * Resolves owner-curated Exclusive 5ml Special items against live catalogue products,
+ * preserving each owner-picked custom 5ml price and filtering out Out of Stock items.
+ */
+export function resolveExclusiveFiveMlItems(
+  perfumes: FragranceProduct[],
+  config: WeeklyFiveMlSpecial = DEFAULT_WEEKLY_FIVE_ML_SPECIAL
+): ResolvedExclusiveFiveMlItem[] {
+  const byId = new Map(perfumes.map((p) => [p.id, p]));
+  const items = Array.isArray(config.exclusiveItems) ? config.exclusiveItems : [];
+  const seen = new Set<string>();
+  const resolved: ResolvedExclusiveFiveMlItem[] = [];
+
+  for (const entry of items) {
+    if (!entry || !entry.perfumeId || seen.has(entry.perfumeId)) continue;
+    const product = byId.get(entry.perfumeId);
+    if (!product || product.availability === 'Out of Stock') continue;
+    const customPrice = Number(entry.customPrice);
+    if (!Number.isFinite(customPrice) || customPrice <= 0) continue;
+
+    seen.add(entry.perfumeId);
+    const fiveMlOpt = product.sizes.find(
+      (s) => s.size.trim().toLowerCase() === '5ml' && s.available && s.price !== null
+    );
+    const catalogueFiveMlPrice = fiveMlOpt
+      ? getEffectiveUnitPrice(
+          fiveMlOpt.price,
+          product.onSpecial,
+          product.specialDiscountPercent,
+          product.specialDiscountType,
+          product.specialDiscountAmount
+        )
+      : null;
+
+    resolved.push({
+      product,
+      customPrice,
+      catalogueFiveMlPrice,
+    });
+  }
+
+  return resolved;
 }

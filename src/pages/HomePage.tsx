@@ -29,9 +29,11 @@ import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { featuredPerfumeHouses, matchesHouseBrand } from '../data/catalogue';
+import { HER_HAMPER_IMAGE, HIM_HAMPER_IMAGE } from '../data/hampers';
 import { siteContent } from '../data/siteContent';
 import { getBranchAvailabilityLabel } from '../utils/branches';
 import {
+  formatSpecialDiscountTag,
   getEffectiveUnitPrice,
   getProductPriceSummary,
   matchesPriceRange,
@@ -42,6 +44,7 @@ import {
   AppPage,
   BottleSize,
   BranchId,
+  ExclusiveFiveMlBasketPayload,
   FragranceCategory,
   FragranceProduct,
   PriceRangeFilter,
@@ -61,6 +64,7 @@ interface HomePageProps {
       season?: SeasonFilter;
       onlySpecials?: boolean;
       onlyUnboxed?: boolean;
+      onlyNewArrivals?: boolean;
     }
   ) => void;
   onSelectProduct: (product: FragranceProduct) => void;
@@ -74,6 +78,7 @@ interface HomePageProps {
     price: number;
     regularPrice: number | null;
   }) => void;
+  onAddExclusiveFiveMlToBasket?: (payload: ExclusiveFiveMlBasketPayload) => void;
 }
 
 type ScentMood = 'all' | 'fresh' | 'warm' | 'oud' | 'sweet';
@@ -218,6 +223,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onQuickWhatsApp,
   onSelectBranchAndBasket,
   onAddWeeklyPackToBasket,
+  onAddExclusiveFiveMlToBasket,
 }) => {
   const { perfumes, campaign, campaignLoading, catalogueLoading, usingSampleHampers } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
@@ -229,6 +235,26 @@ export const HomePage: React.FC<HomePageProps> = ({
     () => availablePerfumes.filter((p) => Boolean(p.onSpecial)),
     [availablePerfumes]
   );
+  const explicitNewArrivals = useMemo(
+    () => availablePerfumes.filter((p) => Boolean(p.isNewArrival)),
+    [availablePerfumes]
+  );
+  const autoLatestArrivals = useMemo(
+    () =>
+      [...availablePerfumes]
+        .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
+        .slice(0, 8),
+    [availablePerfumes]
+  );
+  const newArrivalsPerfumes =
+    explicitNewArrivals.length > 0 ? explicitNewArrivals : autoLatestArrivals;
+  const heroMode = campaign.heroMode ?? 'auto';
+  const showingNewArrivals =
+    heroMode === 'new-arrivals'
+      ? newArrivalsPerfumes.length > 0
+      : heroMode === 'auto'
+      ? specialPerfumes.length === 0 && newArrivalsPerfumes.length > 0
+      : false;
   const [activeMood, setActiveMood] = useState<ScentMood>('all');
   const [activeDecantIndex, setActiveDecantIndex] = useState(1);
   const [showAllDecantLineup, setShowAllDecantLineup] = useState(false);
@@ -258,7 +284,9 @@ export const HomePage: React.FC<HomePageProps> = ({
     return () => window.removeEventListener('resize', updateDeckSpacing);
   }, []);
 
-  const slideshowPerfumes = specialPerfumes;
+  const slideshowPerfumes = showingNewArrivals
+    ? newArrivalsPerfumes
+    : specialPerfumes;
 
   const safeSlideIndex =
     slideshowPerfumes.length > 0 ? heroSlideIndex % slideshowPerfumes.length : 0;
@@ -553,15 +581,18 @@ export const HomePage: React.FC<HomePageProps> = ({
             )}
 
             {(() => {
-              const rawTitle =
-                campaign.enabled && campaign.title
-                  ? campaign.title
-                  : 'Signature Extraits';
+              const rawTitle = showingNewArrivals
+                ? campaign.newArrivalsTitle || 'New Arrivals'
+                : campaign.enabled && campaign.title
+                ? campaign.title
+                : 'Signature Extraits';
               const [lineOne, lineTwo] = splitHeroHeadline(rawTitle);
-              const activePct =
-                activeSlideProduct.onSpecial && activeSlideProduct.specialDiscountPercent
-                  ? activeSlideProduct.specialDiscountPercent
-                  : 0;
+              const activeSpecialTag = formatSpecialDiscountTag(
+                activeSlideProduct.onSpecial,
+                activeSlideProduct.specialDiscountPercent,
+                activeSlideProduct.specialDiscountType,
+                activeSlideProduct.specialDiscountAmount
+              );
               const activeSizes = [...activeSlideProduct.sizes]
                 .filter((s) => s.available)
                 .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
@@ -569,10 +600,12 @@ export const HomePage: React.FC<HomePageProps> = ({
 
               return (
                 <div className="relative z-10 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
-                  {/* Left Column — Campaign Headline, Special Countdown, Spotlight Prices & Buy Now */}
+                  {/* Left Column — Campaign Headline, Countdown/New Arrivals Callout, Spotlight Prices & Buy Now */}
                   <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start min-w-0">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
-                      {campaign.enabled && campaign.badgeText
+                      {showingNewArrivals
+                        ? campaign.newArrivalsBadge || 'JUST LANDED'
+                        : campaign.enabled && campaign.badgeText
                         ? campaign.badgeText
                         : 'Featured Specials'}
                     </p>
@@ -582,8 +615,27 @@ export const HomePage: React.FC<HomePageProps> = ({
                       <span className="block text-[#FACC15]">{lineTwo}</span>
                     </h1>
 
-                    {/* Live Special Countdown (Days : Hours : Minutes : Seconds) */}
-                    <HeroCountdown endsAt={campaign.endsAt} />
+                    {/* Live Special Countdown OR New Arrivals Spotlight Callout */}
+                    {showingNewArrivals ? (
+                      <div className="w-full max-w-md space-y-2.5 pt-1">
+                        <p className="text-xs sm:text-sm text-white/80 leading-relaxed">
+                          {campaign.newArrivalsSubtitle ||
+                            'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.'}
+                        </p>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-[#FACC15]/45 bg-white/[0.05] px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FACC15]">
+                          <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>
+                            {explicitNewArrivals.length > 0
+                              ? `${explicitNewArrivals.length} Newly Landed ${
+                                  explicitNewArrivals.length === 1 ? 'Scent' : 'Scents'
+                                }`
+                              : `Latest ${newArrivalsPerfumes.length} Storefront Releases`}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <HeroCountdown endsAt={campaign.endsAt} />
+                    )}
 
                     {/* Spotlight Perfume Name, Branch Tag & Transparent Size Prices */}
                     <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left min-h-[46px]">
@@ -607,7 +659,9 @@ export const HomePage: React.FC<HomePageProps> = ({
                             const eff = getEffectiveUnitPrice(
                               s.price,
                               activeSlideProduct.onSpecial,
-                              activeSlideProduct.specialDiscountPercent
+                              activeSlideProduct.specialDiscountPercent,
+                              activeSlideProduct.specialDiscountType,
+                              activeSlideProduct.specialDiscountAmount
                             );
                             return (
                               <React.Fragment key={`${activeSlideProduct.id}-hero-${s.size}`}>
@@ -645,18 +699,33 @@ export const HomePage: React.FC<HomePageProps> = ({
                         whileHover={{ y: -2 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() =>
-                          onNavigate('shop', {
-                            category: 'All',
-                            brand: 'All',
-                            size: 'All',
-                            priceRange: 'all',
-                            season: 'all',
-                            onlySpecials: true,
-                          })
+                          showingNewArrivals
+                            ? onNavigate('shop', {
+                                category: 'All',
+                                brand: 'All',
+                                size: 'All',
+                                priceRange: 'all',
+                                season: 'all',
+                                onlySpecials: false,
+                                onlyUnboxed: false,
+                                onlyNewArrivals: explicitNewArrivals.length > 0,
+                              })
+                            : onNavigate('shop', {
+                                category: 'All',
+                                brand: 'All',
+                                size: 'All',
+                                priceRange: 'all',
+                                season: 'all',
+                                onlySpecials: true,
+                                onlyUnboxed: false,
+                                onlyNewArrivals: false,
+                              })
                         }
                         className="px-6 py-3.5 rounded-full border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0"
                       >
-                        <span>Explore Special</span>
+                        <span>
+                          {showingNewArrivals ? 'Explore New Arrivals' : 'Explore Special'}
+                        </span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </motion.button>
                     </div>
@@ -697,10 +766,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                         </motion.svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none">
                           <span className="text-xs sm:text-sm font-extrabold tabular-nums text-[#0A0A0A]">
-                            {activePct > 0 ? `-${activePct}%` : '100%'}
+                            {activeSpecialTag || (showingNewArrivals ? 'NEW' : '100%')}
                           </span>
                           <span className="text-[7px] sm:text-[8px] font-bold uppercase tracking-wider text-[#0A0A0A]/80 mt-0.5">
-                            {activePct > 0 ? 'SPECIAL' : 'PURE'}
+                            {activeSpecialTag
+                              ? 'SPECIAL'
+                              : showingNewArrivals
+                              ? 'ARRIVAL'
+                              : 'PURE'}
                           </span>
                         </div>
                       </motion.div>
@@ -786,15 +859,36 @@ export const HomePage: React.FC<HomePageProps> = ({
                                       variant="card"
                                       className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
                                     />
-                                  {product.onSpecial && product.specialDiscountPercent ? (
-                                    <span className="absolute top-2.5 right-2.5 bg-[#FACC15] text-[#0A0A0A] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tabular-nums shadow-xs">
-                                      -{product.specialDiscountPercent}%
-                                    </span>
-                                  ) : product.bestseller ? (
-                                    <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/85 text-white text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                                      Bestseller
-                                    </span>
-                                  ) : null}
+                                  {(() => {
+                                    const tag = formatSpecialDiscountTag(
+                                      product.onSpecial,
+                                      product.specialDiscountPercent,
+                                      product.specialDiscountType,
+                                      product.specialDiscountAmount
+                                    );
+                                    if (tag) {
+                                      return (
+                                        <span className="absolute top-2.5 right-2.5 bg-[#FACC15] text-[#0A0A0A] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tabular-nums shadow-xs">
+                                          {tag}
+                                        </span>
+                                      );
+                                    }
+                                    if (showingNewArrivals || product.isNewArrival) {
+                                      return (
+                                        <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/90 text-[#FACC15] border border-[#FACC15]/50 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                          New Arrival
+                                        </span>
+                                      );
+                                    }
+                                    if (product.bestseller) {
+                                      return (
+                                        <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/85 text-white text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                          Bestseller
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
 
                                 <div className="p-2.5 sm:p-3.5 bg-white border-t border-[#ECECEC] space-y-0.5 shrink-0">
@@ -836,14 +930,18 @@ export const HomePage: React.FC<HomePageProps> = ({
                                       ? getEffectiveUnitPrice(
                                           decant5.price,
                                           product.onSpecial,
-                                          product.specialDiscountPercent
+                                          product.specialDiscountPercent,
+                                          product.specialDiscountType,
+                                          product.specialDiscountAmount
                                         )
                                       : null;
                                     const p10 = decant10
                                       ? getEffectiveUnitPrice(
                                           decant10.price,
                                           product.onSpecial,
-                                          product.specialDiscountPercent
+                                          product.specialDiscountPercent,
+                                          product.specialDiscountType,
+                                          product.specialDiscountAmount
                                         )
                                       : null;
                                     return (
@@ -970,6 +1068,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       <WeeklyFiveMlSection
         onSelectProduct={onSelectProduct}
         onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+        onAddExclusiveFiveMlToBasket={onAddExclusiveFiveMlToBasket}
       />
 
       {/* SHOP DEALS BY PRICE */}
@@ -1323,7 +1422,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   src={cat.image}
                   alt={cat.title}
                   fallbackTitle={cat.title}
-                  className="w-full h-full object-cover saturate-[1.1] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
+                  className="w-full h-full object-cover object-top saturate-[1.06] contrast-[1.02] transition-transform duration-500 ease-out group-hover:scale-105"
                 />
                 <div
                   aria-hidden="true"
@@ -1555,12 +1654,12 @@ export const HomePage: React.FC<HomePageProps> = ({
               className="sm:col-span-5 aspect-[4/3] rounded-2xl overflow-hidden bg-white border border-[#E5E5E5] block w-full text-left cursor-pointer"
             >
               <ResilientImage
-                src="/assets/images/unboxed_perfume_flacon_1795005243926.jpg"
+                src="/assets/aistudio/image_b0d367cb.png"
                 alt="Authentic Unboxed Perfume Bottles at AuraHut Co."
                 fallbackTitle="Unboxed Bottles"
                 loading="lazy"
                 variant="card"
-                className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
+                className="w-full h-full object-contain object-center p-2 group-hover:scale-[1.03] transition-transform duration-500"
               />
             </button>
             <div className="sm:col-span-7 space-y-3">
@@ -1601,16 +1700,28 @@ export const HomePage: React.FC<HomePageProps> = ({
               type="button"
               onClick={() => onNavigate('gifts')}
               aria-label="Explore Luxury Perfume Gift Hampers"
-              className="sm:col-span-5 aspect-[4/3] rounded-2xl overflow-hidden bg-[#141414] border border-white/15 block w-full text-left cursor-pointer"
+              className="sm:col-span-5 aspect-[4/3] rounded-2xl overflow-hidden bg-[#141414] border border-white/15 grid grid-cols-2 gap-1.5 p-1.5 w-full text-left cursor-pointer"
             >
-              <ResilientImage
-                src="/assets/images/luxury_gift_hamper_1795005244668.jpg"
-                alt="AuraHut Co. Luxury Gift Hampers and Perfume Sets"
-                fallbackTitle="Gift Hampers"
-                loading="lazy"
-                variant="card"
-                className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
-              />
+              <div className="relative w-full h-full rounded-xl overflow-hidden bg-white">
+                <ResilientImage
+                  src={HIM_HAMPER_IMAGE}
+                  alt="AuraHut Co. Black & Gold Executive Men's Gift Hamper"
+                  fallbackTitle="For Him Gift Box"
+                  loading="lazy"
+                  variant="card"
+                  className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
+                />
+              </div>
+              <div className="relative w-full h-full rounded-xl overflow-hidden bg-white">
+                <ResilientImage
+                  src={HER_HAMPER_IMAGE}
+                  alt="AuraHut Co. Blush Pink & Rose Gold Women's Gift Hamper"
+                  fallbackTitle="For Her Gift Box"
+                  loading="lazy"
+                  variant="card"
+                  className="w-full h-full object-cover object-center group-hover:scale-[1.03] transition-transform duration-500"
+                />
+              </div>
             </button>
             <div className="sm:col-span-7 space-y-3">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FACC15]">

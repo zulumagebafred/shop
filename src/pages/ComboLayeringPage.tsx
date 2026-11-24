@@ -18,6 +18,7 @@ import {
   AppPage,
   BottleSize,
   ComboDeal,
+  ExclusiveFiveMlBasketPayload,
   FragranceCategory,
   FragranceProduct,
   LayeringIdea,
@@ -44,6 +45,7 @@ interface ComboLayeringPageProps {
     price: number;
     regularPrice: number | null;
   }) => void;
+  onAddExclusiveFiveMlToBasket?: (payload: ExclusiveFiveMlBasketPayload) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
   onNavigate: (
     page: AppPage,
@@ -78,6 +80,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
   onAddToBasket,
   onAddComboToBasket,
   onAddWeeklyPackToBasket,
+  onAddExclusiveFiveMlToBasket,
   onNavigate,
 }) => {
   const {
@@ -195,6 +198,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
         <WeeklyFiveMlSection
           onSelectProduct={onSelectProduct}
           onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+          onAddExclusiveFiveMlToBasket={onAddExclusiveFiveMlToBasket}
         />
       )}
 

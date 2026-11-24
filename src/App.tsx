@@ -12,6 +12,7 @@ import { Navbar } from './components/Navbar';
 import { ToastData, ToastNotification } from './components/ToastNotification';
 import { getConfiguredPortalSlug, matchesPrivatePortalSlug, siteConfig } from './config/siteConfig';
 import { StoreProvider, useStore } from './context/StoreContext';
+import { DEFAULT_HAMPER_IMAGE } from './data/hampers';
 import { HomePage } from './pages/HomePage';
 import { sanitizeAddress, sanitizePromoCode, sanitizeText } from './utils/sanitize';
 
@@ -65,6 +66,7 @@ import {
   ComboDeal,
   Coupon,
   DeliveryMethod,
+  ExclusiveFiveMlBasketPayload,
   FragranceCategory,
   FragranceProduct,
   GiftHamper,
@@ -260,6 +262,7 @@ function AppContent() {
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlySpecials, setOnlySpecials] = useState<boolean>(false);
   const [onlyUnboxed, setOnlyUnboxed] = useState<boolean>(false);
+  const [onlyNewArrivals, setOnlyNewArrivals] = useState<boolean>(false);
 
   // Overlays, Modals & UX Feedback
   const [searchOpen, setSearchOpen] = useState(false);
@@ -390,6 +393,7 @@ function AppContent() {
     selectedBranchFilter,
     onlySpecials,
     onlyUnboxed,
+    onlyNewArrivals,
     forceScrollTopInstant,
   ]);
 
@@ -532,6 +536,7 @@ function AppContent() {
         query?: string;
         onlySpecials?: boolean;
         onlyUnboxed?: boolean;
+        onlyNewArrivals?: boolean;
       }
     ) => {
       if (page === 'shop') {
@@ -544,6 +549,7 @@ function AppContent() {
         if (options?.query !== undefined) setSearchQuery(options.query);
         if (options?.onlySpecials !== undefined) setOnlySpecials(options.onlySpecials);
         if (options?.onlyUnboxed !== undefined) setOnlyUnboxed(options.onlyUnboxed);
+        if (options?.onlyNewArrivals !== undefined) setOnlyNewArrivals(options.onlyNewArrivals);
       }
       if (page === 'admin') {
         const configured = getConfiguredPortalSlug();
@@ -589,6 +595,7 @@ function AppContent() {
     setOnlyInStock(false);
     setOnlySpecials(false);
     setOnlyUnboxed(false);
+    setOnlyNewArrivals(false);
   }, []);
 
   const handleQuickWhatsApp = useCallback((p: FragranceProduct) => {
@@ -606,7 +613,9 @@ function AppContent() {
       const unitPrice = getEffectiveUnitPrice(
         rawPrice,
         product.onSpecial,
-        product.specialDiscountPercent
+        product.specialDiscountPercent,
+        product.specialDiscountType,
+        product.specialDiscountAmount
       );
 
       setBasketItems((prev) => {
@@ -620,7 +629,9 @@ function AppContent() {
             unitPrice,
             originalUnitPrice: rawPrice,
             onSpecial: product.onSpecial,
+            specialDiscountType: product.specialDiscountType ?? 'percentage',
             specialDiscountPercent: product.specialDiscountPercent,
+            specialDiscountAmount: product.specialDiscountAmount ?? 0,
             isUnboxed: Boolean(product.isUnboxed),
             quantity: next[existingIndex].quantity + quantity,
           };
@@ -637,7 +648,9 @@ function AppContent() {
             unitPrice,
             originalUnitPrice: rawPrice,
             onSpecial: product.onSpecial,
+            specialDiscountType: product.specialDiscountType ?? 'percentage',
             specialDiscountPercent: product.specialDiscountPercent,
+            specialDiscountAmount: product.specialDiscountAmount ?? 0,
             isUnboxed: Boolean(product.isUnboxed),
             quantity,
             isSampleListing: product.isSampleListing,
@@ -678,7 +691,7 @@ function AppContent() {
           productId: hamperProductId,
           productName: hamper.title,
           brand: 'Gift Hamper',
-          image: hamper.image || '/assets/images/luxury_gift_hamper_1795005244668.jpg',
+          image: hamper.image || DEFAULT_HAMPER_IMAGE,
           size: hamperDetails,
           unitPrice: hamper.hamperPrice,
           originalUnitPrice: hamper.regularPrice,
@@ -789,6 +802,93 @@ function AppContent() {
 
       showToast(
         `Added ${audienceTag} ${isFourPack ? '4 × 5ml Pack (E' + payload.price + ')' : '2 × 5ml Pack (E' + payload.price + ')'}`,
+        productNames.join(' + ')
+      );
+    },
+    [showToast]
+  );
+
+  const handleAddExclusiveFiveMlToBasket = useCallback(
+    (payload: ExclusiveFiveMlBasketPayload) => {
+      if (payload.type === 'item') {
+        const p = payload.product;
+        const itemId = `exclusive-5ml-item-${p.id}`;
+        const sizeLabel = '5ml · Exclusive Special';
+        setBasketItems((prev) => {
+          const existingIndex = prev.findIndex(
+            (item) => item.productId === itemId && item.size === sizeLabel
+          );
+          if (existingIndex >= 0) {
+            const next = [...prev];
+            next[existingIndex] = {
+              ...next[existingIndex],
+              unitPrice: payload.price,
+              originalUnitPrice: payload.regularPrice,
+              quantity: next[existingIndex].quantity + 1,
+            };
+            return next;
+          }
+          return [
+            ...prev,
+            {
+              productId: itemId,
+              productName: p.name,
+              brand: `${p.brand} · Exclusive 5ml`,
+              image: p.image,
+              size: sizeLabel,
+              unitPrice: payload.price,
+              originalUnitPrice: payload.regularPrice,
+              onSpecial: true,
+              quantity: 1,
+              isSampleListing: false,
+            },
+          ];
+        });
+        showToast(
+          `Added Exclusive 5ml (E${payload.price.toFixed(0)})`,
+          `${p.name} · 5ml`
+        );
+        return;
+      }
+
+      const productNames = payload.products.map((p) => p.name);
+      const itemId = 'exclusive-5ml-bundle';
+      const sizeLabel = `${payload.products.length} × 5ml Exclusive: ${productNames.join(' + ')}`;
+      const primaryImage =
+        payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
+
+      setBasketItems((prev) => {
+        const existingIndex = prev.findIndex(
+          (item) => item.productId === itemId && item.size === sizeLabel
+        );
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            unitPrice: payload.price,
+            originalUnitPrice: payload.regularPrice,
+            quantity: next[existingIndex].quantity + 1,
+          };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            productId: itemId,
+            productName: payload.title || 'Exclusive 5ml Special Pack',
+            brand: 'Exclusive 5ml Special',
+            image: primaryImage,
+            size: sizeLabel,
+            unitPrice: payload.price,
+            originalUnitPrice: payload.regularPrice,
+            onSpecial: true,
+            quantity: 1,
+            isSampleListing: false,
+          },
+        ];
+      });
+      showToast(
+        `Added Exclusive ${payload.products.length} × 5ml Pack (E${payload.price.toFixed(0)})`,
         productNames.join(' + ')
       );
     },
@@ -918,6 +1018,7 @@ function AppContent() {
                   onQuickWhatsApp={handleQuickWhatsApp}
                   onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
                   onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                  onAddExclusiveFiveMlToBasket={handleAddExclusiveFiveMlToBasket}
                 />
               )}
 
@@ -933,6 +1034,7 @@ function AppContent() {
                   onlyInStock={onlyInStock}
                   onlySpecials={onlySpecials}
                   onlyUnboxed={onlyUnboxed}
+                  onlyNewArrivals={onlyNewArrivals}
                   onCategoryChange={setSelectedCategory}
                   onBrandChange={setSelectedBrand}
                   onSizeChange={setSelectedSize}
@@ -943,6 +1045,7 @@ function AppContent() {
                   onOnlyInStockChange={setOnlyInStock}
                   onOnlySpecialsChange={setOnlySpecials}
                   onOnlyUnboxedChange={setOnlyUnboxed}
+                  onOnlyNewArrivalsChange={setOnlyNewArrivals}
                   onResetFilters={handleResetFilters}
                   onSelectProduct={handleSelectProduct}
                   onQuickWhatsApp={handleQuickWhatsApp}
@@ -974,6 +1077,7 @@ function AppContent() {
                   onAddToBasket={handleAddToBasketWrapped}
                   onAddComboToBasket={handleAddComboToBasket}
                   onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                  onAddExclusiveFiveMlToBasket={handleAddExclusiveFiveMlToBasket}
                   onQuickWhatsApp={handleQuickWhatsApp}
                   onNavigate={handleNavigate}
                 />
@@ -996,6 +1100,7 @@ function AppContent() {
                   }
                   onSelectProduct={handleSelectProduct}
                   onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
+                  onAddExclusiveFiveMlToBasket={handleAddExclusiveFiveMlToBasket}
                 />
               )}
 

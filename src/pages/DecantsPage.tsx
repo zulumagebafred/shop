@@ -5,6 +5,7 @@ import { WeeklyFiveMlSection } from '../components/WeeklyFiveMlSection';
 import { siteContent } from '../data/siteContent';
 import {
   BottleSize,
+  ExclusiveFiveMlBasketPayload,
   FragranceProduct,
   WeeklyFiveMlAudience,
   WeeklyFiveMlPackMode,
@@ -22,6 +23,7 @@ interface DecantsPageProps {
     price: number;
     regularPrice: number | null;
   }) => void;
+  onAddExclusiveFiveMlToBasket?: (payload: ExclusiveFiveMlBasketPayload) => void;
 }
 
 export const DecantsPage: React.FC<DecantsPageProps> = ({
@@ -29,6 +31,7 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
   onExploreShop,
   onSelectProduct,
   onAddWeeklyPackToBasket,
+  onAddExclusiveFiveMlToBasket,
 }) => {
   const [selectedViewerSize, setSelectedViewerSize] =
     useState<DecantViewerSelection>('all');
@@ -88,6 +91,7 @@ export const DecantsPage: React.FC<DecantsPageProps> = ({
       <WeeklyFiveMlSection
         onSelectProduct={onSelectProduct}
         onAddWeeklyPackToBasket={onAddWeeklyPackToBasket}
+        onAddExclusiveFiveMlToBasket={onAddExclusiveFiveMlToBasket}
       />
 
       {/* 4 Size Cards */}

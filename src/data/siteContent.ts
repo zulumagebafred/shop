@@ -82,19 +82,19 @@ export const siteContent = {
       category: 'Men' as FragranceCategory,
       title: "Men's Fragrances",
       subtitle: 'Smoked agarwood, crisp bergamot, spiced cedar, and tailored leather.',
-      image: '/assets/images/cat_mens_oud_1794676712301.jpg',
+      image: '/assets/aistudio/WhatsApp_Image_2026-11-23_at_10.41.02_PM_46e003ca.jpeg',
     },
     {
       category: 'Women' as FragranceCategory,
       title: "Women's Fragrances",
       subtitle: 'Velvet Taif rose, luminous white musk, spun vanilla, and warm amber.',
-      image: '/assets/images/cat_womens_rose_1794676712431.jpg',
+      image: '/assets/aistudio/WhatsApp_Image_2026-11-23_at_10.36.27_PM_6b3237e2.jpeg',
     },
     {
       category: 'Unisex' as FragranceCategory,
       title: 'Unisex Fragrances',
       subtitle: 'Boundary-free Arabian extraits rich in saffron, resin, and lingering oud.',
-      image: '/assets/images/cat_unisex_amber_1794676712905.jpg',
+      image: '/assets/aistudio/WhatsApp_Image_2026-11-23_at_10.44.28_PM_c257e45a.jpeg',
     },
   ],
 

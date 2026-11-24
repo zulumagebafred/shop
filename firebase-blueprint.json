@@ -29,7 +29,7 @@
         },
         "category": {
           "type": "string",
-          "enum": ["Men", "Women", "Unisex"],
+          "enum": ["Men", "Women", "Unisex", "Kiddies"],
           "description": "Target fragrance category"
         },
         "concentration": {
@@ -80,13 +80,26 @@
           "maxLength": 60,
           "description": "Optional promotional label such as Black Friday Special"
         },
+        "specialDiscountType": {
+          "type": "string",
+          "enum": ["percentage", "fixed"],
+          "description": "Whether the special discount is percentage off or a fixed SZL reduction (e.g. reduce by E100)"
+        },
         "specialDiscountPercent": {
           "type": "number",
           "description": "Percentage discount (0 to 90) applied while on special"
         },
+        "specialDiscountAmount": {
+          "type": "number",
+          "description": "Fixed SZL price reduction (0 to 50000) applied while on special when specialDiscountType is fixed"
+        },
         "isUnboxed": {
           "type": "boolean",
           "description": "True if offered as an authentic unboxed / tester full bottle without retail outer box packaging"
+        },
+        "isNewArrival": {
+          "type": "boolean",
+          "description": "True if highlighted in the New Arrivals showcase"
         },
         "availableBranches": {
           "type": "array",
@@ -240,6 +253,26 @@
         "enabled": {
           "type": "boolean",
           "description": "Whether the campaign showcase is live on the storefront"
+        },
+        "heroMode": {
+          "type": "string",
+          "enum": ["auto", "specials", "new-arrivals"],
+          "description": "Hero showcase mode: auto (specials first with new arrivals fallback), specials only, or new arrivals"
+        },
+        "newArrivalsTitle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Hero headline shown when the hero section displays New Arrivals"
+        },
+        "newArrivalsBadge": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Hero eyebrow badge shown when displaying New Arrivals"
+        },
+        "newArrivalsSubtitle": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Supporting hero subtitle shown when displaying New Arrivals"
         },
         "ownerUid": {
           "type": "string",
@@ -455,7 +488,7 @@
     },
     "WeeklyFiveMlSpecial": {
       "title": "WeeklyFiveMlSpecial",
-      "description": "Weekly 5ml discovery decant special configuration (2 Under E500 + 2 Under E800 picks) for 4 × 5ml (E100) and 2 × 5ml Under-E500 (E50) packs.",
+      "description": "Weekly 5ml discovery decant special configuration (3 Under E500 options to choose 2 + 2 Under E800 picks) plus owner-configured Exclusive 5ml Special with custom per-scent and bundle prices.",
       "type": "object",
       "properties": {
         "enabled": {
@@ -478,7 +511,7 @@
         },
         "under500Ids": {
           "type": "array",
-          "description": "Legacy combined list of up to 2 perfume IDs selected from the Under E500 tier"
+          "description": "Legacy combined list of up to 3 perfume IDs selected from the Under E500 tier"
         },
         "under800Ids": {
           "type": "array",
@@ -486,7 +519,7 @@
         },
         "womenUnder500Ids": {
           "type": "array",
-          "description": "Up to 2 For Women perfume IDs selected from the Under E500 tier"
+          "description": "Up to 3 For Women perfume IDs selected from the Under E500 tier (customers choose 2)"
         },
         "womenUnder800Ids": {
           "type": "array",
@@ -494,7 +527,7 @@
         },
         "menUnder500Ids": {
           "type": "array",
-          "description": "Up to 2 For Men perfume IDs selected from the Under E500 tier"
+          "description": "Up to 3 For Men perfume IDs selected from the Under E500 tier (customers choose 2)"
         },
         "menUnder800Ids": {
           "type": "array",
@@ -502,11 +535,42 @@
         },
         "fourPackPrice": {
           "type": "number",
-          "description": "Bundle price in SZL for all 4 × 5ml decants (default 100)"
+          "description": "Bundle price in SZL for 4 × 5ml decants (default 100)"
         },
         "twoPackPrice": {
           "type": "number",
           "description": "Bundle price in SZL for 2 × 5ml Under E500 decants (default 50)"
+        },
+        "exclusiveEnabled": {
+          "type": "boolean",
+          "description": "Whether the owner-curated Exclusive 5ml Special section is live"
+        },
+        "exclusiveTitle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Headline for the Exclusive 5ml Special"
+        },
+        "exclusiveBadge": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Kicker badge for the Exclusive 5ml Special"
+        },
+        "exclusiveSubtitle": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Supporting description for the Exclusive 5ml Special"
+        },
+        "exclusiveBundleEnabled": {
+          "type": "boolean",
+          "description": "Whether customers can buy all Exclusive 5ml items together at a custom bundle price"
+        },
+        "exclusiveBundlePrice": {
+          "type": "number",
+          "description": "Custom bundle price in SZL for all Exclusive 5ml picks"
+        },
+        "exclusiveItems": {
+          "type": "array",
+          "description": "Up to 6 owner-picked perfumes with individual custom 5ml prices"
         },
         "ownerUid": {
           "type": "string",

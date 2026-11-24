@@ -1,6 +1,6 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Filter, Flame, Package, Search, X } from 'lucide-react';
+import { Filter, Flame, Package, Search, Sparkles, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { useStore } from '../context/StoreContext';
 import {
@@ -35,6 +35,7 @@ interface ShopPageProps {
   onlyInStock: boolean;
   onlySpecials: boolean;
   onlyUnboxed: boolean;
+  onlyNewArrivals: boolean;
   onCategoryChange: (cat: FragranceCategory | 'All') => void;
   onBrandChange: (brand: string) => void;
   onSizeChange: (size: BottleSize | 'All') => void;
@@ -45,6 +46,7 @@ interface ShopPageProps {
   onOnlyInStockChange: (val: boolean) => void;
   onOnlySpecialsChange: (val: boolean) => void;
   onOnlyUnboxedChange: (val: boolean) => void;
+  onOnlyNewArrivalsChange: (val: boolean) => void;
   onResetFilters: () => void;
   onSelectProduct: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
@@ -71,6 +73,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onlyInStock,
   onlySpecials,
   onlyUnboxed,
+  onlyNewArrivals,
   onCategoryChange,
   onBrandChange,
   onSizeChange,
@@ -81,6 +84,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onOnlyInStockChange,
   onOnlySpecialsChange,
   onOnlyUnboxedChange,
+  onOnlyNewArrivalsChange,
   onResetFilters,
   onSelectProduct,
   onQuickWhatsApp,
@@ -101,7 +105,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     void ensureAllPerfumesLoaded();
   }, [ensureAllPerfumesLoaded]);
   const extraBrands = useMemo(() => getExtraCatalogueBrands(perfumes), [perfumes]);
-  const categories: (FragranceCategory | 'All')[] = ['All', 'Men', 'Women', 'Unisex'];
+  const categories: (FragranceCategory | 'All')[] = ['All', 'Men', 'Women', 'Unisex', 'Kiddies'];
   const availableCatalogCount = useMemo(
     () => perfumes.filter((p) => p.availability !== 'Out of Stock').length,
     [perfumes]
@@ -119,6 +123,14 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     () =>
       perfumes.filter(
         (p) => Boolean(p.isUnboxed) && p.availability !== 'Out of Stock'
+      ).length,
+    [perfumes]
+  );
+
+  const newArrivalsCount = useMemo(
+    () =>
+      perfumes.filter(
+        (p) => Boolean(p.isNewArrival) && p.availability !== 'Out of Stock'
       ).length,
     [perfumes]
   );
@@ -156,6 +168,9 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       if (onlyUnboxed && !product.isUnboxed) {
         return false;
       }
+      if (onlyNewArrivals && (!product.isNewArrival || product.availability === 'Out of Stock')) {
+        return false;
+      }
       if (q) {
         if (
           product.name.toLowerCase().includes(q) ||
@@ -183,6 +198,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     onlyInStock,
     onlySpecials,
     onlyUnboxed,
+    onlyNewArrivals,
   ]);
 
   const sizes: (BottleSize | 'All')[] = useMemo(() => {
@@ -250,6 +266,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     onlyInStock,
     onlySpecials,
     onlyUnboxed,
+    onlyNewArrivals,
     sortBy,
   ]);
 
@@ -291,10 +308,13 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     searchQuery.trim() !== '' ||
     onlyInStock ||
     onlySpecials ||
-    onlyUnboxed;
+    onlyUnboxed ||
+    onlyNewArrivals;
 
   const headingTitle = onlySpecials
     ? campaign.title || 'Fragrance Specials'
+    : onlyNewArrivals
+    ? campaign.newArrivalsTitle || 'New Arrivals'
     : onlyUnboxed
     ? 'Unboxed Perfume Bottles'
     : activeSeasonMeta && selectedPriceRange !== 'all' && activePriceMeta
@@ -305,6 +325,10 @@ export const ShopPage: React.FC<ShopPageProps> = ({
     ? `Fragrances ${activePriceMeta.label}`
     : selectedCategory === 'All'
     ? 'All Fragrances'
+    : selectedCategory === 'Kiddies'
+    ? 'Kiddies Perfumes'
+    : selectedCategory === 'Unisex'
+    ? 'Unisex Fragrances'
     : `${selectedCategory}'s Fragrances`;
 
   return (
@@ -315,6 +339,8 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
             {onlySpecials
               ? campaign.badgeText || 'Special Offers'
+              : onlyNewArrivals
+              ? campaign.newArrivalsBadge || 'Just Landed'
               : onlyUnboxed
               ? 'Authentic Bottles · No Outer Retail Box'
               : activeSeasonMeta
@@ -327,6 +353,9 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
             {onlySpecials && campaign.subtitle
               ? campaign.subtitle
+              : onlyNewArrivals
+              ? campaign.newArrivalsSubtitle ||
+                'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.'
               : onlyUnboxed
               ? 'Original Arabian perfume bottles without outer retail cardboard packaging — same genuine fragrance inside at everyday value.'
               : activeSeasonMeta
@@ -347,7 +376,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-4 sm:p-6 space-y-4 sm:space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
           {/* Search Input */}
-          <div className="lg:col-span-5 relative">
+          <div className="lg:col-span-4 relative">
             <Search
               className="w-4 h-4 text-[#737373] absolute left-3.5 top-1/2 -translate-y-1/2"
               aria-hidden="true"
@@ -371,8 +400,8 @@ export const ShopPage: React.FC<ShopPageProps> = ({
             )}
           </div>
 
-          {/* Gender Category Segmented Control */}
-          <div className="lg:col-span-4 flex flex-wrap items-center gap-1.5">
+          {/* Fragrance Category Segmented Control */}
+          <div className="lg:col-span-5 flex flex-wrap items-center gap-1.5">
             {categories.map((cat) => {
               const active = selectedCategory === cat;
               return (
@@ -380,7 +409,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
                   key={cat}
                   type="button"
                   onClick={() => onCategoryChange(cat)}
-                  className={`relative px-4 py-2 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 overflow-hidden ${
+                  className={`relative px-3.5 py-2 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 overflow-hidden ${
                     active
                       ? 'text-white border-[#0A0A0A]'
                       : 'bg-white text-[#525252] border-[#D4D4D4] hover:border-[#0A0A0A] hover:text-[#0A0A0A]'
@@ -561,6 +590,21 @@ export const ShopPage: React.FC<ShopPageProps> = ({
               <Package className="w-3.5 h-3.5" />
               <span>Unboxed ({unboxedCount})</span>
             </button>
+
+            {(newArrivalsCount > 0 || onlyNewArrivals) && (
+              <button
+                type="button"
+                onClick={() => onOnlyNewArrivalsChange(!onlyNewArrivals)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider border transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  onlyNewArrivals
+                    ? 'bg-[#0A0A0A] text-[#FACC15] border-[#0A0A0A]'
+                    : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>New Arrivals ({newArrivalsCount})</span>
+              </button>
+            )}
 
             {specialsCount > 0 && (
               <button

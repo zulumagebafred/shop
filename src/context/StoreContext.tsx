@@ -43,7 +43,12 @@ import {
   starterCombos,
   starterLayeringIdeas,
 } from '../data/combosAndLayering';
-import { DEFAULT_HAMPER_IMAGE, starterHampers } from '../data/hampers';
+import {
+  DEFAULT_HAMPER_IMAGE,
+  HER_HAMPER_IMAGE,
+  HIM_HAMPER_IMAGE,
+  starterHampers,
+} from '../data/hampers';
 import {
   OperationType,
   auth,
@@ -58,6 +63,7 @@ import {
   AuditSection,
   ComboDeal,
   Coupon,
+  ExclusiveFiveMlItem,
   FragranceProduct,
   GiftHamper,
   InfluencerReferral,
@@ -71,6 +77,7 @@ import {
   ReferralSale,
   ReferralSaleStatus,
   SpecialCampaign,
+  SpecialDiscountType,
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 import {
@@ -106,6 +113,11 @@ export const DEFAULT_CAMPAIGN: SpecialCampaign = {
   promoCodeHint: '',
   endsAt: '',
   enabled: false,
+  heroMode: 'auto',
+  newArrivalsTitle: 'New Arrivals',
+  newArrivalsBadge: 'JUST LANDED',
+  newArrivalsSubtitle:
+    'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.',
 };
 
 export type PerfumeInput = Omit<FragranceProduct, 'id' | 'slug'> & {
@@ -269,7 +281,13 @@ interface StoreContextValue {
     perfume: FragranceProduct,
     onSpecial: boolean,
     specialDiscountPercent?: number,
-    specialLabel?: string
+    specialLabel?: string,
+    specialDiscountType?: SpecialDiscountType,
+    specialDiscountAmount?: number
+  ) => Promise<void>;
+  togglePerfumeNewArrival: (
+    perfume: FragranceProduct,
+    isNewArrival: boolean
   ) => Promise<void>;
   importStarterCatalogue: () => Promise<number>;
   saveCoupon: (input: CouponInput, isEdit?: boolean) => Promise<void>;
@@ -340,7 +358,21 @@ const PERFUMES_META_KEY = 'aurahut_perfumes_meta_v2';
 const COMBOS_CACHE_KEY = 'aurahut_combos_cache_v1';
 const LAYERING_CACHE_KEY = 'aurahut_layering_cache_v1';
 const WEEKLY_5ML_CACHE_KEY = 'aurahut_weekly_5ml_cache_v1';
-const HAMPERS_CACHE_KEY = 'aurahut_hampers_cache_v1';
+const HAMPERS_CACHE_KEY = 'aurahut_hampers_cache_v2';
+
+function resolveHamperImage(rawImage: unknown, occasion: unknown): string {
+  const raw = String(rawImage ?? '').trim();
+  const occ = String(occasion ?? '').trim().toLowerCase();
+  const fallback = occ === 'for her' || occ === 'anniversary' ? HER_HAMPER_IMAGE : HIM_HAMPER_IMAGE;
+  if (
+    !raw ||
+    raw === '/assets/images/luxury_gift_hamper_1795005244668.jpg' ||
+    raw === '/src/assets/images/luxury_gift_hamper_1795005244668.jpg'
+  ) {
+    return fallback;
+  }
+  return raw;
+}
 const CACHE_TS_KEY = 'aurahut_cache_timestamps_v1';
 const COUPON_LOOKUP_CACHE_KEY = 'aurahut_coupon_lookup_v1';
 const REFERRAL_LOOKUP_CACHE_KEY = 'aurahut_referral_lookup_v1';
@@ -363,7 +395,7 @@ type CompactPerfumeTuple = {
   sm?: 1;
   n: string;
   b: string;
-  c: 'M' | 'W' | 'U';
+  c: 'M' | 'W' | 'U' | 'K';
   cn: string;
   d: string;
   im: string;
@@ -374,9 +406,13 @@ type CompactPerfumeTuple = {
   f?: 1;
   bs?: 1;
   ub?: 1;
+  na?: 1;
+  cm?: number;
   sp?: 1;
   spl?: string;
+  spt?: 'f';
   spd?: number;
+  spa?: number;
 };
 
 function getCacheTimestamp(section: string): number {
@@ -408,8 +444,14 @@ function isCacheFresh(section: string, ttlMs: number): boolean {
 
 function encodeCompactPerfumes(items: FragranceProduct[]): string {
   const packed: CompactPerfumeTuple[] = items.map((p) => {
-    const catChar: 'M' | 'W' | 'U' =
-      p.category === 'Men' ? 'M' : p.category === 'Women' ? 'W' : 'U';
+    const catChar: 'M' | 'W' | 'U' | 'K' =
+      p.category === 'Men'
+        ? 'M'
+        : p.category === 'Women'
+        ? 'W'
+        : p.category === 'Kiddies'
+        ? 'K'
+        : 'U';
     const obj: CompactPerfumeTuple = {
       i: p.id,
       sl: p.slug,
@@ -430,9 +472,13 @@ function encodeCompactPerfumes(items: FragranceProduct[]): string {
     if (p.featured) obj.f = 1;
     if (p.bestseller) obj.bs = 1;
     if (p.isUnboxed) obj.ub = 1;
+    if (p.isNewArrival) obj.na = 1;
+    if (p.createdAtMs) obj.cm = p.createdAtMs;
     if (p.onSpecial) obj.sp = 1;
     if (p.specialLabel) obj.spl = p.specialLabel;
+    if (p.specialDiscountType === 'fixed') obj.spt = 'f';
     if (p.specialDiscountPercent) obj.spd = p.specialDiscountPercent;
+    if (p.specialDiscountAmount) obj.spa = p.specialDiscountAmount;
     return obj;
   });
   return JSON.stringify(packed);
@@ -447,7 +493,14 @@ function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
     isSampleListing: Boolean(row.sm),
     name: String(row.n ?? ''),
     brand: String(row.b ?? ''),
-    category: row.c === 'M' ? 'Men' : row.c === 'W' ? 'Women' : 'Unisex',
+    category:
+      row.c === 'M'
+        ? 'Men'
+        : row.c === 'W'
+        ? 'Women'
+        : row.c === 'K'
+        ? 'Kiddies'
+        : 'Unisex',
     concentration: String(row.cn ?? 'Eau de Parfum'),
     description: String(row.d ?? ''),
     image: String(row.im ?? ''),
@@ -472,10 +525,15 @@ function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
     featured: Boolean(row.f),
     bestseller: Boolean(row.bs),
     isUnboxed: Boolean(row.ub),
+    isNewArrival: Boolean(row.na),
+    createdAtMs: typeof row.cm === 'number' ? row.cm : undefined,
     onSpecial: Boolean(row.sp),
     specialLabel: row.spl ? String(row.spl) : '',
+    specialDiscountType: row.spt === 'f' ? 'fixed' : 'percentage',
     specialDiscountPercent:
       typeof row.spd === 'number' ? row.spd : 0,
+    specialDiscountAmount:
+      typeof row.spa === 'number' ? row.spa : 0,
   }));
 }
 
@@ -530,7 +588,10 @@ function mapPerfumeDoc(id: string, d: DocumentData): FragranceProduct {
     isSampleListing: Boolean(d.isSampleListing),
     name: String(d.name ?? ''),
     brand: String(d.brand ?? ''),
-    category: d.category === 'Men' || d.category === 'Women' ? d.category : 'Unisex',
+    category:
+      d.category === 'Men' || d.category === 'Women' || d.category === 'Kiddies'
+        ? d.category
+        : 'Unisex',
     concentration: String(d.concentration ?? 'Eau de Parfum'),
     description: String(d.description ?? ''),
     image: String(d.image ?? ''),
@@ -547,11 +608,44 @@ function mapPerfumeDoc(id: string, d: DocumentData): FragranceProduct {
     featured: Boolean(d.featured),
     bestseller: Boolean(d.bestseller),
     isUnboxed: Boolean(d.isUnboxed),
+    isNewArrival: Boolean(d.isNewArrival),
+    createdAtMs:
+      d.createdAt && typeof (d.createdAt as { toMillis?: () => number }).toMillis === 'function'
+        ? (d.createdAt as { toMillis: () => number }).toMillis()
+        : undefined,
     onSpecial: Boolean(d.onSpecial),
     specialLabel: typeof d.specialLabel === 'string' ? d.specialLabel : '',
+    specialDiscountType: d.specialDiscountType === 'fixed' ? 'fixed' : 'percentage',
     specialDiscountPercent:
       typeof d.specialDiscountPercent === 'number' ? d.specialDiscountPercent : 0,
+    specialDiscountAmount:
+      typeof d.specialDiscountAmount === 'number' ? d.specialDiscountAmount : 0,
   };
+}
+
+function sanitizeExclusiveItemsInput(raw: unknown): ExclusiveFiveMlItem[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: ExclusiveFiveMlItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const obj = entry as { perfumeId?: unknown; customPrice?: unknown };
+    const perfumeId = String(obj.perfumeId ?? '')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .slice(0, 128);
+    const price = Number(obj.customPrice);
+    if (!perfumeId || seen.has(perfumeId) || !Number.isFinite(price) || price <= 0) {
+      continue;
+    }
+    seen.add(perfumeId);
+    out.push({
+      perfumeId,
+      customPrice: Math.min(50000, Math.max(1, Math.round(price * 100) / 100)),
+    });
+    if (out.length >= 6) break;
+  }
+  return out;
 }
 
 function readCachedWeeklySpecial(): WeeklyFiveMlSpecial | null {
@@ -566,25 +660,44 @@ function readCachedWeeklySpecial(): WeeklyFiveMlSpecial | null {
       weekKey: String(parsed.weekKey ?? ''),
       seedOffset: Math.max(0, Number(parsed.seedOffset ?? 0) || 0),
       under500Ids: Array.isArray(parsed.under500Ids)
-        ? parsed.under500Ids.map(String).slice(0, 2)
+        ? parsed.under500Ids.map(String).slice(0, 3)
         : [],
       under800Ids: Array.isArray(parsed.under800Ids)
         ? parsed.under800Ids.map(String).slice(0, 2)
         : [],
       womenUnder500Ids: Array.isArray(parsed.womenUnder500Ids)
-        ? parsed.womenUnder500Ids.map(String).slice(0, 2)
+        ? parsed.womenUnder500Ids.map(String).slice(0, 3)
         : [],
       womenUnder800Ids: Array.isArray(parsed.womenUnder800Ids)
         ? parsed.womenUnder800Ids.map(String).slice(0, 2)
         : [],
       menUnder500Ids: Array.isArray(parsed.menUnder500Ids)
-        ? parsed.menUnder500Ids.map(String).slice(0, 2)
+        ? parsed.menUnder500Ids.map(String).slice(0, 3)
         : [],
       menUnder800Ids: Array.isArray(parsed.menUnder800Ids)
         ? parsed.menUnder800Ids.map(String).slice(0, 2)
         : [],
       fourPackPrice: Number(parsed.fourPackPrice ?? 100) || 100,
       twoPackPrice: Number(parsed.twoPackPrice ?? 50) || 50,
+      exclusiveEnabled: Boolean(parsed.exclusiveEnabled),
+      exclusiveTitle:
+        typeof parsed.exclusiveTitle === 'string' && parsed.exclusiveTitle.trim()
+          ? parsed.exclusiveTitle.slice(0, 100)
+          : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle,
+      exclusiveBadge:
+        typeof parsed.exclusiveBadge === 'string' && parsed.exclusiveBadge.trim()
+          ? parsed.exclusiveBadge.slice(0, 40)
+          : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge,
+      exclusiveSubtitle:
+        typeof parsed.exclusiveSubtitle === 'string'
+          ? parsed.exclusiveSubtitle.slice(0, 240)
+          : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveSubtitle,
+      exclusiveBundleEnabled: Boolean(parsed.exclusiveBundleEnabled),
+      exclusiveBundlePrice: Math.max(
+        0,
+        Number(parsed.exclusiveBundlePrice ?? 0) || 0
+      ),
+      exclusiveItems: sanitizeExclusiveItemsInput(parsed.exclusiveItems),
     };
   } catch {
     return null;
@@ -605,6 +718,19 @@ function readCachedCampaign(): SpecialCampaign | null {
       promoCodeHint: String(parsed.promoCodeHint ?? ''),
       endsAt: String(parsed.endsAt ?? ''),
       enabled: parsed.enabled,
+      heroMode:
+        parsed.heroMode === 'new-arrivals' || parsed.heroMode === 'specials'
+          ? parsed.heroMode
+          : 'auto',
+      newArrivalsTitle: String(
+        parsed.newArrivalsTitle ?? DEFAULT_CAMPAIGN.newArrivalsTitle ?? 'New Arrivals'
+      ),
+      newArrivalsBadge: String(
+        parsed.newArrivalsBadge ?? DEFAULT_CAMPAIGN.newArrivalsBadge ?? 'JUST LANDED'
+      ),
+      newArrivalsSubtitle: String(
+        parsed.newArrivalsSubtitle ?? DEFAULT_CAMPAIGN.newArrivalsSubtitle ?? ''
+      ),
     };
   } catch {
     return null;
@@ -1193,6 +1319,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                   promoCodeHint: String(d.promoCodeHint ?? ''),
                   endsAt: String(d.endsAt ?? ''),
                   enabled: Boolean(d.enabled),
+                  heroMode:
+                    d.heroMode === 'new-arrivals' || d.heroMode === 'specials'
+                      ? d.heroMode
+                      : 'auto',
+                  newArrivalsTitle: String(
+                    d.newArrivalsTitle ?? DEFAULT_CAMPAIGN.newArrivalsTitle ?? 'New Arrivals'
+                  ),
+                  newArrivalsBadge: String(
+                    d.newArrivalsBadge ?? DEFAULT_CAMPAIGN.newArrivalsBadge ?? 'JUST LANDED'
+                  ),
+                  newArrivalsSubtitle: String(
+                    d.newArrivalsSubtitle ?? DEFAULT_CAMPAIGN.newArrivalsSubtitle ?? ''
+                  ),
                 };
               })()
             : DEFAULT_CAMPAIGN;
@@ -1218,19 +1357,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                   weekKey: String(d.weekKey ?? ''),
                   seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
                   under500Ids: Array.isArray(d.under500Ids)
-                    ? d.under500Ids.map(String).slice(0, 2)
+                    ? d.under500Ids.map(String).slice(0, 3)
                     : [],
                   under800Ids: Array.isArray(d.under800Ids)
                     ? d.under800Ids.map(String).slice(0, 2)
                     : [],
                   womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
-                    ? d.womenUnder500Ids.map(String).slice(0, 2)
+                    ? d.womenUnder500Ids.map(String).slice(0, 3)
                     : [],
                   womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
                     ? d.womenUnder800Ids.map(String).slice(0, 2)
                     : [],
                   menUnder500Ids: Array.isArray(d.menUnder500Ids)
-                    ? d.menUnder500Ids.map(String).slice(0, 2)
+                    ? d.menUnder500Ids.map(String).slice(0, 3)
                     : [],
                   menUnder800Ids: Array.isArray(d.menUnder800Ids)
                     ? d.menUnder800Ids.map(String).slice(0, 2)
@@ -1239,6 +1378,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                     Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
                   twoPackPrice:
                     Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
+                  exclusiveEnabled: Boolean(d.exclusiveEnabled),
+                  exclusiveTitle:
+                    typeof d.exclusiveTitle === 'string' && d.exclusiveTitle.trim()
+                      ? d.exclusiveTitle.slice(0, 100)
+                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle,
+                  exclusiveBadge:
+                    typeof d.exclusiveBadge === 'string' && d.exclusiveBadge.trim()
+                      ? d.exclusiveBadge.slice(0, 40)
+                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge,
+                  exclusiveSubtitle:
+                    typeof d.exclusiveSubtitle === 'string'
+                      ? d.exclusiveSubtitle.slice(0, 240)
+                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveSubtitle,
+                  exclusiveBundleEnabled: Boolean(d.exclusiveBundleEnabled),
+                  exclusiveBundlePrice: Math.max(
+                    0,
+                    Number(d.exclusiveBundlePrice ?? 0) || 0
+                  ),
+                  exclusiveItems: sanitizeExclusiveItemsInput(d.exclusiveItems),
                 };
               })()
             : DEFAULT_WEEKLY_FIVE_ML_SPECIAL;
@@ -1903,7 +2061,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                   : [],
                 regularPrice: Number(d.regularPrice ?? 0),
                 hamperPrice: Number(d.hamperPrice ?? 0),
-                image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
+                image: resolveHamperImage(d.image, d.occasion),
                 giftWrapNote: String(d.giftWrapNote ?? ''),
                 availability: d.availability ?? 'In Stock',
                 featured: Boolean(d.featured),
@@ -2006,7 +2164,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             : [],
           regularPrice: Number(d.regularPrice ?? 0),
           hamperPrice: Number(d.hamperPrice ?? 0),
-          image: String(d.image ?? DEFAULT_HAMPER_IMAGE),
+          image: resolveHamperImage(d.image, d.occasion),
           giftWrapNote: String(d.giftWrapNote ?? ''),
           availability: d.availability ?? 'In Stock',
           featured: Boolean(d.featured),
@@ -2495,9 +2653,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const cleanNotes = (arr: string[]) =>
         arr.map((n) => sanitizeText(n, 60)).filter(Boolean).slice(0, 10);
 
+      const specialDiscountType: SpecialDiscountType =
+        input.specialDiscountType === 'fixed' ? 'fixed' : 'percentage';
+
       const parsedDiscount = Number(input.specialDiscountPercent ?? 0);
       const safeDiscount = Number.isFinite(parsedDiscount)
         ? Math.min(90, Math.max(0, parsedDiscount))
+        : 0;
+
+      const parsedAmount = Number(input.specialDiscountAmount ?? 0);
+      const safeDiscountAmount = Number.isFinite(parsedAmount)
+        ? Math.min(50000, Math.max(0, Math.round(parsedAmount * 100) / 100))
         : 0;
 
       const cleanDescription = (
@@ -2534,9 +2700,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         featured: Boolean(input.featured),
         bestseller: Boolean(input.bestseller),
         isUnboxed: Boolean(input.isUnboxed),
+        isNewArrival: Boolean(input.isNewArrival),
         onSpecial: Boolean(input.onSpecial),
         specialLabel: sanitizeText(input.specialLabel ?? '', 60),
+        specialDiscountType,
         specialDiscountPercent: safeDiscount,
+        specialDiscountAmount: safeDiscountAmount,
         updatedAt: serverTimestamp(),
       };
 
@@ -2581,9 +2750,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           featured: basePayload.featured,
           bestseller: basePayload.bestseller,
           isUnboxed: basePayload.isUnboxed,
+          isNewArrival: basePayload.isNewArrival,
+          createdAtMs: prevPerfume?.createdAtMs ?? Date.now(),
           onSpecial: basePayload.onSpecial,
           specialLabel: basePayload.specialLabel,
+          specialDiscountType,
           specialDiscountPercent: safeDiscount,
+          specialDiscountAmount: safeDiscountAmount,
         };
         const nextList = mergePerfumeLists(livePerfumesRef.current, [updatedProduct]);
         void publishCatalogueSnapshot(nextList);
@@ -2604,25 +2777,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       perfume: FragranceProduct,
       onSpecial: boolean,
       specialDiscountPercent?: number,
-      specialLabel?: string
+      specialLabel?: string,
+      specialDiscountType?: SpecialDiscountType,
+      specialDiscountAmount?: number
     ): Promise<void> => {
       requireOwnerUid();
       const path = `perfumes/${perfume.id}`;
+      const resolvedType: SpecialDiscountType =
+        (specialDiscountType ?? perfume.specialDiscountType) === 'fixed'
+          ? 'fixed'
+          : 'percentage';
       const safeDiscount = Math.min(
         90,
         Math.max(0, specialDiscountPercent ?? perfume.specialDiscountPercent ?? 0)
       );
+      const rawAmount = Number(
+        specialDiscountAmount ?? perfume.specialDiscountAmount ?? 0
+      );
+      const safeDiscountAmount = Number.isFinite(rawAmount)
+        ? Math.min(50000, Math.max(0, Math.round(rawAmount * 100) / 100))
+        : 0;
       const cleanLabel = sanitizeText(
         specialLabel ?? perfume.specialLabel ?? campaign.badgeText ?? 'Special Offer',
         60
       );
+      const offerSummary =
+        resolvedType === 'fixed'
+          ? `-E${safeDiscountAmount} Off`
+          : `${safeDiscount}% Off`;
 
       try {
         await setDoc(
           doc(db, 'perfumes', perfume.id),
           {
             onSpecial,
+            specialDiscountType: resolvedType,
             specialDiscountPercent: safeDiscount,
+            specialDiscountAmount: safeDiscountAmount,
             specialLabel: cleanLabel,
             updatedAt: serverTimestamp(),
           },
@@ -2634,12 +2825,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           targetId: perfume.id,
           targetLabel: `${perfume.name} (${perfume.brand})`,
           summary: onSpecial
-            ? `Marked "${perfume.name}" on special (${safeDiscount}% Off)`
+            ? `Marked "${perfume.name}" on special (${offerSummary})`
             : `Removed "${perfume.name}" from specials`,
           changes: [
             `On Special: ${perfume.onSpecial ? 'Yes' : 'No'} → ${onSpecial ? 'Yes' : 'No'}`,
             onSpecial
-              ? `Special Discount: ${safeDiscount}% Off · Label: ${cleanLabel || 'None'}`
+              ? `Special Discount: ${offerSummary} · Label: ${cleanLabel || 'None'}`
               : 'Special offer deactivated',
           ],
         });
@@ -2648,7 +2839,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             ? {
                 ...p,
                 onSpecial,
+                specialDiscountType: resolvedType,
                 specialDiscountPercent: safeDiscount,
+                specialDiscountAmount: safeDiscountAmount,
                 specialLabel: cleanLabel,
               }
             : p
@@ -2659,6 +2852,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     },
     [campaign.badgeText, publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+  );
+
+  const togglePerfumeNewArrival = useCallback(
+    async (perfume: FragranceProduct, isNewArrival: boolean): Promise<void> => {
+      requireOwnerUid();
+      const path = `perfumes/${perfume.id}`;
+      try {
+        await setDoc(
+          doc(db, 'perfumes', perfume.id),
+          {
+            isNewArrival,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        await writeAuditLog({
+          action: 'update',
+          section: 'perfume',
+          targetId: perfume.id,
+          targetLabel: `${perfume.name} (${perfume.brand})`,
+          summary: isNewArrival
+            ? `Marked "${perfume.name}" as New Arrival`
+            : `Removed "${perfume.name}" from New Arrivals`,
+          changes: [
+            `New Arrival: ${perfume.isNewArrival ? 'Yes' : 'No'} → ${isNewArrival ? 'Yes' : 'No'}`,
+          ],
+        });
+        const nextList = livePerfumesRef.current.map((p) =>
+          p.id === perfume.id ? { ...p, isNewArrival } : p
+        );
+        void publishCatalogueSnapshot(nextList);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
   );
 
   const deletePerfume = useCallback(
@@ -2721,9 +2950,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           featured: item.featured,
           bestseller: item.bestseller,
           isUnboxed: Boolean(item.isUnboxed),
+          isNewArrival: false,
           onSpecial: false,
           specialLabel: '',
+          specialDiscountType: 'percentage',
           specialDiscountPercent: 0,
+          specialDiscountAmount: 0,
           ownerUid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -3538,6 +3770,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           promoCodeHint: sanitizePromoCode(next.promoCodeHint).slice(0, 32),
           endsAt: cleanEndsAt,
           enabled: Boolean(next.enabled),
+          heroMode:
+            next.heroMode === 'new-arrivals' || next.heroMode === 'specials'
+              ? next.heroMode
+              : 'auto',
+          newArrivalsTitle: sanitizeText(next.newArrivalsTitle ?? '', 100) || 'New Arrivals',
+          newArrivalsBadge: sanitizeText(next.newArrivalsBadge ?? '', 40) || 'JUST LANDED',
+          newArrivalsSubtitle: sanitizeText(next.newArrivalsSubtitle ?? '', 400),
         };
 
         const payload = { ...cleanNextCampaign, updatedAt: serverTimestamp() };
@@ -3593,29 +3832,53 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           0,
           24
         );
-        const sanitizePair = (arr: string[], exclude?: Set<string>) =>
+        const sanitizeList = (
+          arr: string[],
+          maxLen: number,
+          exclude?: Set<string>
+        ) =>
           arr
             .map(safeId)
             .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
-            .slice(0, 2);
+            .slice(0, maxLen);
 
-        const womenUnder500Ids = sanitizePair(next.womenUnder500Ids ?? []);
-        const womenUnder800Ids = sanitizePair(
+        const womenUnder500Ids = sanitizeList(next.womenUnder500Ids ?? [], 3);
+        const womenUnder800Ids = sanitizeList(
           next.womenUnder800Ids ?? [],
+          2,
           new Set(womenUnder500Ids)
         );
-        const menUnder500Ids = sanitizePair(next.menUnder500Ids ?? []);
-        const menUnder800Ids = sanitizePair(
+        const menUnder500Ids = sanitizeList(next.menUnder500Ids ?? [], 3);
+        const menUnder800Ids = sanitizeList(
           next.menUnder800Ids ?? [],
+          2,
           new Set(menUnder500Ids)
         );
 
-        const under500Ids = sanitizePair(
-          next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids
+        const under500Ids = sanitizeList(
+          next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids,
+          3
         );
-        const under800Ids = sanitizePair(
+        const under800Ids = sanitizeList(
           next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
+          2,
           new Set(under500Ids)
+        );
+
+        const cleanExclusiveItems = sanitizeExclusiveItemsInput(next.exclusiveItems);
+        const cleanExclusiveTitle =
+          sanitizeText(next.exclusiveTitle ?? '', 100) ||
+          DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle;
+        const cleanExclusiveBadge =
+          sanitizeText(next.exclusiveBadge ?? '', 40) ||
+          DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge;
+        const cleanExclusiveSubtitle = sanitizeText(
+          next.exclusiveSubtitle ?? '',
+          240
+        );
+        const cleanBundlePrice = Math.min(
+          50000,
+          Math.max(0, Number(next.exclusiveBundlePrice ?? 0) || 0)
         );
 
         const cleanNextWeekly: WeeklyFiveMlSpecial = {
@@ -3634,6 +3897,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           menUnder800Ids,
           fourPackPrice,
           twoPackPrice,
+          exclusiveEnabled: Boolean(next.exclusiveEnabled),
+          exclusiveTitle: cleanExclusiveTitle,
+          exclusiveBadge: cleanExclusiveBadge,
+          exclusiveSubtitle: cleanExclusiveSubtitle,
+          exclusiveBundleEnabled:
+            Boolean(next.exclusiveBundleEnabled) &&
+            cleanExclusiveItems.length >= 2 &&
+            cleanBundlePrice > 0,
+          exclusiveBundlePrice: cleanBundlePrice,
+          exclusiveItems: cleanExclusiveItems,
         };
 
         const payload = { ...cleanNextWeekly, updatedAt: serverTimestamp() };
@@ -4117,6 +4390,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       savePerfume,
       deletePerfume,
       togglePerfumeSpecial,
+      togglePerfumeNewArrival,
       importStarterCatalogue,
       saveCoupon,
       toggleCouponActive,
@@ -4211,6 +4485,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       savePerfume,
       deletePerfume,
       togglePerfumeSpecial,
+      togglePerfumeNewArrival,
       importStarterCatalogue,
       saveCoupon,
       toggleCouponActive,

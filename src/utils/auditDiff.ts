@@ -88,11 +88,25 @@ export function buildPerfumeDiff(
     featured: boolean;
     bestseller: boolean;
     isUnboxed?: boolean;
+    isNewArrival?: boolean;
     onSpecial?: boolean;
     specialLabel?: string;
+    specialDiscountType?: 'percentage' | 'fixed';
     specialDiscountPercent?: number;
+    specialDiscountAmount?: number;
   }
 ): string[] {
+  const describeSpecial = (entry: {
+    specialDiscountType?: 'percentage' | 'fixed';
+    specialDiscountPercent?: number;
+    specialDiscountAmount?: number;
+  }): string => {
+    if (entry.specialDiscountType === 'fixed') {
+      return `-E${entry.specialDiscountAmount ?? 0}`;
+    }
+    return `${entry.specialDiscountPercent ?? 0}% Off`;
+  };
+
   if (!prev) {
     const activeSizes = next.sizes
       .filter((s) => s.available)
@@ -106,9 +120,10 @@ export function buildPerfumeDiff(
       )}`,
       activeSizes ? `Sizes: ${activeSizes}` : 'No active sizes',
       next.onSpecial
-        ? `On Special: ${next.specialDiscountPercent ?? 0}% Off (${next.specialLabel || 'Special'})`
+        ? `On Special: ${describeSpecial(next)} (${next.specialLabel || 'Special'})`
         : '',
       next.isUnboxed ? 'Marked as Unboxed Perfume' : '',
+      next.isNewArrival ? 'Marked as New Arrival' : '',
     ]);
   }
 
@@ -161,18 +176,20 @@ export function buildPerfumeDiff(
   if (Boolean(prev.onSpecial) !== Boolean(next.onSpecial)) {
     changes.push(
       `On Special: ${fmtBool(prev.onSpecial)} → ${fmtBool(next.onSpecial)}${
-        next.onSpecial ? ` (${next.specialDiscountPercent ?? 0}% Off)` : ''
+        next.onSpecial ? ` (${describeSpecial(next)})` : ''
       }`
     );
   } else if (
     next.onSpecial &&
-    (prev.specialDiscountPercent !== next.specialDiscountPercent ||
+    ((prev.specialDiscountType ?? 'percentage') !== (next.specialDiscountType ?? 'percentage') ||
+      prev.specialDiscountPercent !== next.specialDiscountPercent ||
+      (prev.specialDiscountAmount ?? 0) !== (next.specialDiscountAmount ?? 0) ||
       (prev.specialLabel ?? '') !== (next.specialLabel ?? ''))
   ) {
     changes.push(
-      `Special Offer: ${prev.specialDiscountPercent ?? 0}% (${prev.specialLabel || '—'}) → ${
-        next.specialDiscountPercent ?? 0
-      }% (${next.specialLabel || '—'})`
+      `Special Offer: ${describeSpecial(prev)} (${prev.specialLabel || '—'}) → ${describeSpecial(
+        next
+      )} (${next.specialLabel || '—'})`
     );
   }
 
@@ -181,6 +198,9 @@ export function buildPerfumeDiff(
   }
   if (Boolean(prev.isUnboxed) !== Boolean(next.isUnboxed)) {
     changes.push(`Unboxed: ${fmtBool(prev.isUnboxed)} → ${fmtBool(next.isUnboxed)}`);
+  }
+  if (Boolean(prev.isNewArrival) !== Boolean(next.isNewArrival)) {
+    changes.push(`New Arrival: ${fmtBool(prev.isNewArrival)} → ${fmtBool(next.isNewArrival)}`);
   }
   if (prev.description !== next.description) {
     changes.push('Updated fragrance description');
@@ -210,11 +230,27 @@ export function buildCampaignDiff(
   if (prev.enabled !== next.enabled) {
     changes.push(`Campaign Status: ${prev.enabled ? 'Live' : 'Paused'} → ${next.enabled ? 'Live' : 'Paused'}`);
   }
+  if ((prev.heroMode ?? 'auto') !== (next.heroMode ?? 'auto')) {
+    changes.push(`Hero Showcase Mode: ${prev.heroMode ?? 'auto'} → ${next.heroMode ?? 'auto'}`);
+  }
   if (prev.title !== next.title) {
     changes.push(`Title: "${prev.title}" → "${next.title}"`);
   }
   if (prev.badgeText !== next.badgeText) {
     changes.push(`Badge: "${prev.badgeText}" → "${next.badgeText}"`);
+  }
+  if ((prev.newArrivalsTitle ?? 'New Arrivals') !== (next.newArrivalsTitle ?? 'New Arrivals')) {
+    changes.push(
+      `New Arrivals Title: "${prev.newArrivalsTitle ?? 'New Arrivals'}" → "${next.newArrivalsTitle ?? 'New Arrivals'}"`
+    );
+  }
+  if ((prev.newArrivalsBadge ?? 'JUST LANDED') !== (next.newArrivalsBadge ?? 'JUST LANDED')) {
+    changes.push(
+      `New Arrivals Badge: "${prev.newArrivalsBadge ?? 'JUST LANDED'}" → "${next.newArrivalsBadge ?? 'JUST LANDED'}"`
+    );
+  }
+  if ((prev.newArrivalsSubtitle ?? '') !== (next.newArrivalsSubtitle ?? '')) {
+    changes.push('Updated New Arrivals hero subtitle');
   }
   if (prev.endsAt !== next.endsAt) {
     changes.push(
@@ -279,6 +315,35 @@ export function buildWeeklySpecialDiff(
   }
   if (prev.menUnder800Ids.join(',') !== next.menUnder800Ids.join(',')) {
     changes.push(`Men Under E800: ${fmtIds(next.menUnder800Ids)}`);
+  }
+  if (prev.exclusiveEnabled !== next.exclusiveEnabled) {
+    changes.push(
+      `Exclusive 5ml Special: ${prev.exclusiveEnabled ? 'Active' : 'Paused'} → ${
+        next.exclusiveEnabled ? 'Active' : 'Paused'
+      }`
+    );
+  }
+  if (prev.exclusiveTitle !== next.exclusiveTitle) {
+    changes.push(`Exclusive Title: ${prev.exclusiveTitle} → ${next.exclusiveTitle}`);
+  }
+  if (
+    prev.exclusiveBundleEnabled !== next.exclusiveBundleEnabled ||
+    prev.exclusiveBundlePrice !== next.exclusiveBundlePrice
+  ) {
+    changes.push(
+      `Exclusive Bundle: ${
+        next.exclusiveBundleEnabled ? fmtPrice(next.exclusiveBundlePrice) : 'Disabled'
+      }`
+    );
+  }
+  const fmtExclusive = (items: WeeklyFiveMlSpecial['exclusiveItems']) =>
+    items.length > 0
+      ? items
+          .map((it) => `${resolvePerfumeName(it.perfumeId)} (${fmtPrice(it.customPrice)})`)
+          .join(', ')
+      : 'None';
+  if (fmtExclusive(prev.exclusiveItems ?? []) !== fmtExclusive(next.exclusiveItems ?? [])) {
+    changes.push(`Exclusive 5ml Picks: ${fmtExclusive(next.exclusiveItems ?? [])}`);
   }
 
   if (changes.length === 0) {

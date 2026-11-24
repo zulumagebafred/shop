@@ -150,7 +150,9 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
       unitPrice: sizePricing.effectivePrice,
       originalUnitPrice: sizePricing.originalPrice,
       onSpecial: product.onSpecial,
+      specialDiscountType: product.specialDiscountType,
       specialDiscountPercent: product.specialDiscountPercent,
+      specialDiscountAmount: product.specialDiscountAmount,
       quantity,
       isSampleListing: product.isSampleListing,
     };
@@ -222,7 +224,9 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
           unitPrice: sizePricing.effectivePrice,
           originalUnitPrice: sizePricing.originalPrice,
           onSpecial: product.onSpecial,
+          specialDiscountType: product.specialDiscountType,
           specialDiscountPercent: product.specialDiscountPercent,
+          specialDiscountAmount: product.specialDiscountAmount,
           quantity,
           isSampleListing: product.isSampleListing,
         };
@@ -382,7 +386,9 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                       const effPrice = getEffectiveUnitPrice(
                         opt.price,
                         product.onSpecial,
-                        product.specialDiscountPercent
+                        product.specialDiscountPercent,
+                        product.specialDiscountType,
+                        product.specialDiscountAmount
                       );
                       return (
                         <button

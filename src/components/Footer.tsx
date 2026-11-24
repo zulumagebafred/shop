@@ -135,6 +135,15 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenBasket }) => {
               <li>
                 <button
                   type="button"
+                  onClick={() => onNavigate('shop', { category: 'Kiddies' })}
+                  className="hover:text-white transition-colors"
+                >
+                  Kiddies Perfumes
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
                   onClick={() => onNavigate('gifts')}
                   className="hover:text-white transition-colors"
                 >

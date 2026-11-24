@@ -33,6 +33,7 @@ import {
 } from '../utils/branches';
 import {
   calculateReferralBenefit,
+  formatSpecialDiscountTag,
   getEffectiveUnitPrice,
   getHighestAvailableSize,
   getSizeEffectivePrice,
@@ -272,7 +273,15 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             {product.onSpecial && (
               <span className="absolute top-4 left-4 bg-[#FACC15] text-[#0A0A0A] px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-[0.14em] shadow-xs">
                 {product.specialLabel || 'Special'}
-                {product.specialDiscountPercent ? ` · -${product.specialDiscountPercent}%` : ''}
+                {(() => {
+                  const tag = formatSpecialDiscountTag(
+                    product.onSpecial,
+                    product.specialDiscountPercent,
+                    product.specialDiscountType,
+                    product.specialDiscountAmount
+                  );
+                  return tag ? ` · ${tag}` : '';
+                })()}
               </span>
             )}
           </div>
@@ -416,7 +425,9 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 const eff = getEffectiveUnitPrice(
                   opt.price,
                   product.onSpecial,
-                  product.specialDiscountPercent
+                  product.specialDiscountPercent,
+                  product.specialDiscountType,
+                  product.specialDiscountAmount
                 );
                 return (
                   <button

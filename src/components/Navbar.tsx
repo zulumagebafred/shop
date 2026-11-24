@@ -32,6 +32,7 @@ interface NavbarProps {
       season?: SeasonFilter;
       onlySpecials?: boolean;
       onlyUnboxed?: boolean;
+      onlyNewArrivals?: boolean;
     }
   ) => void;
   onOpenSearch: () => void;
@@ -102,6 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       category?: FragranceCategory | 'All';
       onlySpecials?: boolean;
       onlyUnboxed?: boolean;
+      onlyNewArrivals?: boolean;
     }
   ) => {
     onNavigate(page, {
@@ -110,6 +112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       season: 'all',
       onlySpecials: options?.onlySpecials ?? false,
       onlyUnboxed: options?.onlyUnboxed ?? false,
+      onlyNewArrivals: options?.onlyNewArrivals ?? false,
     });
     setOpenDropdown(null);
     setMobileMenuOpen(false);
@@ -142,6 +145,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       label: 'Unisex Signatures',
       subtitle: 'Rich saffron, amber & shared extraits',
       category: 'Unisex',
+    },
+    {
+      label: 'Kiddies Perfumes',
+      subtitle: 'Gentle, playful & kid-friendly scents',
+      category: 'Kiddies',
     },
     {
       label: 'Unboxed Original Bottles',

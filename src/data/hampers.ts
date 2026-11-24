@@ -10,7 +10,11 @@ export const GIFT_HAMPER_OCCASIONS: string[] = [
   'Discovery Gift',
 ];
 
-export const DEFAULT_HAMPER_IMAGE = '/assets/images/luxury_gift_hamper_1795005244668.jpg';
+export const HIM_HAMPER_IMAGE =
+  '/assets/aistudio/WhatsApp_Image_2026-11-23_at_10.25.32_PM_9d692157.jpeg';
+export const HER_HAMPER_IMAGE =
+  '/assets/aistudio/WhatsApp_Image_2026-11-23_at_10.21.37_PM_f624f3c3.jpeg';
+export const DEFAULT_HAMPER_IMAGE = HIM_HAMPER_IMAGE;
 
 export const starterHampers: GiftHamper[] = [
   {
@@ -27,7 +31,7 @@ export const starterHampers: GiftHamper[] = [
     ],
     regularPrice: 1250,
     hamperPrice: 990,
-    image: '/assets/images/luxury_gift_hamper_1795005244668.jpg',
+    image: HER_HAMPER_IMAGE,
     giftWrapNote: 'Includes complimentary ribbon wrap & handwritten card',
     availability: 'In Stock',
     featured: true,
@@ -47,7 +51,7 @@ export const starterHampers: GiftHamper[] = [
     ],
     regularPrice: 1450,
     hamperPrice: 1150,
-    image: '/assets/images/house_armaf_1794685069505.jpg',
+    image: HIM_HAMPER_IMAGE,
     giftWrapNote: 'Complimentary obsidian box wrap & custom message tag',
     availability: 'In Stock',
     featured: true,
@@ -67,7 +71,7 @@ export const starterHampers: GiftHamper[] = [
     ],
     regularPrice: 2350,
     hamperPrice: 1890,
-    image: '/assets/images/house_al_haramain_1794685068564.jpg',
+    image: HER_HAMPER_IMAGE,
     giftWrapNote: 'Includes gold-seal ribbon hamper box & dual gift card',
     availability: 'In Stock',
     featured: true,
@@ -87,7 +91,7 @@ export const starterHampers: GiftHamper[] = [
     ],
     regularPrice: 720,
     hamperPrice: 580,
-    image: '/assets/images/house_paris_corner_1794685071664.jpg',
+    image: HIM_HAMPER_IMAGE,
     giftWrapNote: 'Ready for same-day pickup or Post Office dispatch',
     availability: 'In Stock',
     featured: false,

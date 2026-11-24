@@ -9,6 +9,7 @@ import {
   getBranchAvailabilityLabel,
 } from '../utils/branches';
 import {
+  formatSpecialDiscountTag,
   getBestPriceOptionForRange,
   getEffectiveUnitPrice,
   getProductPriceSummary,
@@ -75,13 +76,14 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
     ? getEffectiveUnitPrice(
         selectedOriginal,
         product.onSpecial,
-        product.specialDiscountPercent
+        product.specialDiscountPercent,
+        product.specialDiscountType,
+        product.specialDiscountAmount
       )
     : null;
   const selectedHasDiscount =
     Boolean(selectedSizeOption) &&
     Boolean(product.onSpecial) &&
-    Boolean(product.specialDiscountPercent && product.specialDiscountPercent > 0) &&
     selectedOriginal !== null &&
     selectedEffective !== null &&
     selectedEffective < selectedOriginal;
@@ -148,7 +150,10 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           variant="card"
           className="w-full h-full object-cover saturate-[1.12] contrast-[1.03] transition-transform duration-400 ease-out group-hover:scale-[1.03]"
         />
-        {(product.availability !== 'In Stock' || hasDiscount || product.onSpecial) && (
+        {(product.availability !== 'In Stock' ||
+          hasDiscount ||
+          product.onSpecial ||
+          product.isNewArrival) && (
           <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
             {product.availability === 'Out of Stock' ? (
               <span className="bg-white/95 text-[#991B1B] border border-[#FCA5A5] px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide">
@@ -161,7 +166,19 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
             ) : product.onSpecial ? (
               <span className="inline-block bg-[#FACC15] text-[#0A0A0A] px-3 py-1 rounded-full text-[11px] font-bold tracking-tight shadow-xs">
                 {product.specialLabel || 'Special'}
-                {product.specialDiscountPercent ? ` · -${product.specialDiscountPercent}%` : ''}
+                {(() => {
+                  const tag = formatSpecialDiscountTag(
+                    product.onSpecial,
+                    product.specialDiscountPercent,
+                    product.specialDiscountType,
+                    product.specialDiscountAmount
+                  );
+                  return tag ? ` · ${tag}` : '';
+                })()}
+              </span>
+            ) : product.isNewArrival ? (
+              <span className="inline-block bg-[#0A0A0A] text-[#FACC15] border border-[#FACC15]/40 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-xs">
+                New Arrival
               </span>
             ) : product.availability !== 'In Stock' ? (
               <span className="bg-white/95 text-[#0A0A0A] border border-[#E5E5E5] px-2.5 py-1 rounded-full text-[10px] font-medium tracking-wide">
@@ -226,7 +243,9 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                 const eff = getEffectiveUnitPrice(
                   opt.price,
                   product.onSpecial,
-                  product.specialDiscountPercent
+                  product.specialDiscountPercent,
+                  product.specialDiscountType,
+                  product.specialDiscountAmount
                 );
                 const isHighest = opt.size === displaySize;
                 return (

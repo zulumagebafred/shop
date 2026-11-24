@@ -13,6 +13,7 @@ import {
 import { ResilientImage } from '../components/ResilientImage';
 import { formatPrice, siteConfig } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
+import { HER_HAMPER_IMAGE, HIM_HAMPER_IMAGE } from '../data/hampers';
 import { AppPage, FragranceCategory, GiftHamper } from '../types/fragrance';
 import { createWhatsAppUrl } from '../utils/whatsapp';
 
@@ -148,21 +149,31 @@ export const GiftsHampersPage: React.FC<GiftsHampersPageProps> = ({
           </div>
 
           <div className="lg:col-span-5">
-            <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-white/15 bg-[#141414]">
-              <ResilientImage
-                src="/assets/images/luxury_gift_hamper_1795005244668.jpg"
-                alt="AuraHut Co. Luxury Perfume Gift Hamper"
-                fallbackTitle="AuraHut Co. Gift Hampers"
-                loading="eager"
-                fetchPriority="high"
-                className="w-full h-full object-cover"
-              />
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent"
-              />
-              <div className="absolute bottom-4 left-5 right-5 flex items-center justify-between gap-2 text-xs text-white/90">
-                <span className="font-medium">Ribbon-Wrapped &amp; Handwritten Card</span>
+            <div className="relative rounded-3xl overflow-hidden border border-white/15 bg-[#141414] p-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-white">
+                  <ResilientImage
+                    src={HIM_HAMPER_IMAGE}
+                    alt="AuraHut Co. For Him Black & Gold Gift Hamper Box"
+                    fallbackTitle="For Him Gift Box"
+                    loading="eager"
+                    fetchPriority="high"
+                    className="w-full h-full object-cover object-center"
+                  />
+                </div>
+                <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-white">
+                  <ResilientImage
+                    src={HER_HAMPER_IMAGE}
+                    alt="AuraHut Co. For Her Blush Pink & Rose Gold Gift Hamper Box"
+                    fallbackTitle="For Her Gift Box"
+                    loading="eager"
+                    fetchPriority="high"
+                    className="w-full h-full object-cover object-center"
+                  />
+                </div>
+              </div>
+              <div className="pt-3 px-2 pb-1 flex items-center justify-between gap-2 text-xs text-white/90">
+                <span className="font-medium">His &amp; Hers Curated Gift Boxes</span>
                 <span className="text-[#FACC15] font-semibold uppercase tracking-wider text-[11px]">
                   {isPreviewTemplate ? 'Coming Soon · Preview' : 'Same-Day Ready'}
                 </span>

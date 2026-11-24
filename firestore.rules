@@ -86,15 +86,16 @@ service cloud.firestore {
       data.keys().hasOnly([
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
         'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
-        'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent',
-        'isUnboxed',
+        'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountType',
+        'specialDiscountPercent', 'specialDiscountAmount',
+        'isUnboxed', 'isNewArrival',
         'ownerUid', 'createdAt', 'updatedAt'
       ]) &&
       data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 160 &&
       data.isSampleListing is bool &&
       data.name is string && data.name.size() >= 1 && data.name.size() <= 140 &&
       data.brand is string && data.brand.size() >= 1 && data.brand.size() <= 100 &&
-      data.category in ['Men', 'Women', 'Unisex'] &&
+      data.category in ['Men', 'Women', 'Unisex', 'Kiddies'] &&
       data.concentration is string && data.concentration.size() >= 1 && data.concentration.size() <= 100 &&
       data.description is string && data.description.size() <= 2000 &&
       data.image is string && data.image.size() >= 1 && data.image.size() <= 500 &&
@@ -111,8 +112,11 @@ service cloud.firestore {
       data.bestseller is bool &&
       data.onSpecial is bool &&
       data.specialLabel is string && data.specialLabel.size() <= 60 &&
+      (!('specialDiscountType' in data) || data.specialDiscountType in ['percentage', 'fixed']) &&
       data.specialDiscountPercent is number && data.specialDiscountPercent >= 0 && data.specialDiscountPercent <= 90 &&
+      (!('specialDiscountAmount' in data) || (data.specialDiscountAmount is number && data.specialDiscountAmount >= 0 && data.specialDiscountAmount <= 50000)) &&
       (!('isUnboxed' in data) || data.isUnboxed is bool) &&
+      (!('isNewArrival' in data) || data.isNewArrival is bool) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
@@ -178,7 +182,9 @@ service cloud.firestore {
       ]) &&
       data.keys().hasOnly([
         'title', 'badgeText', 'subtitle', 'announcementText',
-        'promoCodeHint', 'endsAt', 'enabled', 'ownerUid', 'updatedAt'
+        'promoCodeHint', 'endsAt', 'enabled',
+        'heroMode', 'newArrivalsTitle', 'newArrivalsBadge', 'newArrivalsSubtitle',
+        'ownerUid', 'updatedAt'
       ]) &&
       data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
       data.badgeText is string && data.badgeText.size() >= 1 && data.badgeText.size() <= 40 &&
@@ -187,6 +193,10 @@ service cloud.firestore {
       data.promoCodeHint is string && data.promoCodeHint.size() <= 32 &&
       data.endsAt is string && data.endsAt.size() <= 64 &&
       data.enabled is bool &&
+      (!('heroMode' in data) || data.heroMode in ['auto', 'specials', 'new-arrivals']) &&
+      (!('newArrivalsTitle' in data) || (data.newArrivalsTitle is string && data.newArrivalsTitle.size() <= 100)) &&
+      (!('newArrivalsBadge' in data) || (data.newArrivalsBadge is string && data.newArrivalsBadge.size() <= 40)) &&
+      (!('newArrivalsSubtitle' in data) || (data.newArrivalsSubtitle is string && data.newArrivalsSubtitle.size() <= 400)) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
       data.updatedAt is timestamp;
     }
@@ -260,6 +270,35 @@ service cloud.firestore {
         (ids.size() < 2 || isValidId(ids[1]));
     }
 
+    function isValidWeeklyUnder500List(ids) {
+      return ids is list &&
+        ids.size() <= 3 &&
+        (ids.size() == 0 || isValidId(ids[0])) &&
+        (ids.size() < 2 || isValidId(ids[1])) &&
+        (ids.size() < 3 || isValidId(ids[2]));
+    }
+
+    function isValidExclusiveFiveMlEntry(entry) {
+      return entry is map &&
+        entry.keys().hasAll(['perfumeId', 'customPrice']) &&
+        entry.keys().hasOnly(['perfumeId', 'customPrice']) &&
+        isValidId(entry.perfumeId) &&
+        entry.customPrice is number &&
+        entry.customPrice >= 1 &&
+        entry.customPrice <= 50000;
+    }
+
+    function isValidExclusiveFiveMlList(items) {
+      return items is list &&
+        items.size() <= 6 &&
+        (items.size() == 0 || isValidExclusiveFiveMlEntry(items[0])) &&
+        (items.size() < 2 || isValidExclusiveFiveMlEntry(items[1])) &&
+        (items.size() < 3 || isValidExclusiveFiveMlEntry(items[2])) &&
+        (items.size() < 4 || isValidExclusiveFiveMlEntry(items[3])) &&
+        (items.size() < 5 || isValidExclusiveFiveMlEntry(items[4])) &&
+        (items.size() < 6 || isValidExclusiveFiveMlEntry(items[5]));
+    }
+
     function isValidWeeklySpecial(data) {
       return data.keys().hasAll([
         'enabled', 'autoRotateWeekly', 'weekKey', 'seedOffset',
@@ -272,21 +311,30 @@ service cloud.firestore {
         'womenUnder500Ids', 'womenUnder800Ids',
         'menUnder500Ids', 'menUnder800Ids',
         'fourPackPrice', 'twoPackPrice',
+        'exclusiveEnabled', 'exclusiveTitle', 'exclusiveBadge', 'exclusiveSubtitle',
+        'exclusiveBundleEnabled', 'exclusiveBundlePrice', 'exclusiveItems',
         'ownerUid', 'updatedAt'
       ]) &&
       data.enabled is bool &&
       data.autoRotateWeekly is bool &&
       data.weekKey is string && data.weekKey.size() >= 1 && data.weekKey.size() <= 24 &&
       data.seedOffset is number && data.seedOffset >= 0 && data.seedOffset <= 1000000 &&
-      isValidWeeklyPickList(data.under500Ids) &&
+      isValidWeeklyUnder500List(data.under500Ids) &&
       isValidWeeklyPickList(data.under800Ids) &&
-      (!('womenUnder500Ids' in data) || isValidWeeklyPickList(data.womenUnder500Ids)) &&
+      (!('womenUnder500Ids' in data) || isValidWeeklyUnder500List(data.womenUnder500Ids)) &&
       (!('womenUnder800Ids' in data) || isValidWeeklyPickList(data.womenUnder800Ids)) &&
-      (!('menUnder500Ids' in data) || isValidWeeklyPickList(data.menUnder500Ids)) &&
+      (!('menUnder500Ids' in data) || isValidWeeklyUnder500List(data.menUnder500Ids)) &&
       (!('menUnder800Ids' in data) || isValidWeeklyPickList(data.menUnder800Ids)) &&
       data.fourPackPrice is number && data.fourPackPrice >= 1 && data.fourPackPrice <= 10000 &&
       data.twoPackPrice is number && data.twoPackPrice >= 1 && data.twoPackPrice <= 10000 &&
       data.twoPackPrice <= data.fourPackPrice &&
+      (!('exclusiveEnabled' in data) || data.exclusiveEnabled is bool) &&
+      (!('exclusiveTitle' in data) || (data.exclusiveTitle is string && data.exclusiveTitle.size() <= 100)) &&
+      (!('exclusiveBadge' in data) || (data.exclusiveBadge is string && data.exclusiveBadge.size() <= 40)) &&
+      (!('exclusiveSubtitle' in data) || (data.exclusiveSubtitle is string && data.exclusiveSubtitle.size() <= 240)) &&
+      (!('exclusiveBundleEnabled' in data) || data.exclusiveBundleEnabled is bool) &&
+      (!('exclusiveBundlePrice' in data) || (data.exclusiveBundlePrice is number && data.exclusiveBundlePrice >= 0 && data.exclusiveBundlePrice <= 50000)) &&
+      (!('exclusiveItems' in data) || isValidExclusiveFiveMlList(data.exclusiveItems)) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
       data.updatedAt is timestamp;
     }
@@ -506,7 +554,8 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly([
           'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
           'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
-          'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountPercent', 'isUnboxed', 'updatedAt'
+          'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountType',
+          'specialDiscountPercent', 'specialDiscountAmount', 'isUnboxed', 'isNewArrival', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(perfumeId);
     }
@@ -573,7 +622,9 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'title', 'badgeText', 'subtitle', 'announcementText',
-          'promoCodeHint', 'endsAt', 'enabled', 'updatedAt'
+          'promoCodeHint', 'endsAt', 'enabled',
+          'heroMode', 'newArrivalsTitle', 'newArrivalsBadge', 'newArrivalsSubtitle',
+          'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(campaignId);
     }
@@ -640,7 +691,10 @@ service cloud.firestore {
           'under500Ids', 'under800Ids',
           'womenUnder500Ids', 'womenUnder800Ids',
           'menUnder500Ids', 'menUnder800Ids',
-          'fourPackPrice', 'twoPackPrice', 'updatedAt'
+          'fourPackPrice', 'twoPackPrice',
+          'exclusiveEnabled', 'exclusiveTitle', 'exclusiveBadge', 'exclusiveSubtitle',
+          'exclusiveBundleEnabled', 'exclusiveBundlePrice', 'exclusiveItems',
+          'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(specialId);
     }

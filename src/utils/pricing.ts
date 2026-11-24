@@ -10,20 +10,58 @@ import {
   PriceRangeFilter,
   PublicReferral,
   SizeOption,
+  SpecialDiscountType,
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 
 export function getEffectiveUnitPrice(
   rawPrice: number | null,
   onSpecial?: boolean,
-  specialDiscountPercent?: number
+  specialDiscountPercent?: number,
+  specialDiscountType: SpecialDiscountType = 'percentage',
+  specialDiscountAmount?: number
 ): number | null {
   if (rawPrice === null || Number.isNaN(rawPrice)) return null;
-  if (!onSpecial || !specialDiscountPercent || specialDiscountPercent <= 0) {
+  if (!onSpecial) {
+    return rawPrice;
+  }
+  if (specialDiscountType === 'fixed') {
+    const amount = Number(specialDiscountAmount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return rawPrice;
+    }
+    if (rawPrice <= amount) {
+      return rawPrice;
+    }
+    return Math.max(1, Math.round((rawPrice - amount) * 100) / 100);
+  }
+  if (!specialDiscountPercent || specialDiscountPercent <= 0) {
     return rawPrice;
   }
   const clamped = Math.min(90, Math.max(0, specialDiscountPercent));
   return Math.max(0, Math.round(rawPrice * (1 - clamped / 100) * 100) / 100);
+}
+
+export function formatSpecialDiscountTag(
+  onSpecial?: boolean,
+  specialDiscountPercent?: number,
+  specialDiscountType: SpecialDiscountType = 'percentage',
+  specialDiscountAmount?: number
+): string {
+  if (!onSpecial) return '';
+  if (specialDiscountType === 'fixed') {
+    const amount = Number(specialDiscountAmount ?? 0);
+    if (Number.isFinite(amount) && amount > 0) {
+      const formatted = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+      return `-E${formatted}`;
+    }
+    return '';
+  }
+  const pct = Number(specialDiscountPercent ?? 0);
+  if (Number.isFinite(pct) && pct > 0) {
+    return `-${pct}%`;
+  }
+  return '';
 }
 
 export function parseVolumeMl(sizeLabel: string): number {
@@ -75,7 +113,9 @@ export function getProductPriceSummary(product: FragranceProduct): {
       getEffectiveUnitPrice(
         s.price,
         product.onSpecial,
-        product.specialDiscountPercent
+        product.specialDiscountPercent,
+        product.specialDiscountType,
+        product.specialDiscountAmount
       ) as number
   );
 
@@ -90,7 +130,9 @@ export function getProductPriceSummary(product: FragranceProduct): {
   const highestEffective = getEffectiveUnitPrice(
     highestOriginal,
     product.onSpecial,
-    product.specialDiscountPercent
+    product.specialDiscountPercent,
+    product.specialDiscountType,
+    product.specialDiscountAmount
   ) as number;
 
   const minOriginal = Math.min(...originals);
@@ -99,7 +141,6 @@ export function getProductPriceSummary(product: FragranceProduct): {
   const maxEffective = Math.max(...effectives);
   const hasDiscount =
     Boolean(product.onSpecial) &&
-    Boolean(product.specialDiscountPercent && product.specialDiscountPercent > 0) &&
     highestEffective < highestOriginal;
 
   return {
@@ -133,7 +174,9 @@ export function getBestPriceOptionForRange(
       const effectivePrice = getEffectiveUnitPrice(
         originalPrice,
         product.onSpecial,
-        product.specialDiscountPercent
+        product.specialDiscountPercent,
+        product.specialDiscountType,
+        product.specialDiscountAmount
       ) as number;
       return {
         size: s.size,
@@ -188,7 +231,9 @@ export function getSizeEffectivePrice(
   const effectivePrice = getEffectiveUnitPrice(
     sizeOption.price,
     product.onSpecial,
-    product.specialDiscountPercent
+    product.specialDiscountPercent,
+    product.specialDiscountType,
+    product.specialDiscountAmount
   );
   return {
     originalPrice: sizeOption.price,
@@ -542,6 +587,105 @@ export function revalidateBasketItems(
       continue;
     }
 
+    if (rawItem.productId === 'exclusive-5ml-bundle') {
+      if (!weeklySpecial) {
+        hasUnverifiedItems = true;
+        validatedItems.push({ ...rawItem, quantity: safeQuantity });
+        continue;
+      }
+      const validBundle =
+        Boolean(weeklySpecial.exclusiveEnabled) &&
+        Boolean(weeklySpecial.exclusiveBundleEnabled) &&
+        Array.isArray(weeklySpecial.exclusiveItems) &&
+        weeklySpecial.exclusiveItems.length >= 2 &&
+        Number(weeklySpecial.exclusiveBundlePrice) > 0;
+
+      if (!validBundle) {
+        hasUnavailableItems = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'unavailable',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: null,
+        });
+        continue;
+      }
+
+      const livePrice = Number(weeklySpecial.exclusiveBundlePrice);
+      if (pricesDiffer(rawItem.unitPrice, livePrice)) {
+        hasStalePrices = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'special-changed',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: livePrice,
+        });
+      }
+
+      validatedItems.push({
+        ...rawItem,
+        unitPrice: livePrice,
+        onSpecial: true,
+        quantity: safeQuantity,
+      });
+      continue;
+    }
+
+    if (rawItem.productId.startsWith('exclusive-5ml-item-')) {
+      if (!weeklySpecial) {
+        hasUnverifiedItems = true;
+        validatedItems.push({ ...rawItem, quantity: safeQuantity });
+        continue;
+      }
+      const targetPerfumeId = rawItem.productId.slice('exclusive-5ml-item-'.length);
+      const matchedEntry = Array.isArray(weeklySpecial.exclusiveItems)
+        ? weeklySpecial.exclusiveItems.find((e) => e.perfumeId === targetPerfumeId)
+        : undefined;
+      const livePerfume = perfumeMap.get(targetPerfumeId);
+
+      if (
+        !weeklySpecial.exclusiveEnabled ||
+        !matchedEntry ||
+        (catalogue.length > 0 && (!livePerfume || livePerfume.availability === 'Out of Stock'))
+      ) {
+        hasUnavailableItems = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: rawItem.productName,
+          size: rawItem.size,
+          reason: 'unavailable',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: null,
+        });
+        continue;
+      }
+
+      const livePrice = Number(matchedEntry.customPrice);
+      if (pricesDiffer(rawItem.unitPrice, livePrice)) {
+        hasStalePrices = true;
+        staleChanges.push({
+          productId: rawItem.productId,
+          productName: livePerfume?.name ?? rawItem.productName,
+          size: rawItem.size,
+          reason: 'special-changed',
+          previousUnitPrice: rawItem.unitPrice,
+          currentUnitPrice: livePrice,
+        });
+      }
+
+      validatedItems.push({
+        ...rawItem,
+        unitPrice: livePrice,
+        onSpecial: true,
+        quantity: safeQuantity,
+      });
+      continue;
+    }
+
     if (catalogue.length === 0) {
       validatedItems.push({ ...rawItem, quantity: safeQuantity });
       continue;
@@ -580,14 +724,21 @@ export function revalidateBasketItems(
     }
 
     const pricing = getSizeEffectivePrice(liveProduct, liveSizeOption);
+    const prevSpecialType = rawItem.specialDiscountType ?? 'percentage';
+    const liveSpecialType = liveProduct.specialDiscountType ?? 'percentage';
     const prevSpecialPct = Number(rawItem.specialDiscountPercent ?? 0);
     const liveSpecialPct = Number(liveProduct.specialDiscountPercent ?? 0);
+    const prevSpecialAmt = Number(rawItem.specialDiscountAmount ?? 0);
+    const liveSpecialAmt = Number(liveProduct.specialDiscountAmount ?? 0);
     const priceChanged =
       pricesDiffer(rawItem.unitPrice, pricing.effectivePrice) ||
       pricesDiffer(rawItem.originalUnitPrice, pricing.originalPrice);
     const specialChanged =
       Boolean(rawItem.onSpecial) !== Boolean(liveProduct.onSpecial) ||
-      prevSpecialPct !== liveSpecialPct;
+      prevSpecialType !== liveSpecialType ||
+      (liveSpecialType === 'fixed'
+        ? prevSpecialAmt !== liveSpecialAmt
+        : prevSpecialPct !== liveSpecialPct);
 
     if (priceChanged || specialChanged) {
       hasStalePrices = true;
@@ -610,7 +761,9 @@ export function revalidateBasketItems(
       unitPrice: pricing.effectivePrice,
       originalUnitPrice: pricing.originalPrice,
       onSpecial: liveProduct.onSpecial,
+      specialDiscountType: liveSpecialType,
       specialDiscountPercent: liveProduct.specialDiscountPercent,
+      specialDiscountAmount: liveProduct.specialDiscountAmount,
       isUnboxed: Boolean(liveProduct.isUnboxed),
       quantity: safeQuantity,
       isSampleListing: liveProduct.isSampleListing,

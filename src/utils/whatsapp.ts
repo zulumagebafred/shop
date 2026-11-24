@@ -10,7 +10,11 @@ import {
   InfluencerReferral,
   PublicReferral,
 } from '../types/fragrance';
-import { calculateCouponDiscount, calculateReferralBenefit } from './pricing';
+import {
+  calculateCouponDiscount,
+  calculateReferralBenefit,
+  formatSpecialDiscountTag,
+} from './pricing';
 import { sanitizeText } from './sanitize';
 
 export interface SingleOrderPayload {
@@ -79,7 +83,9 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     unitPrice: payload.unitPrice,
     originalUnitPrice: payload.originalUnitPrice,
     onSpecial: payload.product.onSpecial,
+    specialDiscountType: payload.product.specialDiscountType,
     specialDiscountPercent: payload.product.specialDiscountPercent,
+    specialDiscountAmount: payload.product.specialDiscountAmount,
     quantity: payload.quantity,
     isSampleListing: payload.product.isSampleListing,
   };
@@ -108,11 +114,15 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     `• Brand: ${payload.product.brand}`,
     `• Size: ${payload.size}`,
     `• Quantity: ${payload.quantity}`,
-    `• Unit Price: ${formatPrice(payload.unitPrice)}${
-      payload.product.onSpecial && payload.product.specialDiscountPercent
-        ? ` (${payload.product.specialLabel || 'Special'}: -${payload.product.specialDiscountPercent}%)`
-        : ''
-    }`,
+    `• Unit Price: ${formatPrice(payload.unitPrice)}${(() => {
+      const tag = formatSpecialDiscountTag(
+        payload.product.onSpecial,
+        payload.product.specialDiscountPercent,
+        payload.product.specialDiscountType,
+        payload.product.specialDiscountAmount
+      );
+      return tag ? ` (${payload.product.specialLabel || 'Special'}: ${tag})` : '';
+    })()}`,
     `• Subtotal: ${formatPrice(lineTotal)}`,
   ];
 
@@ -188,10 +198,13 @@ export function buildBasketWhatsAppMessage(
   const itemBlocks = items.map((item, idx) => {
     const lineTotal = item.unitPrice !== null ? item.unitPrice * item.quantity : null;
     const unboxedTag = item.isUnboxed ? ' [Unboxed · No Box]' : '';
-    const specialNote =
-      item.onSpecial && item.specialDiscountPercent
-        ? ` [-${item.specialDiscountPercent}% Special]`
-        : '';
+    const specialTag = formatSpecialDiscountTag(
+      item.onSpecial,
+      item.specialDiscountPercent,
+      item.specialDiscountType,
+      item.specialDiscountAmount
+    );
+    const specialNote = specialTag ? ` [${specialTag} Special]` : '';
     return [
       `${idx + 1}. ${item.productName}${unboxedTag}${specialNote}`,
       `   Brand: ${item.brand}`,

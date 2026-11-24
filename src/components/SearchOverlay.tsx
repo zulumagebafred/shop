@@ -133,7 +133,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({
 
                 {matches.length === 0 ? (
                   <p className="py-6 text-sm text-[#525252]">
-                    No fragrances matched “{query}”. Try searching by house name, Men, Women, Unisex, or open the full catalogue.
+                    No fragrances matched “{query}”. Try searching by house name, Men, Women, Unisex, Kiddies, or open the full catalogue.
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto pr-1">
