@@ -283,7 +283,8 @@ interface StoreContextValue {
     specialDiscountPercent?: number,
     specialLabel?: string,
     specialDiscountType?: SpecialDiscountType,
-    specialDiscountAmount?: number
+    specialDiscountAmount?: number,
+    skipSnapshotPublish?: boolean
   ) => Promise<void>;
   togglePerfumeNewArrival: (
     perfume: FragranceProduct,
@@ -377,8 +378,8 @@ const CACHE_TS_KEY = 'aurahut_cache_timestamps_v1';
 const COUPON_LOOKUP_CACHE_KEY = 'aurahut_coupon_lookup_v1';
 const REFERRAL_LOOKUP_CACHE_KEY = 'aurahut_referral_lookup_v1';
 
-const CATALOGUE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
-const PROMO_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CATALOGUE_TTL_MS = 60 * 1000; // 1 minute stale-while-revalidate (1-read snapshot)
+const PROMO_TTL_MS = 60 * 1000; // 1 minute stale-while-revalidate
 const SECONDARY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const LOOKUP_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const DUPLICATE_REFERRAL_WINDOW_MS = 12_000;
@@ -1083,10 +1084,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     [catalogueComplete, fetchCataloguePage]
   );
 
-  // Trigger initial storefront catalogue load when NOT in real-time admin mode
+  const wasAdminConsoleActiveRef = useRef(false);
+
+  // Trigger initial storefront catalogue load when NOT in real-time admin mode,
+  // and force-refresh whenever leaving Admin Console so storefront reflects latest edits immediately
   useEffect(() => {
-    if (isOwner && adminConsoleActive) return;
-    void syncPublicCatalogue(false);
+    if (isOwner && adminConsoleActive) {
+      wasAdminConsoleActiveRef.current = true;
+      return;
+    }
+    const returningFromAdmin = wasAdminConsoleActiveRef.current;
+    wasAdminConsoleActiveRef.current = false;
+    void syncPublicCatalogue(returningFromAdmin);
   }, [isOwner, adminConsoleActive, syncPublicCatalogue]);
 
   const loadMorePerfumes = useCallback(async () => {
@@ -1255,18 +1264,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const snap = await getDoc(doc(db, 'catalogueSnapshots', SNAPSHOT_DOC_ID));
         if (cancelled) return;
+        const sortedLive = [...livePerfumes].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+        const expectedJson = encodeCompactPerfumes(sortedLive);
         const remoteCount = snap.exists() ? Number(snap.data().totalCount ?? -1) : -1;
-        if (!snap.exists() || remoteCount !== livePerfumes.length) {
-          await publishCatalogueSnapshot(livePerfumes);
+        const remoteJson = snap.exists() ? String(snap.data().itemsJson ?? '') : '';
+        if (
+          !snap.exists() ||
+          remoteCount !== sortedLive.length ||
+          remoteJson !== expectedJson
+        ) {
+          await publishCatalogueSnapshot(sortedLive);
         } else {
           const ts = snap.data().updatedAt as { toMillis?: () => number } | undefined;
           setSnapshotStatus({
             count: remoteCount,
             updatedAtMs: ts && typeof ts.toMillis === 'function' ? ts.toMillis() : null,
-            bytes:
-              typeof snap.data().itemsJson === 'string'
-                ? snap.data().itemsJson.length
-                : 0,
+            bytes: remoteJson.length,
           });
         }
       } catch {
@@ -2759,7 +2774,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           specialDiscountAmount: safeDiscountAmount,
         };
         const nextList = mergePerfumeLists(livePerfumesRef.current, [updatedProduct]);
-        void publishCatalogueSnapshot(nextList);
+        livePerfumesRef.current = nextList;
+        setLivePerfumes(nextList);
+        writePerfumesCache(nextList, true);
+        await publishCatalogueSnapshot(nextList);
         return id;
       } catch (error) {
         handleFirestoreError(
@@ -2779,7 +2797,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       specialDiscountPercent?: number,
       specialLabel?: string,
       specialDiscountType?: SpecialDiscountType,
-      specialDiscountAmount?: number
+      specialDiscountAmount?: number,
+      skipSnapshotPublish = false
     ): Promise<void> => {
       requireOwnerUid();
       const path = `perfumes/${perfume.id}`;
@@ -2819,6 +2838,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           },
           { merge: true }
         );
+
+        const nextList = livePerfumesRef.current.map((p) =>
+          p.id === perfume.id
+            ? {
+                ...p,
+                onSpecial,
+                specialDiscountType: resolvedType,
+                specialDiscountPercent: safeDiscount,
+                specialDiscountAmount: safeDiscountAmount,
+                specialLabel: cleanLabel,
+              }
+            : p
+        );
+        livePerfumesRef.current = nextList;
+        setLivePerfumes(nextList);
+        writePerfumesCache(nextList, true);
+
         await writeAuditLog({
           action: 'update',
           section: 'perfume',
@@ -2834,19 +2870,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               : 'Special offer deactivated',
           ],
         });
-        const nextList = livePerfumesRef.current.map((p) =>
-          p.id === perfume.id
-            ? {
-                ...p,
-                onSpecial,
-                specialDiscountType: resolvedType,
-                specialDiscountPercent: safeDiscount,
-                specialDiscountAmount: safeDiscountAmount,
-                specialLabel: cleanLabel,
-              }
-            : p
-        );
-        void publishCatalogueSnapshot(nextList);
+
+        if (!skipSnapshotPublish) {
+          await publishCatalogueSnapshot(livePerfumesRef.current);
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
@@ -2882,7 +2909,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         const nextList = livePerfumesRef.current.map((p) =>
           p.id === perfume.id ? { ...p, isNewArrival } : p
         );
-        void publishCatalogueSnapshot(nextList);
+        livePerfumesRef.current = nextList;
+        setLivePerfumes(nextList);
+        writePerfumesCache(nextList, true);
+        await publishCatalogueSnapshot(nextList);
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
@@ -2897,6 +2927,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const existing = livePerfumesRef.current.find((p) => p.id === perfumeId);
       try {
         await deleteDoc(doc(db, 'perfumes', perfumeId));
+        const nextList = livePerfumesRef.current.filter((p) => p.id !== perfumeId);
+        livePerfumesRef.current = nextList;
+        setLivePerfumes(nextList);
+        writePerfumesCache(nextList, true);
         await writeAuditLog({
           action: 'delete',
           section: 'perfume',
@@ -2912,8 +2946,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               ]
             : [`Deleted perfume document ${perfumeId}`],
         });
-        const nextList = livePerfumesRef.current.filter((p) => p.id !== perfumeId);
-        void publishCatalogueSnapshot(nextList);
+        await publishCatalogueSnapshot(nextList);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
@@ -2971,7 +3004,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         changes: [`Published ${fragranceCatalogue.length} catalogue items`],
       });
       const merged = mergePerfumeLists(livePerfumesRef.current, fragranceCatalogue);
-      void publishCatalogueSnapshot(merged);
+      livePerfumesRef.current = merged;
+      setLivePerfumes(merged);
+      writePerfumesCache(merged, true);
+      await publishCatalogueSnapshot(merged);
       return fragranceCatalogue.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'perfumes');

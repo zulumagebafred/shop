@@ -1425,10 +1425,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             safePct,
             campaignDraft.badgeText || item.specialLabel || 'Black Friday Special',
             bulkSpecialType,
-            safeAmt
+            safeAmt,
+            true
           )
         )
       );
+      await publishCatalogueSnapshot();
       setDiscountEdits({});
       onNotify(
         'Specials Updated',
@@ -4629,6 +4631,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           )}
                         </div>
 
+                        {specialPerfumes.some((s) => s.availability === 'Out of Stock') && (
+                          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                            <strong>Heads up:</strong>{' '}
+                            {specialPerfumes.filter((s) => s.availability === 'Out of Stock').length}{' '}
+                            special perfume(s) marked <strong>Out of Stock</strong> will stay hidden from the front page until availability is changed back to In Stock or Low Stock.
+                          </div>
+                        )}
+
                         {specialPerfumes.length === 0 ? (
                           <p className="text-sm text-[#525252] py-4">
                             No perfumes are marked on special yet. Select perfumes below to add them to your Specials list.
@@ -4687,6 +4697,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       <p className="text-base font-bold text-[#0A0A0A] truncate">
                                         {p.name}
                                       </p>
+                                      {p.availability === 'Out of Stock' && (
+                                        <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                                          Out of Stock · Hidden on Front Page
+                                        </span>
+                                      )}
                                       {previewSummary.highestEffective !== null && (
                                         <p className="text-xs tabular-nums flex flex-wrap items-center gap-1.5">
                                           <span className="text-[#DC2626] font-bold">
@@ -4921,6 +4936,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <p className="text-sm font-bold text-[#0A0A0A] truncate">
                                       {p.name}
                                     </p>
+                                    {p.availability === 'Out of Stock' && (
+                                      <p className="text-[10px] font-semibold text-amber-700">
+                                        Out of Stock (won&apos;t show until restocked)
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                                 <button

@@ -225,8 +225,24 @@ export const HomePage: React.FC<HomePageProps> = ({
   onAddWeeklyPackToBasket,
   onAddExclusiveFiveMlToBasket,
 }) => {
-  const { perfumes, campaign, campaignLoading, catalogueLoading, usingSampleHampers } = useStore();
+  const {
+    perfumes,
+    campaign,
+    campaignLoading,
+    catalogueLoading,
+    catalogueComplete,
+    catalogueHasMore,
+    ensureAllPerfumesLoaded,
+    usingSampleHampers,
+  } = useStore();
   const heroBooting = campaignLoading || catalogueLoading;
+
+  useEffect(() => {
+    if (!catalogueComplete && catalogueHasMore) {
+      void ensureAllPerfumesLoaded();
+    }
+  }, [catalogueComplete, catalogueHasMore, ensureAllPerfumesLoaded]);
+
   const availablePerfumes = useMemo(
     () => perfumes.filter((p) => p.availability !== 'Out of Stock'),
     [perfumes]
@@ -1063,6 +1079,61 @@ export const HomePage: React.FC<HomePageProps> = ({
           ))}
         </div>
       </section>
+
+      {/* ACTIVE SPECIALS GRID — Ensures every in-stock perfume marked on special shows on the front page */}
+      {specialPerfumes.length > 0 && (
+        <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 sm:pt-14">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+            <div className="space-y-1.5">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[#B45309] font-bold inline-flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#D97706]" aria-hidden="true" />
+                <span>
+                  {campaign.enabled && campaign.badgeText
+                    ? campaign.badgeText
+                    : 'Limited-Time Savings'}
+                </span>
+              </p>
+              <h2 className="text-2xl sm:text-4xl font-extrabold italic uppercase tracking-tight text-[#0A0A0A]">
+                On Special Now ({specialPerfumes.length})
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onNavigate('shop', {
+                  category: 'All',
+                  brand: 'All',
+                  size: 'All',
+                  priceRange: 'all',
+                  season: 'all',
+                  onlySpecials: true,
+                  onlyUnboxed: false,
+                  onlyNewArrivals: false,
+                })
+              }
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold uppercase tracking-[0.12em] text-[#0A0A0A] transition-colors self-start sm:self-auto whitespace-nowrap shrink-0"
+            >
+              <span>Shop All Specials</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-5">
+            {specialPerfumes.map((product, idx) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                index={idx}
+                disableEntranceAnimation
+                imageLoading={idx < 4 ? 'eager' : 'lazy'}
+                fetchPriority={idx < 4 ? 'auto' : 'low'}
+                onViewDetails={onSelectProduct}
+                onQuickWhatsApp={onQuickWhatsApp}
+              />
+            ))}
+          </div>
+        </RevealSection>
+      )}
 
       {/* WEEKLY 5ML SPECIAL (4 FOR E100 OR 2 UNDER-E500 FOR E50) */}
       <WeeklyFiveMlSection

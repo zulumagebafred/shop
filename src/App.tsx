@@ -7,6 +7,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, RefreshCw } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { FloatingWhatsAppButton } from './components/FloatingWhatsAppButton';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
 import { ToastData, ToastNotification } from './components/ToastNotification';
@@ -1197,6 +1198,17 @@ function AppContent() {
         onDismiss={() => setToast(null)}
       />
 
+      {!basketOpen && !searchOpen && !quickOrderProduct && (
+        <FloatingWhatsAppButton
+          raisedOnMobile={currentPage === 'product'}
+          contextLabel={
+            currentPage === 'product' && selectedProduct
+              ? `${selectedProduct.name} by ${selectedProduct.brand}`
+              : undefined
+          }
+        />
+      )}
+
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
@@ -1209,7 +1221,9 @@ function AppContent() {
             transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             onClick={scrollToTop}
             aria-label="Back to top"
-            className="flex fixed bottom-20 right-4 lg:bottom-6 lg:right-auto lg:left-6 z-30 w-11 h-11 rounded-full bg-[#0A0A0A] text-white border border-white/25 hover:bg-[#262626] shadow-lg items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+            className={`flex fixed left-4 sm:left-6 z-30 w-11 h-11 rounded-full bg-[#0A0A0A] text-white border border-white/25 hover:bg-[#262626] shadow-lg items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A] ${
+              currentPage === 'product' ? 'bottom-20 lg:bottom-6' : 'bottom-5 sm:bottom-6'
+            }`}
           >
             <ArrowUp className="w-4 h-4" />
           </motion.button>
