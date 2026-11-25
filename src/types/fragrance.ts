@@ -280,6 +280,7 @@ export type WeeklyFiveMlAudience = 'Women' | 'Men';
 export interface ExclusiveFiveMlItem {
   perfumeId: string;
   customPrice: number;
+  sizeLabel?: string;
 }
 
 export interface WeeklyFiveMlSpecial {
@@ -310,12 +311,14 @@ export type ExclusiveFiveMlBasketPayload =
   | {
       type: 'item';
       product: FragranceProduct;
+      sizeLabel: string;
       price: number;
       regularPrice: number | null;
     }
   | {
       type: 'bundle';
       title: string;
+      items: { product: FragranceProduct; sizeLabel: string }[];
       products: FragranceProduct[];
       price: number;
       regularPrice: number | null;

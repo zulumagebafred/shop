@@ -488,7 +488,7 @@
     },
     "WeeklyFiveMlSpecial": {
       "title": "WeeklyFiveMlSpecial",
-      "description": "Weekly 5ml discovery decant special configuration (3 Under E500 options to choose 2 + 2 Under E800 picks) plus owner-configured Exclusive 5ml Special with custom per-scent and bundle prices.",
+      "description": "Weekly 5ml discovery decant special configuration (3 Under E500 options + 3 Under E800 options per gender, 6 options each) plus owner-configured Exclusive 5ml Special with custom per-scent and bundle prices.",
       "type": "object",
       "properties": {
         "enabled": {
@@ -515,7 +515,7 @@
         },
         "under800Ids": {
           "type": "array",
-          "description": "Legacy combined list of up to 2 perfume IDs selected from the Under E800 tier"
+          "description": "Legacy combined list of up to 3 perfume IDs selected from the Under E800 tier"
         },
         "womenUnder500Ids": {
           "type": "array",
@@ -523,7 +523,7 @@
         },
         "womenUnder800Ids": {
           "type": "array",
-          "description": "Up to 2 For Women perfume IDs selected from the Under E800 tier"
+          "description": "Up to 3 For Women perfume IDs selected from the Under E800 tier (customers choose 2 for 4x5ml)"
         },
         "menUnder500Ids": {
           "type": "array",
@@ -531,7 +531,7 @@
         },
         "menUnder800Ids": {
           "type": "array",
-          "description": "Up to 2 For Men perfume IDs selected from the Under E800 tier"
+          "description": "Up to 3 For Men perfume IDs selected from the Under E800 tier (customers choose 2 for 4x5ml)"
         },
         "fourPackPrice": {
           "type": "number",
@@ -570,7 +570,7 @@
         },
         "exclusiveItems": {
           "type": "array",
-          "description": "Up to 6 owner-picked perfumes with individual custom 5ml prices"
+          "description": "Up to 6 owner-picked perfumes with individual custom size labels (e.g. 5ml, 10ml, 30ml, 100ml, or custom) and custom prices"
         },
         "ownerUid": {
           "type": "string",

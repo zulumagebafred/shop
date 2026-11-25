@@ -765,8 +765,8 @@ function AppContent() {
       const itemId = `weekly-5ml-${payload.weekKey}-${payload.audience.toLowerCase()}-${payload.mode}`;
       const itemTitle = isFourPack
         ? `5ml Special · ${audienceTag} (4 × 5ml)`
-        : `5ml Special · ${audienceTag} (2 × 5ml · Under E500)`;
-      const packLabel = `${isFourPack ? '4 × 5ml' : '2 × 5ml (Under E500)'} (${audienceTag}): ${productNames.join(' + ')}`;
+        : `5ml Special · ${audienceTag} (2 × 5ml)`;
+      const packLabel = `${isFourPack ? '4 × 5ml' : '2 × 5ml'} (${audienceTag}): ${productNames.join(' + ')}`;
       const primaryImage =
         payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
 
@@ -813,8 +813,9 @@ function AppContent() {
     (payload: ExclusiveFiveMlBasketPayload) => {
       if (payload.type === 'item') {
         const p = payload.product;
+        const chosenSize = (payload.sizeLabel || '5ml').trim() || '5ml';
         const itemId = `exclusive-5ml-item-${p.id}`;
-        const sizeLabel = '5ml · Exclusive Special';
+        const sizeLabel = `${chosenSize} · Exclusive Special`;
         setBasketItems((prev) => {
           const existingIndex = prev.findIndex(
             (item) => item.productId === itemId && item.size === sizeLabel
@@ -834,7 +835,7 @@ function AppContent() {
             {
               productId: itemId,
               productName: p.name,
-              brand: `${p.brand} · Exclusive 5ml`,
+              brand: `${p.brand} · Exclusive ${chosenSize}`,
               image: p.image,
               size: sizeLabel,
               unitPrice: payload.price,
@@ -846,15 +847,17 @@ function AppContent() {
           ];
         });
         showToast(
-          `Added Exclusive 5ml (E${payload.price.toFixed(0)})`,
-          `${p.name} · 5ml`
+          `Added Exclusive ${chosenSize} (E${payload.price.toFixed(0)})`,
+          `${p.name} · ${chosenSize}`
         );
         return;
       }
 
-      const productNames = payload.products.map((p) => p.name);
+      const itemSummaries = payload.items.map(
+        (it) => `${it.product.name} (${it.sizeLabel})`
+      );
       const itemId = 'exclusive-5ml-bundle';
-      const sizeLabel = `${payload.products.length} × 5ml Exclusive: ${productNames.join(' + ')}`;
+      const sizeLabel = `Exclusive Bundle (${payload.items.length}): ${itemSummaries.join(' + ')}`;
       const primaryImage =
         payload.products[0]?.image ?? '/assets/images/house_lattafa_1794685069142.jpg';
 
@@ -876,8 +879,8 @@ function AppContent() {
           ...prev,
           {
             productId: itemId,
-            productName: payload.title || 'Exclusive 5ml Special Pack',
-            brand: 'Exclusive 5ml Special',
+            productName: payload.title || 'Exclusive Special Pack',
+            brand: 'Exclusive Special',
             image: primaryImage,
             size: sizeLabel,
             unitPrice: payload.price,
@@ -889,8 +892,8 @@ function AppContent() {
         ];
       });
       showToast(
-        `Added Exclusive ${payload.products.length} × 5ml Pack (E${payload.price.toFixed(0)})`,
-        productNames.join(' + ')
+        `Added Exclusive ${payload.products.length}-Item Pack (E${payload.price.toFixed(0)})`,
+        itemSummaries.join(' + ')
       );
     },
     [showToast]

@@ -677,8 +677,11 @@ export function revalidateBasketItems(
         });
       }
 
+      const liveSizeLabel = (matchedEntry.sizeLabel ?? '').trim() || '5ml';
       validatedItems.push({
         ...rawItem,
+        size: `${liveSizeLabel} · Exclusive Special`,
+        brand: livePerfume ? `${livePerfume.brand} · Exclusive ${liveSizeLabel}` : rawItem.brand,
         unitPrice: livePrice,
         onSpecial: true,
         quantity: safeQuantity,

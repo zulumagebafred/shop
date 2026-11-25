@@ -265,9 +265,10 @@ service cloud.firestore {
 
     function isValidWeeklyPickList(ids) {
       return ids is list &&
-        ids.size() <= 2 &&
+        ids.size() <= 3 &&
         (ids.size() == 0 || isValidId(ids[0])) &&
-        (ids.size() < 2 || isValidId(ids[1]));
+        (ids.size() < 2 || isValidId(ids[1])) &&
+        (ids.size() < 3 || isValidId(ids[2]));
     }
 
     function isValidWeeklyUnder500List(ids) {
@@ -281,11 +282,12 @@ service cloud.firestore {
     function isValidExclusiveFiveMlEntry(entry) {
       return entry is map &&
         entry.keys().hasAll(['perfumeId', 'customPrice']) &&
-        entry.keys().hasOnly(['perfumeId', 'customPrice']) &&
+        entry.keys().hasOnly(['perfumeId', 'customPrice', 'sizeLabel']) &&
         isValidId(entry.perfumeId) &&
         entry.customPrice is number &&
         entry.customPrice >= 1 &&
-        entry.customPrice <= 50000;
+        entry.customPrice <= 50000 &&
+        (!('sizeLabel' in entry) || (entry.sizeLabel is string && entry.sizeLabel.size() >= 1 && entry.sizeLabel.size() <= 40));
     }
 
     function isValidExclusiveFiveMlList(items) {

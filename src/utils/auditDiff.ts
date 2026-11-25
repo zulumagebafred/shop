@@ -339,11 +339,16 @@ export function buildWeeklySpecialDiff(
   const fmtExclusive = (items: WeeklyFiveMlSpecial['exclusiveItems']) =>
     items.length > 0
       ? items
-          .map((it) => `${resolvePerfumeName(it.perfumeId)} (${fmtPrice(it.customPrice)})`)
+          .map(
+            (it) =>
+              `${resolvePerfumeName(it.perfumeId)} (${(it.sizeLabel ?? '').trim() || '5ml'} · ${fmtPrice(
+                it.customPrice
+              )})`
+          )
           .join(', ')
       : 'None';
   if (fmtExclusive(prev.exclusiveItems ?? []) !== fmtExclusive(next.exclusiveItems ?? [])) {
-    changes.push(`Exclusive 5ml Picks: ${fmtExclusive(next.exclusiveItems ?? [])}`);
+    changes.push(`Exclusive Special Picks: ${fmtExclusive(next.exclusiveItems ?? [])}`);
   }
 
   if (changes.length === 0) {

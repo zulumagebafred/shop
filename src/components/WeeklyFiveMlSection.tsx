@@ -82,6 +82,12 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
     Women: null,
     Men: null,
   });
+  const [selectedUnder800ByAudience, setSelectedUnder800ByAudience] = useState<
+    Record<WeeklyFiveMlAudience, string[] | null>
+  >({
+    Women: null,
+    Men: null,
+  });
   const [justAddedKey, setJustAddedKey] = useState<string | null>(null);
   const [hourTick, setHourTick] = useState(() => Math.floor(Date.now() / 60000));
 
@@ -131,17 +137,38 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
     .map((id) => activeLineup.under500Picks.find((c) => c.product.id === id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c));
 
+  const validUnder800Ids = activeLineup.under800Picks.map((c) => c.product.id);
+  const requiredUnder800Count = Math.min(2, validUnder800Ids.length);
+  const rawSavedUnder800 = selectedUnder800ByAudience[activeAudience];
+  const effectiveSelectedUnder800Ids =
+    rawSavedUnder800 === null
+      ? validUnder800Ids.slice(0, requiredUnder800Count)
+      : rawSavedUnder800
+          .filter((id) => validUnder800Ids.includes(id))
+          .slice(0, 2);
+
+  const chosenUnder800Picks = effectiveSelectedUnder800Ids
+    .map((id) => activeLineup.under800Picks.find((c) => c.product.id === id))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c));
+
   const hasValidUnder500Choice =
     requiredUnder500Count > 0 && chosenUnder500Picks.length === requiredUnder500Count;
+  const hasValidUnder800Choice =
+    requiredUnder800Count > 0 && chosenUnder800Picks.length === requiredUnder800Count;
 
   const canSelectFourPack =
     activeLineup.under500Picks.length >= 2 && activeLineup.under800Picks.length >= 2;
   const activeMode: WeeklyFiveMlPackMode =
     !canSelectFourPack && packMode === '4-for-100' ? '2-for-50' : packMode;
 
+  const hasValidPackChoice =
+    activeMode === '4-for-100'
+      ? hasValidUnder500Choice && hasValidUnder800Choice
+      : hasValidUnder500Choice;
+
   const activeCandidates =
     activeMode === '4-for-100'
-      ? [...chosenUnder500Picks, ...activeLineup.under800Picks]
+      ? [...chosenUnder500Picks, ...chosenUnder800Picks]
       : chosenUnder500Picks;
   const activePrice =
     activeMode === '4-for-100' ? resolved.fourPackPrice : resolved.twoPackPrice;
@@ -157,7 +184,9 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
       ? summedFiveMlPrice
       : null;
 
-  const currentAddKey = `${activeAudience}:${activeMode}:${effectiveSelectedUnder500Ids.join('+')}`;
+  const currentAddKey = `${activeAudience}:${activeMode}:${effectiveSelectedUnder500Ids.join('+')}:${
+    activeMode === '4-for-100' ? effectiveSelectedUnder800Ids.join('+') : ''
+  }`;
 
   const handleToggleUnder500Pick = (perfumeId: string) => {
     setSelectedUnder500ByAudience((prev) => {
@@ -183,8 +212,32 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
     });
   };
 
+  const handleToggleUnder800Pick = (perfumeId: string) => {
+    setSelectedUnder800ByAudience((prev) => {
+      const currentRaw = prev[activeAudience];
+      const base =
+        currentRaw === null
+          ? validUnder800Ids.slice(0, requiredUnder800Count)
+          : currentRaw.filter((id) => validUnder800Ids.includes(id));
+
+      let next: string[];
+      if (base.includes(perfumeId)) {
+        next = base.filter((id) => id !== perfumeId);
+      } else if (base.length < 2) {
+        next = [...base, perfumeId];
+      } else {
+        next = [base[1], perfumeId];
+      }
+
+      return {
+        ...prev,
+        [activeAudience]: next,
+      };
+    });
+  };
+
   const handleAddPack = () => {
-    if (!hasValidUnder500Choice) return;
+    if (!hasValidPackChoice) return;
     const selectedProducts = activeCandidates.map((c) => c.product);
     if (selectedProducts.length === 0) return;
 
@@ -236,12 +289,14 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                 </h2>
                 <p className="text-xs sm:text-sm text-white/75 leading-relaxed">
                   Separate weekly lineups <strong className="text-white">For Women</strong> and{' '}
-                  <strong className="text-white">For Men</strong> — pick your favourite{' '}
-                  <strong className="text-[#FACC15]">2 of 3</strong> Under E500 scents! Take{' '}
-                  {activeLineup.under500Picks.length >= 3 ? '2 chosen Under E500 + 2 Under E800' : 'all 4 × 5ml'}{' '}
-                  for {formatPrice(resolved.fourPackPrice)}, or choose any{' '}
-                  <strong className="text-white">2 × 5ml</strong> from the 3 Under E500 options for{' '}
-                  {formatPrice(resolved.twoPackPrice)}.
+                  <strong className="text-white">For Men</strong> —{' '}
+                  <strong className="text-[#FACC15]">
+                    {activeLineup.under500Picks.length + activeLineup.under800Picks.length} curated 5ml scents
+                  </strong>{' '}
+                  each. Choose 2 from Signature Picks + 2 from Prestige Picks for{' '}
+                  <strong className="text-white">{formatPrice(resolved.fourPackPrice)}</strong>, or pick any{' '}
+                  <strong className="text-white">2 × 5ml</strong> from Signature Picks for{' '}
+                  <strong className="text-white">{formatPrice(resolved.twoPackPrice)}</strong>.
                 </p>
               </div>
 
@@ -289,9 +344,10 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
               </div>
 
               <p className="text-[11px] text-white/65">
-                Showing <strong className="text-white">For {activeAudience}</strong> · Choose{' '}
-                <strong className="text-[#FACC15]">2 of {activeLineup.under500Picks.length}</strong>{' '}
-                Under E500 scents
+                Showing <strong className="text-white">For {activeAudience}</strong> ·{' '}
+                {activeMode === '4-for-100'
+                  ? 'Choose 2 Signature + 2 Prestige scents'
+                  : `Choose 2 of ${activeLineup.under500Picks.length} Signature scents`}
               </p>
             </div>
 
@@ -329,7 +385,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       activeMode === '4-for-100' ? 'text-[#0A0A0A]/80' : 'text-white/70'
                     }`}
                   >
-                    Your 2 chosen Under E500 + 2 Under E800 scents
+                    Choose 2 Signature + 2 Prestige scents
                   </p>
                 </div>
                 <div className="text-right shrink-0">
@@ -363,7 +419,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       activeMode === '2-for-50' ? 'text-[#0A0A0A]/75' : 'text-white/65'
                     }`}
                   >
-                    For {activeAudience} · Under E500 Only
+                    For {activeAudience} · 2 × 5ml Duo
                   </span>
                   <p className="text-lg sm:text-xl font-extrabold italic uppercase tracking-tight">
                     2 × 5ml Decants
@@ -373,7 +429,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       activeMode === '2-for-50' ? 'text-[#0A0A0A]/80' : 'text-white/70'
                     }`}
                   >
-                    Pick any 2 from this week&apos;s {activeLineup.under500Picks.length} Under E500 options
+                    Pick any 2 from this week&apos;s {activeLineup.under500Picks.length} Signature options
                   </p>
                 </div>
                 <div className="text-right shrink-0">
@@ -392,17 +448,17 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
             </div>
           </div>
 
-          {/* Weekly 3 Under-E500 (Choose 2) + 2 Under-E800 Lineup */}
+          {/* Weekly 3 + 3 (6 Options) Lineup */}
           <div className="p-5 sm:p-8 lg:p-10 space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Group 1: 3 Under E500 Options (Choose 2) */}
-              <div className="lg:col-span-7 space-y-3">
+            <div className="space-y-6">
+              {/* Group 1: 3 Signature Options (Choose 2) */}
+              <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#FACC15]">
-                    01 · For {activeAudience} Under E500 ({chosenUnder500Picks.length}/{requiredUnder500Count} Chosen from {activeLineup.under500Picks.length})
+                    01 · For {activeAudience} Signature Picks ({chosenUnder500Picks.length}/{requiredUnder500Count} Chosen from {activeLineup.under500Picks.length})
                   </span>
                   <span className="text-[11px] text-white/65">
-                    Tap cards to choose your 2 Under E500 picks
+                    Tap cards to choose your {requiredUnder500Count} picks
                   </span>
                 </div>
 
@@ -440,7 +496,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                             }`}
                           />
                           <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-[#0A0A0A] text-[#FACC15] text-[10px] font-bold uppercase tracking-wider tabular-nums">
-                            5ml · Under E500
+                            5ml Decant
                           </span>
                           <span
                             className={`absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 ${
@@ -525,41 +581,74 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                 </div>
               </div>
 
-              {/* Group 2: 2 Under E800 Picks */}
-              <div className="lg:col-span-5 space-y-3">
+              {/* Group 2: 3 Prestige Options (Choose 2 for 4 x 5ml Bundle) */}
+              <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-white">
-                    02 · For {activeAudience} Under E800 ({activeLineup.under800Picks.length})
+                    02 · For {activeAudience} Prestige Picks (
+                    {activeMode === '4-for-100'
+                      ? `${chosenUnder800Picks.length}/${requiredUnder800Count} Chosen from ${activeLineup.under800Picks.length}`
+                      : activeLineup.under800Picks.length}
+                    )
                   </span>
                   <span className="text-[11px] text-white/65">
-                    4 × 5ml (E{resolved.fourPackPrice.toFixed(0)}) Pack Only
+                    {activeMode === '4-for-100'
+                      ? `Tap cards to choose your ${requiredUnder800Count} picks`
+                      : `4 × 5ml (E${resolved.fourPackPrice.toFixed(0)}) Pack Only`}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   {activeLineup.under800Picks.map((item) => {
                     const p = item.product;
                     const lockedOut = activeMode === '2-for-50';
+                    const isChosen = !lockedOut && effectiveSelectedUnder800Ids.includes(p.id);
+                    const choiceOrder = effectiveSelectedUnder800Ids.indexOf(p.id) + 1;
                     return (
                       <article
                         key={p.id}
-                        className={`rounded-2xl overflow-hidden flex flex-col transition-all ${
+                        onClick={lockedOut ? undefined : () => handleToggleUnder800Pick(p.id)}
+                        role={lockedOut ? undefined : 'button'}
+                        tabIndex={lockedOut ? undefined : 0}
+                        aria-pressed={lockedOut ? undefined : isChosen}
+                        onKeyDown={
+                          lockedOut
+                            ? undefined
+                            : (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleToggleUnder800Pick(p.id);
+                                }
+                              }
+                        }
+                        className={`rounded-2xl overflow-hidden flex flex-col transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FACC15] ${
                           lockedOut
                             ? 'bg-white/10 text-white/75 border border-white/15'
-                            : 'bg-white text-[#0A0A0A] border-2 border-[#FACC15]'
+                            : isChosen
+                            ? 'cursor-pointer bg-white text-[#0A0A0A] border-2 border-[#FACC15] shadow-[0_12px_28px_-14px_rgba(250,204,21,0.5)]'
+                            : 'cursor-pointer bg-white/[0.06] text-white/85 border border-white/20 hover:border-white/50'
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => onSelectProduct(p)}
-                          className="group relative aspect-[4/3] w-full bg-[#1C1C1C] overflow-hidden text-left"
+                        <div
+                          onClick={
+                            lockedOut
+                              ? () => onSelectProduct(p)
+                              : undefined
+                          }
+                          className={`group relative aspect-[4/3] w-full bg-[#1C1C1C] overflow-hidden ${
+                            lockedOut ? 'cursor-pointer' : ''
+                          }`}
                         >
                           <ResilientImage
                             src={p.image}
                             alt={`${p.name} by ${p.brand}`}
                             fallbackTitle={p.name}
                             className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-                              lockedOut ? 'opacity-45 grayscale-[35%]' : ''
+                              lockedOut
+                                ? 'opacity-45 grayscale-[35%]'
+                                : isChosen
+                                ? ''
+                                : 'opacity-75'
                             }`}
                           />
                           <span
@@ -569,39 +658,76 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                                 : 'bg-[#0A0A0A] text-[#FACC15]'
                             }`}
                           >
-                            5ml · Under E800
+                            5ml Decant
                           </span>
-                        </button>
+                          {!lockedOut && (
+                            <span
+                              className={`absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 ${
+                                isChosen
+                                  ? 'bg-[#FACC15] text-[#0A0A0A]'
+                                  : 'bg-black/70 text-white border border-white/30'
+                              }`}
+                            >
+                              {isChosen ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span>Pick {choiceOrder}</span>
+                                </>
+                              ) : (
+                                <span>Option</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
 
                         <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2.5">
                           <div>
                             <div
                               className={`flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider font-semibold ${
-                                lockedOut ? 'text-white/55' : 'text-[#666666]'
+                                lockedOut
+                                  ? 'text-white/55'
+                                  : isChosen
+                                  ? 'text-[#666666]'
+                                  : 'text-white/60'
                               }`}
                             >
                               <span className="truncate">{p.brand}</span>
-                              <span
-                                className={`shrink-0 ${
-                                  lockedOut ? 'text-white/80' : 'text-[#0A0A0A]'
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectProduct(p);
+                                }}
+                                className={`shrink-0 underline underline-offset-2 hover:opacity-80 ${
+                                  lockedOut
+                                    ? 'text-white/80'
+                                    : isChosen
+                                    ? 'text-[#0A0A0A]'
+                                    : 'text-[#FACC15]'
                                 }`}
                               >
-                                {formatCategoryBadge(p.category)}
-                              </span>
+                                Details
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => onSelectProduct(p)}
-                              className={`text-sm font-bold hover:underline truncate block w-full text-left mt-0.5 ${
-                                lockedOut ? 'text-white/90' : 'text-[#0A0A0A]'
+                            <p
+                              className={`text-sm font-bold truncate mt-0.5 ${
+                                lockedOut
+                                  ? 'text-white/90'
+                                  : isChosen
+                                  ? 'text-[#0A0A0A]'
+                                  : 'text-white'
                               }`}
                             >
                               {p.name}
-                            </button>
+                            </p>
                             {item.tierPrice !== null && (
                               <p
                                 className={`text-[11px] mt-0.5 tabular-nums ${
-                                  lockedOut ? 'text-white/60' : 'text-[#525252]'
+                                  lockedOut
+                                    ? 'text-white/60'
+                                    : isChosen
+                                    ? 'text-[#525252]'
+                                    : 'text-white/65'
                                 }`}
                               >
                                 {item.tierSizeLabel}: {formatPrice(item.tierPrice)}
@@ -613,7 +739,9 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                             className={`pt-2 border-t flex items-center justify-between gap-2 text-[11px] font-semibold ${
                               lockedOut
                                 ? 'border-white/10 text-white/75'
-                                : 'border-[#ECECEC] text-emerald-700'
+                                : isChosen
+                                ? 'border-[#ECECEC] text-emerald-700'
+                                : 'border-white/15 text-white/80'
                             }`}
                           >
                             {lockedOut ? (
@@ -632,12 +760,15 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                                   Use 4 for E{resolved.fourPackPrice.toFixed(0)}
                                 </button>
                               </>
-                            ) : (
+                            ) : isChosen ? (
                               <span className="inline-flex items-center gap-1">
                                 <Check className="w-3.5 h-3.5 shrink-0" />
-                                <span>
-                                  Included (4 for E{resolved.fourPackPrice.toFixed(0)})
-                                </span>
+                                <span>Selected for Pack</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[#FACC15]">
+                                <Plus className="w-3.5 h-3.5 shrink-0" />
+                                <span>Tap to Choose</span>
                               </span>
                             )}
                           </div>
@@ -654,21 +785,23 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
               <div className="space-y-1 min-w-0">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-[#FACC15] font-semibold">
                   {!hasValidUnder500Choice
-                    ? `Please select ${requiredUnder500Count - chosenUnder500Picks.length} more Under E500 scent above`
+                    ? `Please select ${requiredUnder500Count - chosenUnder500Picks.length} more Signature scent above`
+                    : activeMode === '4-for-100' && !hasValidUnder800Choice
+                    ? `Please select ${requiredUnder800Count - chosenUnder800Picks.length} more Prestige scent above`
                     : activeMode === '4-for-100'
                     ? `For ${activeAudience} · Your ${activeCandidates.length} × 5ml Selection`
-                    : `For ${activeAudience} · Your ${chosenUnder500Picks.length} × 5ml Under E500 Selection`}
+                    : `For ${activeAudience} · Your ${chosenUnder500Picks.length} × 5ml Selection`}
                 </p>
                 <p className="text-xs sm:text-sm text-white/85 truncate">
                   {activeCandidates.length > 0
                     ? activeCandidates.map((c) => c.product.name).join(' · ')
-                    : 'Tap any 2 Under E500 perfume cards above to build your pack'}
+                    : 'Tap perfume cards above to build your pack'}
                 </p>
               </div>
 
               <button
                 type="button"
-                disabled={!hasValidUnder500Choice}
+                disabled={!hasValidPackChoice}
                 onClick={handleAddPack}
                 className="w-full sm:w-auto px-5 sm:px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] disabled:opacity-45 disabled:cursor-not-allowed transition-colors text-xs font-bold uppercase tracking-[0.12em] sm:tracking-[0.14em] inline-flex items-center justify-center gap-2 sm:whitespace-nowrap text-center shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.25)]"
               >
@@ -677,11 +810,13 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                     <Check className="w-4 h-4" />
                     <span>Added to Cart</span>
                   </>
-                ) : !hasValidUnder500Choice ? (
+                ) : !hasValidPackChoice ? (
                   <>
                     <ShoppingBag className="w-4 h-4" />
                     <span>
-                      Choose {requiredUnder500Count} Under E500 Picks ({chosenUnder500Picks.length}/{requiredUnder500Count})
+                      {activeMode === '4-for-100'
+                        ? `Choose 2 + 2 Scents (${chosenUnder500Picks.length + chosenUnder800Picks.length}/${requiredUnder500Count + requiredUnder800Count})`
+                        : `Choose ${requiredUnder500Count} Picks (${chosenUnder500Picks.length}/${requiredUnder500Count})`}
                     </span>
                   </>
                 ) : (
@@ -732,12 +867,12 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
               {exclusiveItems.map((entry) => {
                 const p = entry.product;
-                const regularFive =
+                const regularPriceForSize =
                   entry.catalogueFiveMlPrice !== null &&
                   entry.catalogueFiveMlPrice > entry.customPrice
                     ? entry.catalogueFiveMlPrice
                     : null;
-                const itemAddKey = `exclusive-item:${p.id}`;
+                const itemAddKey = `exclusive-item:${p.id}:${entry.sizeLabel}`;
 
                 return (
                   <article
@@ -755,8 +890,8 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                         fallbackTitle={p.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
-                      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-[#0A0A0A] text-[#FACC15] text-[10px] font-bold uppercase tracking-wider">
-                        5ml Exclusive
+                      <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded bg-[#0A0A0A] text-[#FACC15] text-[10px] font-bold uppercase tracking-wider max-w-[70%] truncate">
+                        {entry.sizeLabel} Exclusive
                       </span>
                       <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full bg-white/95 text-[#0A0A0A] text-[10px] font-semibold border border-[#E5E5E5]">
                         {formatCategoryBadge(p.category)}
@@ -779,16 +914,16 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
 
                       <div className="pt-3 border-t border-[#E5E5E5] flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <span className="block text-[10px] uppercase tracking-wider text-[#666666] font-semibold">
-                            5ml Special Price
+                          <span className="block text-[10px] uppercase tracking-wider text-[#666666] font-semibold truncate">
+                            {entry.sizeLabel} Special Price
                           </span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-extrabold text-[#0A0A0A] tabular-nums">
                               {formatPrice(entry.customPrice)}
                             </span>
-                            {regularFive !== null && (
+                            {regularPriceForSize !== null && (
                               <span className="text-xs text-[#737373] line-through tabular-nums">
-                                {formatPrice(regularFive)}
+                                {formatPrice(regularPriceForSize)}
                               </span>
                             )}
                           </div>
@@ -801,8 +936,9 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                               onAddExclusiveFiveMlToBasket({
                                 type: 'item',
                                 product: p,
+                                sizeLabel: entry.sizeLabel,
                                 price: entry.customPrice,
-                                regularPrice: regularFive,
+                                regularPrice: regularPriceForSize,
                               });
                               setJustAddedKey(itemAddKey);
                               window.setTimeout(() => {
@@ -819,7 +955,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                             ) : (
                               <>
                                 <ShoppingBag className="w-3.5 h-3.5 text-[#FACC15]" />
-                                <span>Add 5ml</span>
+                                <span className="max-w-[110px] truncate">Add {entry.sizeLabel}</span>
                               </>
                             )}
                           </button>
@@ -831,58 +967,73 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
               })}
             </div>
 
-            {exclusiveBundleAvailable && onAddExclusiveFiveMlToBasket && (
-              <div className="rounded-2xl bg-[#0A0A0A] text-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[#1E1E1E]">
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#FACC15]">
-                      Exclusive All-{exclusiveItems.length} × 5ml Bundle
-                    </span>
-                    {exclusiveBundleSavings > 0 && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#FACC15] text-[#0A0A0A] text-[10px] font-bold uppercase tracking-wider">
-                        Save {formatPrice(exclusiveBundleSavings)}
+            {exclusiveBundleAvailable && onAddExclusiveFiveMlToBasket && (() => {
+              const uniqueSizes = Array.from(new Set(exclusiveItems.map((e) => e.sizeLabel)));
+              const uniformSize = uniqueSizes.length === 1 ? uniqueSizes[0] : null;
+              return (
+                <div className="rounded-2xl bg-[#0A0A0A] text-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[#1E1E1E]">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#FACC15]">
+                        {uniformSize
+                          ? `Exclusive All-${exclusiveItems.length} × ${uniformSize} Bundle`
+                          : `Exclusive All-${exclusiveItems.length} Bundle`}
                       </span>
-                    )}
+                      {exclusiveBundleSavings > 0 && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#FACC15] text-[#0A0A0A] text-[10px] font-bold uppercase tracking-wider">
+                          Save {formatPrice(exclusiveBundleSavings)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm text-white/80 truncate">
+                      {exclusiveItems
+                        .map((e) => `${e.product.name} (${e.sizeLabel})`)
+                        .join(' · ')}
+                    </p>
                   </div>
-                  <p className="text-xs sm:text-sm text-white/80 truncate">
-                    {exclusiveItems.map((e) => e.product.name).join(' · ')}
-                  </p>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddExclusiveFiveMlToBasket({
-                      type: 'bundle',
-                      title: weeklySpecial.exclusiveTitle || 'Exclusive 5ml Special Pack',
-                      products: exclusiveItems.map((e) => e.product),
-                      price: exclusiveBundlePrice,
-                      regularPrice:
-                        exclusiveSumPrice > exclusiveBundlePrice ? exclusiveSumPrice : null,
-                    });
-                    setJustAddedKey('exclusive-bundle');
-                    window.setTimeout(() => {
-                      setJustAddedKey((cur) => (cur === 'exclusive-bundle' ? null : cur));
-                    }, 1600);
-                  }}
-                  className="w-full sm:w-auto px-5 sm:px-6 py-3 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] sm:tracking-[0.14em] inline-flex items-center justify-center gap-2 sm:whitespace-nowrap text-center shrink-0"
-                >
-                  {justAddedKey === 'exclusive-bundle' ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Bundle Added</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingBag className="w-4 h-4" />
-                      <span>
-                        Take All {exclusiveItems.length} × 5ml · {formatPrice(exclusiveBundlePrice)}
-                      </span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAddExclusiveFiveMlToBasket({
+                        type: 'bundle',
+                        title: weeklySpecial.exclusiveTitle || 'Exclusive Special Pack',
+                        items: exclusiveItems.map((e) => ({
+                          product: e.product,
+                          sizeLabel: e.sizeLabel,
+                        })),
+                        products: exclusiveItems.map((e) => e.product),
+                        price: exclusiveBundlePrice,
+                        regularPrice:
+                          exclusiveSumPrice > exclusiveBundlePrice ? exclusiveSumPrice : null,
+                      });
+                      setJustAddedKey('exclusive-bundle');
+                      window.setTimeout(() => {
+                        setJustAddedKey((cur) => (cur === 'exclusive-bundle' ? null : cur));
+                      }, 1600);
+                    }}
+                    className="w-full sm:w-auto px-5 sm:px-6 py-3 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] sm:tracking-[0.14em] inline-flex items-center justify-center gap-2 sm:whitespace-nowrap text-center shrink-0"
+                  >
+                    {justAddedKey === 'exclusive-bundle' ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Bundle Added</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingBag className="w-4 h-4" />
+                        <span>
+                          {uniformSize
+                            ? `Take All ${exclusiveItems.length} × ${uniformSize}`
+                            : `Take All ${exclusiveItems.length} Picks`}{' '}
+                          · {formatPrice(exclusiveBundlePrice)}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

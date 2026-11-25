@@ -51,6 +51,7 @@ export interface ResolvedWeeklyFiveMl {
 
 export interface ResolvedExclusiveFiveMlItem {
   product: FragranceProduct;
+  sizeLabel: string;
   customPrice: number;
   catalogueFiveMlPrice: number | null;
 }
@@ -271,7 +272,7 @@ function buildTierPoolsFromProducts(eligibleProducts: FragranceProduct[]): {
   const assignedTo500Ids = new Set(under500Pool.map((c) => c.product.id));
   under800Pool = under800Pool.filter((c) => !assignedTo500Ids.has(c.product.id));
 
-  if (under800Pool.length < 2) {
+  if (under800Pool.length < 3) {
     usingFallbackTiers = true;
     const under800Fallback = baseCandidates
       .filter(
@@ -285,7 +286,7 @@ function buildTierPoolsFromProducts(eligibleProducts: FragranceProduct[]): {
 
     under800Pool = [...under800Pool, ...under800Fallback];
 
-    if (under800Pool.length < 2) {
+    if (under800Pool.length < 3) {
       const usedSet = new Set([
         ...assignedTo500Ids,
         ...under800Pool.map((c) => c.product.id),
@@ -334,8 +335,8 @@ export function buildWeeklyTierPoolsForAudience(
   const strictAttempt = buildTierPoolsFromProducts(strictAudience);
   const strictHasEnough =
     strictAttempt.under500Pool.length >= 3 &&
-    strictAttempt.under800Pool.length >= 2 &&
-    strictAudience.length >= 5;
+    strictAttempt.under800Pool.length >= 3 &&
+    strictAudience.length >= 6;
 
   // Include Unisex in the admin dropdown / supplemental pool when strict pool lacks depth,
   // while keeping strict audience picks prioritized in random selection.
@@ -363,7 +364,7 @@ export function buildWeeklyTierPoolsForAudience(
   }
 
   const audiencePlusUnisex = [...strictAudience, ...unisexProducts];
-  if (audiencePlusUnisex.length >= 4) {
+  if (audiencePlusUnisex.length >= 6) {
     const combinedAttempt = buildTierPoolsFromProducts(audiencePlusUnisex);
     return {
       ...combinedAttempt,
@@ -409,7 +410,7 @@ export function pickRandomWeeklyAudienceIds(
 
   const distinct800Pool = under800Pool.filter((c) => !picked500Ids.has(c.product.id));
   const shuffled800 = sortBucketed(distinct800Pool, `${weekKey}:${tag}:u800:${seedOffset}`);
-  const picked800 = shuffled800.slice(0, 2);
+  const picked800 = shuffled800.slice(0, 3);
 
   return {
     under500Ids: picked500.map((c) => c.product.id),
@@ -475,7 +476,7 @@ function resolveAudienceLineup(
     return (
       primaryPool.get(id) ??
       inStockMatchingById.get(id) ??
-      (under500Pool.length + under800Pool.length < 4 ? anyInStockById.get(id) : undefined)
+      (under500Pool.length + under800Pool.length < 6 ? anyInStockById.get(id) : undefined)
     );
   };
 
@@ -508,7 +509,7 @@ function resolveAudienceLineup(
 
   if (shouldUseSavedOverrides) {
     for (const id of savedUnder800Ids) {
-      if (resolved800.length >= 2) break;
+      if (resolved800.length >= 3) break;
       if (chosenIds.has(id)) continue;
       const candidate = findCandidate(id, pool800ById);
       if (candidate) {
@@ -519,7 +520,7 @@ function resolveAudienceLineup(
   }
 
   for (const id of randomFallback.under800Ids) {
-    if (resolved800.length >= 2) break;
+    if (resolved800.length >= 3) break;
     if (chosenIds.has(id)) continue;
     const candidate = pool800ById.get(id) ?? anyInStockById.get(id);
     if (candidate) {
@@ -532,7 +533,7 @@ function resolveAudienceLineup(
     audience,
     under500Picks: resolved500,
     under800Picks: resolved800,
-    allFourPicks: [...resolved500.slice(0, 2), ...resolved800],
+    allFourPicks: [...resolved500.slice(0, 2), ...resolved800.slice(0, 2)],
     under500Pool,
     under800Pool,
     usingFallbackTiers,
@@ -626,6 +627,8 @@ export function resolveExclusiveFiveMlItems(
   const seen = new Set<string>();
   const resolved: ResolvedExclusiveFiveMlItem[] = [];
 
+  const normalizeSizeKey = (label: string) => label.trim().toLowerCase().replace(/\s+/g, '');
+
   for (const entry of items) {
     if (!entry || !entry.perfumeId || seen.has(entry.perfumeId)) continue;
     const product = byId.get(entry.perfumeId);
@@ -633,13 +636,19 @@ export function resolveExclusiveFiveMlItems(
     const customPrice = Number(entry.customPrice);
     if (!Number.isFinite(customPrice) || customPrice <= 0) continue;
 
+    const sizeLabel = (entry.sizeLabel ?? '').trim().slice(0, 40) || '5ml';
+    const targetKey = normalizeSizeKey(sizeLabel);
+
     seen.add(entry.perfumeId);
-    const fiveMlOpt = product.sizes.find(
-      (s) => s.size.trim().toLowerCase() === '5ml' && s.available && s.price !== null
+    const matchingSizeOpt = product.sizes.find(
+      (s) =>
+        s.available &&
+        s.price !== null &&
+        normalizeSizeKey(s.size) === targetKey
     );
-    const catalogueFiveMlPrice = fiveMlOpt
+    const catalogueFiveMlPrice = matchingSizeOpt
       ? getEffectiveUnitPrice(
-          fiveMlOpt.price,
+          matchingSizeOpt.price,
           product.onSpecial,
           product.specialDiscountPercent,
           product.specialDiscountType,
@@ -649,6 +658,7 @@ export function resolveExclusiveFiveMlItems(
 
     resolved.push({
       product,
+      sizeLabel,
       customPrice,
       catalogueFiveMlPrice,
     });

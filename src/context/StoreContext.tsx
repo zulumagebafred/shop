@@ -630,7 +630,7 @@ function sanitizeExclusiveItemsInput(raw: unknown): ExclusiveFiveMlItem[] {
   const out: ExclusiveFiveMlItem[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
-    const obj = entry as { perfumeId?: unknown; customPrice?: unknown };
+    const obj = entry as { perfumeId?: unknown; customPrice?: unknown; sizeLabel?: unknown };
     const perfumeId = String(obj.perfumeId ?? '')
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '')
@@ -639,10 +639,15 @@ function sanitizeExclusiveItemsInput(raw: unknown): ExclusiveFiveMlItem[] {
     if (!perfumeId || seen.has(perfumeId) || !Number.isFinite(price) || price <= 0) {
       continue;
     }
+    const cleanSizeLabel =
+      typeof obj.sizeLabel === 'string'
+        ? sanitizeText(obj.sizeLabel, 40)
+        : '';
     seen.add(perfumeId);
     out.push({
       perfumeId,
       customPrice: Math.min(50000, Math.max(1, Math.round(price * 100) / 100)),
+      sizeLabel: cleanSizeLabel || '5ml',
     });
     if (out.length >= 6) break;
   }
@@ -664,19 +669,19 @@ function readCachedWeeklySpecial(): WeeklyFiveMlSpecial | null {
         ? parsed.under500Ids.map(String).slice(0, 3)
         : [],
       under800Ids: Array.isArray(parsed.under800Ids)
-        ? parsed.under800Ids.map(String).slice(0, 2)
+        ? parsed.under800Ids.map(String).slice(0, 3)
         : [],
       womenUnder500Ids: Array.isArray(parsed.womenUnder500Ids)
         ? parsed.womenUnder500Ids.map(String).slice(0, 3)
         : [],
       womenUnder800Ids: Array.isArray(parsed.womenUnder800Ids)
-        ? parsed.womenUnder800Ids.map(String).slice(0, 2)
+        ? parsed.womenUnder800Ids.map(String).slice(0, 3)
         : [],
       menUnder500Ids: Array.isArray(parsed.menUnder500Ids)
         ? parsed.menUnder500Ids.map(String).slice(0, 3)
         : [],
       menUnder800Ids: Array.isArray(parsed.menUnder800Ids)
-        ? parsed.menUnder800Ids.map(String).slice(0, 2)
+        ? parsed.menUnder800Ids.map(String).slice(0, 3)
         : [],
       fourPackPrice: Number(parsed.fourPackPrice ?? 100) || 100,
       twoPackPrice: Number(parsed.twoPackPrice ?? 50) || 50,
@@ -1375,19 +1380,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                     ? d.under500Ids.map(String).slice(0, 3)
                     : [],
                   under800Ids: Array.isArray(d.under800Ids)
-                    ? d.under800Ids.map(String).slice(0, 2)
+                    ? d.under800Ids.map(String).slice(0, 3)
                     : [],
                   womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
                     ? d.womenUnder500Ids.map(String).slice(0, 3)
                     : [],
                   womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
-                    ? d.womenUnder800Ids.map(String).slice(0, 2)
+                    ? d.womenUnder800Ids.map(String).slice(0, 3)
                     : [],
                   menUnder500Ids: Array.isArray(d.menUnder500Ids)
                     ? d.menUnder500Ids.map(String).slice(0, 3)
                     : [],
                   menUnder800Ids: Array.isArray(d.menUnder800Ids)
-                    ? d.menUnder800Ids.map(String).slice(0, 2)
+                    ? d.menUnder800Ids.map(String).slice(0, 3)
                     : [],
                   fourPackPrice:
                     Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
@@ -3881,13 +3886,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         const womenUnder500Ids = sanitizeList(next.womenUnder500Ids ?? [], 3);
         const womenUnder800Ids = sanitizeList(
           next.womenUnder800Ids ?? [],
-          2,
+          3,
           new Set(womenUnder500Ids)
         );
         const menUnder500Ids = sanitizeList(next.menUnder500Ids ?? [], 3);
         const menUnder800Ids = sanitizeList(
           next.menUnder800Ids ?? [],
-          2,
+          3,
           new Set(menUnder500Ids)
         );
 
@@ -3897,7 +3902,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         const under800Ids = sanitizeList(
           next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
-          2,
+          3,
           new Set(under500Ids)
         );
 
