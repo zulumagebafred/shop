@@ -348,7 +348,10 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
               title="Add to Cart / Basket"
             >
               <ShoppingBag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">Add to Cart</span>
+              <span className="truncate">
+                <span className="hidden sm:inline">Add to Cart</span>
+                <span className="sm:hidden">Add</span>
+              </span>
             </motion.button>
             <motion.button
               type="button"
@@ -357,7 +360,10 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
               className="py-2 px-1 sm:px-2 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold tracking-wide flex items-center justify-center truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
               title="Buy Now"
             >
-              <span className="truncate">Buy Now</span>
+              <span className="truncate">
+                <span className="hidden sm:inline">Buy Now</span>
+                <span className="sm:hidden">Buy</span>
+              </span>
             </motion.button>
           </div>
         </div>

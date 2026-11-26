@@ -1352,7 +1352,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 </span>
               </p>
               <h2 className="text-2xl sm:text-4xl font-extrabold italic uppercase tracking-tight text-[#0A0A0A]">
-                On Special Now ({specialPerfumes.length})
+                On Special Now
               </h2>
             </div>
             <button
