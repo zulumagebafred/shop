@@ -454,10 +454,10 @@ function encodeCompactPerfumes(items: FragranceProduct[]): string {
       p.category === 'Men'
         ? 'M'
         : p.category === 'Women'
-        ? 'W'
-        : p.category === 'Kiddies'
-        ? 'K'
-        : 'U';
+          ? 'W'
+          : p.category === 'Kiddies'
+            ? 'K'
+            : 'U';
     const obj: CompactPerfumeTuple = {
       i: p.id,
       sl: p.slug,
@@ -506,10 +506,10 @@ function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
       row.c === 'M'
         ? 'Men'
         : row.c === 'W'
-        ? 'Women'
-        : row.c === 'K'
-        ? 'Kiddies'
-        : 'Unisex',
+          ? 'Women'
+          : row.c === 'K'
+            ? 'Kiddies'
+            : 'Unisex',
     concentration: String(row.cn ?? 'Eau de Parfum'),
     description: String(row.d ?? ''),
     image: String(row.im ?? ''),
@@ -521,10 +521,10 @@ function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
     sizes: normalizeAndDedupeSizes(
       Array.isArray(row.sz)
         ? row.sz.map((tuple) => ({
-            size: tuple[0],
-            price: tuple[1],
-            available: Boolean(tuple[2]),
-          }))
+          size: tuple[0],
+          price: tuple[1],
+          available: Boolean(tuple[2]),
+        }))
         : []
     ),
     availability: row.av ?? 'In Stock',
@@ -563,9 +563,9 @@ function normalizeAndDedupeSizes(
     if (!cleanSize) continue;
     const parsedPrice =
       s.price !== null &&
-      s.price !== undefined &&
-      Number.isFinite(Number(s.price)) &&
-      Number(s.price) >= 0
+        s.price !== undefined &&
+        Number.isFinite(Number(s.price)) &&
+        Number(s.price) >= 0
         ? Math.min(100000, Number(s.price))
         : null;
     const available = Boolean(s.available);
@@ -771,9 +771,9 @@ function readCachedPerfumes(): {
         'i' in parsed[0]
           ? decodeCompactPerfumes(raw)
           : (parsed as FragranceProduct[]).map((item) => ({
-              ...item,
-              sizes: normalizeAndDedupeSizes(item.sizes),
-            }));
+            ...item,
+            sizes: normalizeAndDedupeSizes(item.sizes),
+          }));
       return { items, complete: Boolean(meta.complete ?? true) };
     }
   } catch {
@@ -1028,16 +1028,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const started = performance.now();
       const q = cursor
         ? query(
-            collection(db, 'perfumes'),
-            where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
-            startAfter(cursor),
-            limit(pageSize)
-          )
+          collection(db, 'perfumes'),
+          where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
+          startAfter(cursor),
+          limit(pageSize)
+        )
         : query(
-            collection(db, 'perfumes'),
-            where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
-            limit(pageSize)
-          );
+          collection(db, 'perfumes'),
+          where('availability', 'in', [...PUBLIC_AVAILABILITIES]),
+          limit(pageSize)
+        );
       const snapshot = await withRetry(() => getDocs(q), { maxAttempts: 3 });
       recordFirestoreRead(
         cursor ? 'perfumes:page-next' : 'perfumes:page-init',
@@ -1344,7 +1344,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       snapshotPublishTimeoutRef.current = setTimeout(() => {
         snapshotPublishTimeoutRef.current = null;
-        void publishCatalogueSnapshot(livePerfumesRef.current).catch(() => {});
+        void publishCatalogueSnapshot(livePerfumesRef.current).catch(() => { });
       }, delayMs);
     },
     [publishCatalogueSnapshot]
@@ -1428,30 +1428,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           reads += 1;
           const nextCampaign: SpecialCampaign = campSnap.exists()
             ? (() => {
-                const d = campSnap.data();
-                return {
-                  title: String(d.title ?? DEFAULT_CAMPAIGN.title),
-                  badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
-                  subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
-                  announcementText: String(d.announcementText ?? ''),
-                  promoCodeHint: String(d.promoCodeHint ?? ''),
-                  endsAt: String(d.endsAt ?? ''),
-                  enabled: Boolean(d.enabled),
-                  heroMode:
-                    d.heroMode === 'new-arrivals' || d.heroMode === 'specials'
-                      ? d.heroMode
-                      : 'auto',
-                  newArrivalsTitle: String(
-                    d.newArrivalsTitle ?? DEFAULT_CAMPAIGN.newArrivalsTitle ?? 'New Arrivals'
-                  ),
-                  newArrivalsBadge: String(
-                    d.newArrivalsBadge ?? DEFAULT_CAMPAIGN.newArrivalsBadge ?? 'JUST LANDED'
-                  ),
-                  newArrivalsSubtitle: String(
-                    d.newArrivalsSubtitle ?? DEFAULT_CAMPAIGN.newArrivalsSubtitle ?? ''
-                  ),
-                };
-              })()
+              const d = campSnap.data();
+              return {
+                title: String(d.title ?? DEFAULT_CAMPAIGN.title),
+                badgeText: String(d.badgeText ?? DEFAULT_CAMPAIGN.badgeText),
+                subtitle: String(d.subtitle ?? DEFAULT_CAMPAIGN.subtitle),
+                announcementText: String(d.announcementText ?? ''),
+                promoCodeHint: String(d.promoCodeHint ?? ''),
+                endsAt: String(d.endsAt ?? ''),
+                enabled: Boolean(d.enabled),
+                heroMode:
+                  d.heroMode === 'new-arrivals' || d.heroMode === 'specials'
+                    ? d.heroMode
+                    : 'auto',
+                newArrivalsTitle: String(
+                  d.newArrivalsTitle ?? DEFAULT_CAMPAIGN.newArrivalsTitle ?? 'New Arrivals'
+                ),
+                newArrivalsBadge: String(
+                  d.newArrivalsBadge ?? DEFAULT_CAMPAIGN.newArrivalsBadge ?? 'JUST LANDED'
+                ),
+                newArrivalsSubtitle: String(
+                  d.newArrivalsSubtitle ?? DEFAULT_CAMPAIGN.newArrivalsSubtitle ?? ''
+                ),
+              };
+            })()
             : DEFAULT_CAMPAIGN;
           setCampaign(nextCampaign);
           try {
@@ -1466,57 +1466,57 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           reads += 1;
           const nextWeekly: WeeklyFiveMlSpecial = weeklySnap.exists()
             ? (() => {
-                const d = weeklySnap.data();
-                const fourPrice = Number(d.fourPackPrice ?? 100);
-                const twoPrice = Number(d.twoPackPrice ?? 50);
-                return {
-                  enabled: Boolean(d.enabled),
-                  autoRotateWeekly: d.autoRotateWeekly !== false,
-                  weekKey: String(d.weekKey ?? ''),
-                  seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
-                  under500Ids: Array.isArray(d.under500Ids)
-                    ? d.under500Ids.map(String).slice(0, 3)
-                    : [],
-                  under800Ids: Array.isArray(d.under800Ids)
-                    ? d.under800Ids.map(String).slice(0, 3)
-                    : [],
-                  womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
-                    ? d.womenUnder500Ids.map(String).slice(0, 3)
-                    : [],
-                  womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
-                    ? d.womenUnder800Ids.map(String).slice(0, 3)
-                    : [],
-                  menUnder500Ids: Array.isArray(d.menUnder500Ids)
-                    ? d.menUnder500Ids.map(String).slice(0, 3)
-                    : [],
-                  menUnder800Ids: Array.isArray(d.menUnder800Ids)
-                    ? d.menUnder800Ids.map(String).slice(0, 3)
-                    : [],
-                  fourPackPrice:
-                    Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
-                  twoPackPrice:
-                    Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
-                  exclusiveEnabled: Boolean(d.exclusiveEnabled),
-                  exclusiveTitle:
-                    typeof d.exclusiveTitle === 'string' && d.exclusiveTitle.trim()
-                      ? d.exclusiveTitle.slice(0, 100)
-                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle,
-                  exclusiveBadge:
-                    typeof d.exclusiveBadge === 'string' && d.exclusiveBadge.trim()
-                      ? d.exclusiveBadge.slice(0, 40)
-                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge,
-                  exclusiveSubtitle:
-                    typeof d.exclusiveSubtitle === 'string'
-                      ? d.exclusiveSubtitle.slice(0, 240)
-                      : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveSubtitle,
-                  exclusiveBundleEnabled: Boolean(d.exclusiveBundleEnabled),
-                  exclusiveBundlePrice: Math.max(
-                    0,
-                    Number(d.exclusiveBundlePrice ?? 0) || 0
-                  ),
-                  exclusiveItems: sanitizeExclusiveItemsInput(d.exclusiveItems),
-                };
-              })()
+              const d = weeklySnap.data();
+              const fourPrice = Number(d.fourPackPrice ?? 100);
+              const twoPrice = Number(d.twoPackPrice ?? 50);
+              return {
+                enabled: Boolean(d.enabled),
+                autoRotateWeekly: d.autoRotateWeekly !== false,
+                weekKey: String(d.weekKey ?? ''),
+                seedOffset: Math.max(0, Number(d.seedOffset ?? 0) || 0),
+                under500Ids: Array.isArray(d.under500Ids)
+                  ? d.under500Ids.map(String).slice(0, 3)
+                  : [],
+                under800Ids: Array.isArray(d.under800Ids)
+                  ? d.under800Ids.map(String).slice(0, 3)
+                  : [],
+                womenUnder500Ids: Array.isArray(d.womenUnder500Ids)
+                  ? d.womenUnder500Ids.map(String).slice(0, 3)
+                  : [],
+                womenUnder800Ids: Array.isArray(d.womenUnder800Ids)
+                  ? d.womenUnder800Ids.map(String).slice(0, 3)
+                  : [],
+                menUnder500Ids: Array.isArray(d.menUnder500Ids)
+                  ? d.menUnder500Ids.map(String).slice(0, 3)
+                  : [],
+                menUnder800Ids: Array.isArray(d.menUnder800Ids)
+                  ? d.menUnder800Ids.map(String).slice(0, 3)
+                  : [],
+                fourPackPrice:
+                  Number.isFinite(fourPrice) && fourPrice > 0 ? fourPrice : 100,
+                twoPackPrice:
+                  Number.isFinite(twoPrice) && twoPrice > 0 ? twoPrice : 50,
+                exclusiveEnabled: Boolean(d.exclusiveEnabled),
+                exclusiveTitle:
+                  typeof d.exclusiveTitle === 'string' && d.exclusiveTitle.trim()
+                    ? d.exclusiveTitle.slice(0, 100)
+                    : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle,
+                exclusiveBadge:
+                  typeof d.exclusiveBadge === 'string' && d.exclusiveBadge.trim()
+                    ? d.exclusiveBadge.slice(0, 40)
+                    : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge,
+                exclusiveSubtitle:
+                  typeof d.exclusiveSubtitle === 'string'
+                    ? d.exclusiveSubtitle.slice(0, 240)
+                    : DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveSubtitle,
+                exclusiveBundleEnabled: Boolean(d.exclusiveBundleEnabled),
+                exclusiveBundlePrice: Math.max(
+                  0,
+                  Number(d.exclusiveBundlePrice ?? 0) || 0
+                ),
+                exclusiveItems: sanitizeExclusiveItemsInput(d.exclusiveItems),
+              };
+            })()
             : DEFAULT_WEEKLY_FIVE_ML_SPECIAL;
           setWeeklySpecial(nextWeekly);
           try {
@@ -1744,8 +1744,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               : Date.now();
           const status: ReferralSaleStatus =
             d.commissionStatus === 'confirmed' ||
-            d.commissionStatus === 'paid' ||
-            d.commissionStatus === 'cancelled'
+              d.commissionStatus === 'paid' ||
+              d.commissionStatus === 'cancelled'
               ? d.commissionStatus
               : 'pending';
           return {
@@ -1957,8 +1957,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               : Date.now();
           const status: ReferralSaleStatus =
             d.commissionStatus === 'confirmed' ||
-            d.commissionStatus === 'paid' ||
-            d.commissionStatus === 'cancelled'
+              d.commissionStatus === 'paid' ||
+              d.commissionStatus === 'cancelled'
               ? d.commissionStatus
               : 'pending';
           return {
@@ -2017,23 +2017,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               : Date.now();
           const action: AuditAction =
             d.action === 'create' ||
-            d.action === 'update' ||
-            d.action === 'delete' ||
-            d.action === 'import'
+              d.action === 'update' ||
+              d.action === 'delete' ||
+              d.action === 'import'
               ? d.action
               : 'update';
           const section: AuditSection =
             d.section === 'perfume' ||
-            d.section === 'specials' ||
-            d.section === 'weekly-special' ||
-            d.section === 'coupon' ||
-            d.section === 'combo' ||
-            d.section === 'layering' ||
-            d.section === 'hamper' ||
-            d.section === 'referral' ||
-            d.section === 'referral-sale' ||
-            d.section === 'referral-attribution' ||
-            d.section === 'referral-partner'
+              d.section === 'specials' ||
+              d.section === 'weekly-special' ||
+              d.section === 'coupon' ||
+              d.section === 'combo' ||
+              d.section === 'layering' ||
+              d.section === 'hamper' ||
+              d.section === 'referral' ||
+              d.section === 'referral-sale' ||
+              d.section === 'referral-attribution' ||
+              d.section === 'referral-partner'
               ? d.section
               : 'perfume';
 
@@ -2611,7 +2611,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             socialHandle: String(d.socialHandle ?? ''),
             followerDiscountType:
               d.followerDiscountType === 'percentage' ||
-              d.followerDiscountType === 'fixed'
+                d.followerDiscountType === 'fixed'
                 ? d.followerDiscountType
                 : 'none',
             followerDiscountValue: Number(d.followerDiscountValue ?? 0),
@@ -2903,7 +2903,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             ? `Updated perfume "${cleanName}"`
             : `Added new perfume "${cleanName}"`,
           changes: buildPerfumeDiff(prevPerfume, basePayload),
-        }).catch(() => {});
+        }).catch(() => { });
 
         scheduleDebouncedSnapshotPublish(1500);
         return id;
@@ -2967,13 +2967,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const nextList = previousList.map((p) =>
         p.id === perfume.id
           ? {
-              ...p,
-              onSpecial,
-              specialDiscountType: resolvedType,
-              specialDiscountPercent: safeDiscount,
-              specialDiscountAmount: safeDiscountAmount,
-              specialLabel: cleanLabel,
-            }
+            ...p,
+            onSpecial,
+            specialDiscountType: resolvedType,
+            specialDiscountPercent: safeDiscount,
+            specialDiscountAmount: safeDiscountAmount,
+            specialLabel: cleanLabel,
+          }
           : p
       );
       livePerfumesRef.current = nextList;
@@ -3048,7 +3048,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
               ? `Special Discount: ${offerSummary} · Sizes: ${sizesSummary} · Label: ${cleanLabel || 'None'}`
               : 'Special offer deactivated',
           ],
-        }).catch(() => {});
+        }).catch(() => { });
 
         // 4. Debounced snapshot publish (non-blocking)
         if (!skipSnapshotPublish) {
@@ -3155,7 +3155,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           changes: [
             `New Arrival: ${perfume.isNewArrival ? 'Yes' : 'No'} → ${isNewArrival ? 'Yes' : 'No'}`,
           ],
-        }).catch(() => {});
+        }).catch(() => { });
 
         scheduleDebouncedSnapshotPublish(1500);
       } catch (error) {
@@ -3191,11 +3191,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             : `Deleted perfume (${perfumeId})`,
           changes: existing
             ? [
-                `Removed ${existing.name} by ${existing.brand} (${existing.category})`,
-                `Previous availability: ${existing.availability}`,
-              ]
+              `Removed ${existing.name} by ${existing.brand} (${existing.category})`,
+              `Previous availability: ${existing.availability}`,
+            ]
             : [`Deleted perfume document ${perfumeId}`],
-        }).catch(() => {});
+        }).catch(() => { });
         scheduleDebouncedSnapshotPublish(1500);
       } catch (error) {
         livePerfumesRef.current = previousList;
@@ -3371,8 +3371,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           targetLabel: `Coupon ${coupon.code}`,
           summary: `${nextActive ? 'Activated' : 'Paused'} coupon ${coupon.code}`,
           changes: [
-            `Status: ${coupon.active ? 'Active' : 'Paused'} → ${
-              nextActive ? 'Active' : 'Paused'
+            `Status: ${coupon.active ? 'Active' : 'Paused'} → ${nextActive ? 'Active' : 'Paused'
             }`,
           ],
         });
@@ -3400,10 +3399,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           summary: `Deleted coupon code ${clean}`,
           changes: existing
             ? [
-                `Removed ${existing.discountValue}${
-                  existing.discountType === 'percentage' ? '%' : ' SZL'
-                } coupon (${existing.appliesTo})`,
-              ]
+              `Removed ${existing.discountValue}${existing.discountType === 'percentage' ? '%' : ' SZL'
+              } coupon (${existing.appliesTo})`,
+            ]
             : [`Deleted coupon ${clean}`],
         });
       } catch (error) {
@@ -3436,9 +3434,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         followerDiscountType === 'none'
           ? 0
           : Math.min(
-              maxFollowerDisc,
-              Math.max(0, Math.round(Number(input.followerDiscountValue || 0) * 100) / 100)
-            );
+            maxFollowerDisc,
+            Math.max(0, Math.round(Number(input.followerDiscountValue || 0) * 100) / 100)
+          );
 
       const ref = doc(db, 'referrals', code);
       const pubRef = doc(db, 'publicReferrals', code);
@@ -3555,8 +3553,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           targetLabel: `${referral.code} · ${referral.influencerName}`,
           summary: `${nextActive ? 'Activated' : 'Paused'} influencer code ${referral.code}`,
           changes: [
-            `Status: ${referral.active ? 'Active' : 'Paused'} → ${
-              nextActive ? 'Active' : 'Paused'
+            `Status: ${referral.active ? 'Active' : 'Paused'} → ${nextActive ? 'Active' : 'Paused'
             }`,
           ],
         });
@@ -3870,9 +3867,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             : `Deleted referral sale (${saleId})`,
           changes: prevSale
             ? [
-                `Order: ${prevSale.orderSummary}`,
-                `Previous commission: E${prevSale.commissionAmount.toFixed(2)} (${prevSale.commissionStatus})`,
-              ]
+              `Order: ${prevSale.orderSummary}`,
+              `Previous commission: E${prevSale.commissionAmount.toFixed(2)} (${prevSale.commissionStatus})`,
+            ]
             : [`Deleted sale record ${saleId}`],
         });
       } catch (error) {
@@ -3903,9 +3900,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         followerDiscountType === 'none'
           ? 0
           : Math.min(
-              maxDisc,
-              Math.max(0, Math.round(Number(config.followerDiscountValue || 0) * 100) / 100)
-            );
+            maxDisc,
+            Math.max(0, Math.round(Number(config.followerDiscountValue || 0) * 100) / 100)
+          );
 
       const refDoc = doc(db, 'referrals', code);
       const pubDoc = doc(db, 'publicReferrals', code);
@@ -3914,9 +3911,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const payoutSummary =
         sanitizeText(config.payoutNote, 200) ||
-        `${partner.payoutMethod.toUpperCase()}${
-          partner.payoutAccount ? ` · ${partner.payoutAccount}` : ''
-        }`.slice(0, 200);
+        `${partner.payoutMethod.toUpperCase()}${partner.payoutAccount ? ` · ${partner.payoutAccount}` : ''
+          }`.slice(0, 200);
 
       try {
         const batch = writeBatch(db);
@@ -3999,10 +3995,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           summary: `Approved creator partner "${partner.displayName}" and linked code ${code}`,
           changes: [
             `Assigned Code: ${code} (${config.active ? 'Active' : 'Paused'})`,
-            `Commission: ${
-              config.commissionType === 'percentage'
-                ? `${commissionValue}%`
-                : `E${commissionValue}`
+            `Commission: ${config.commissionType === 'percentage'
+              ? `${commissionValue}%`
+              : `E${commissionValue}`
             } · Backfilled ${matchingSales.length} existing sales`,
           ],
         });
@@ -4102,11 +4097,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           section: 'specials',
           targetId: 'active-special',
           targetLabel: cleanNextCampaign.title,
-          summary: `Updated seasonal campaign "${cleanNextCampaign.title}" (${
-            cleanNextCampaign.enabled ? 'Live' : 'Paused'
-          })`,
+          summary: `Updated seasonal campaign "${cleanNextCampaign.title}" (${cleanNextCampaign.enabled ? 'Live' : 'Paused'
+            })`,
           changes: buildCampaignDiff(previousCampaign, cleanNextCampaign),
-        }).catch(() => {});
+        }).catch(() => { });
       } catch (error) {
         setCampaign(previousCampaign);
         try {
@@ -4228,10 +4222,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       try {
-        // Always include ownerUid and do a full document replace (no merge) so that
-        // any legacy fields (e.g. a stale "counts" key written by an older build)
-        // are removed and cannot cause Firestore hasOnly() validation failures.
-        const payload = { ...cleanNextWeekly, ownerUid, updatedAt: serverTimestamp() };
+        // Preserve existing ownerUid when updating so any authorized admin can save
+        // without violating firestore.rules (incoming().ownerUid == existing().ownerUid),
+        // while still doing a full replace (no merge) to strip any stale legacy fields.
+        const existingSnap = await getDoc(ref);
+        const preservedOwnerUid =
+          existingSnap.exists() && typeof existingSnap.data()?.ownerUid === 'string' && existingSnap.data()?.ownerUid
+            ? (existingSnap.data()?.ownerUid as string)
+            : ownerUid;
+        const payload = {
+          ...cleanNextWeekly,
+          ownerUid: preservedOwnerUid,
+          updatedAt: serverTimestamp(),
+        };
         try {
           await setDoc(ref, payload);
         } catch (innerErr) {
@@ -4249,15 +4252,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           section: 'weekly-special',
           targetId: 'active-5ml',
           targetLabel: `Weekly 5ml Special (${activeWeek})`,
-          summary: `Updated Weekly 5ml Decant Special (${
-            cleanNextWeekly.enabled ? 'Active' : 'Paused'
-          })`,
+          summary: `Updated Weekly 5ml Decant Special (${cleanNextWeekly.enabled ? 'Active' : 'Paused'
+            })`,
           changes: buildWeeklySpecialDiff(
             previousWeekly,
             cleanNextWeekly,
             (id) => livePerfumesRef.current.find((p) => p.id === id)?.name ?? id
           ),
-        }).catch(() => {});
+        }).catch(() => { });
       } catch (error) {
         setWeeklySpecial(previousWeekly);
         try {
