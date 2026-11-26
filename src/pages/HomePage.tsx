@@ -49,6 +49,7 @@ import {
   FragranceProduct,
   PriceRangeFilter,
   SeasonFilter,
+  SpecialCampaign,
   WeeklyFiveMlAudience,
   WeeklyFiveMlPackMode,
 } from '../types/fragrance';
@@ -69,6 +70,7 @@ interface HomePageProps {
   ) => void;
   onSelectProduct: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
+  onAddToBasket: (product: FragranceProduct, size: BottleSize, quantity: number) => void;
   onSelectBranchAndBasket: (branchId: BranchId) => void;
   onAddWeeklyPackToBasket: (payload: {
     audience: WeeklyFiveMlAudience;
@@ -217,63 +219,31 @@ const HeroCountdown: React.FC<{ endsAt?: string }> = React.memo(({ endsAt }) => 
   );
 });
 
-export const HomePage: React.FC<HomePageProps> = ({
+interface HeroSpecialsShowcaseProps {
+  heroBooting: boolean;
+  showingNewArrivals: boolean;
+  campaign: SpecialCampaign;
+  slideshowPerfumes: FragranceProduct[];
+  explicitNewArrivalsCount: number;
+  newArrivalsCount: number;
+  fallbackProduct: FragranceProduct | null;
+  onNavigate: HomePageProps['onNavigate'];
+  onSelectProduct: HomePageProps['onSelectProduct'];
+  onQuickWhatsApp: HomePageProps['onQuickWhatsApp'];
+}
+
+const HeroSpecialsShowcase: React.FC<HeroSpecialsShowcaseProps> = React.memo(({
+  heroBooting,
+  showingNewArrivals,
+  campaign,
+  slideshowPerfumes,
+  explicitNewArrivalsCount,
+  newArrivalsCount,
+  fallbackProduct,
   onNavigate,
   onSelectProduct,
   onQuickWhatsApp,
-  onSelectBranchAndBasket,
-  onAddWeeklyPackToBasket,
-  onAddExclusiveFiveMlToBasket,
 }) => {
-  const {
-    perfumes,
-    campaign,
-    campaignLoading,
-    catalogueLoading,
-    catalogueComplete,
-    catalogueHasMore,
-    ensureAllPerfumesLoaded,
-    usingSampleHampers,
-  } = useStore();
-  const heroBooting = campaignLoading || catalogueLoading;
-
-  useEffect(() => {
-    if (!catalogueComplete && catalogueHasMore) {
-      void ensureAllPerfumesLoaded();
-    }
-  }, [catalogueComplete, catalogueHasMore, ensureAllPerfumesLoaded]);
-
-  const availablePerfumes = useMemo(
-    () => perfumes.filter((p) => p.availability !== 'Out of Stock'),
-    [perfumes]
-  );
-  const specialPerfumes = useMemo(
-    () => availablePerfumes.filter((p) => Boolean(p.onSpecial)),
-    [availablePerfumes]
-  );
-  const explicitNewArrivals = useMemo(
-    () => availablePerfumes.filter((p) => Boolean(p.isNewArrival)),
-    [availablePerfumes]
-  );
-  const autoLatestArrivals = useMemo(
-    () =>
-      [...availablePerfumes]
-        .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
-        .slice(0, 8),
-    [availablePerfumes]
-  );
-  const newArrivalsPerfumes =
-    explicitNewArrivals.length > 0 ? explicitNewArrivals : autoLatestArrivals;
-  const heroMode = campaign.heroMode ?? 'auto';
-  const showingNewArrivals =
-    heroMode === 'new-arrivals'
-      ? newArrivalsPerfumes.length > 0
-      : heroMode === 'auto'
-      ? specialPerfumes.length === 0 && newArrivalsPerfumes.length > 0
-      : false;
-  const [activeMood, setActiveMood] = useState<ScentMood>('all');
-  const [activeDecantIndex, setActiveDecantIndex] = useState(1);
-  const [showAllDecantLineup, setShowAllDecantLineup] = useState(false);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [heroSlideDirection, setHeroSlideDirection] = useState<1 | -1>(1);
   const [heroPaused, setHeroPaused] = useState(false);
@@ -299,10 +269,6 @@ export const HomePage: React.FC<HomePageProps> = ({
     window.addEventListener('resize', updateDeckSpacing);
     return () => window.removeEventListener('resize', updateDeckSpacing);
   }, []);
-
-  const slideshowPerfumes = showingNewArrivals
-    ? newArrivalsPerfumes
-    : specialPerfumes;
 
   const safeSlideIndex =
     slideshowPerfumes.length > 0 ? heroSlideIndex % slideshowPerfumes.length : 0;
@@ -356,7 +322,6 @@ export const HomePage: React.FC<HomePageProps> = ({
     ];
   }, [slideshowPerfumes, safeSlideIndex]);
 
-  // Preload only the immediate next hero slide so slide transitions stay instant
   useEffect(() => {
     if (slideshowPerfumes.length <= 1) return;
     const nextIdx = (safeSlideIndex + 1) % slideshowPerfumes.length;
@@ -368,7 +333,632 @@ export const HomePage: React.FC<HomePageProps> = ({
     preloader.src = nextImg;
   }, [slideshowPerfumes, safeSlideIndex]);
 
-  const activeDecant = siteContent.decantsSection.tiers[activeDecantIndex];
+  if (heroBooting) {
+    return (
+      <div
+        aria-label="Loading featured collection"
+        className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
+      >
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+          <div className="lg:col-span-6 space-y-5 flex flex-col items-center lg:items-start">
+            <div className="h-3.5 w-32 rounded bg-white/15 animate-pulse" />
+            <div className="space-y-3 w-full max-w-md flex flex-col items-center lg:items-start">
+              <div className="h-12 sm:h-14 w-3/4 rounded-xl bg-white/15 animate-pulse" />
+              <div className="h-12 sm:h-14 w-2/3 rounded-xl bg-[#FACC15]/25 animate-pulse" />
+            </div>
+            <div className="flex gap-2 w-full max-w-md justify-center lg:justify-start pt-1">
+              {[0, 1, 2, 3].map((slot) => (
+                <div
+                  key={slot}
+                  className="flex-1 min-w-[58px] max-w-[84px] h-[64px] rounded-xl border border-white/10 bg-white/[0.05] animate-pulse"
+                />
+              ))}
+            </div>
+            <div className="h-11 w-44 rounded-full bg-[#FACC15]/30 animate-pulse mt-2" />
+          </div>
+          <div className="lg:col-span-6 h-[300px] sm:h-[360px] lg:h-[400px] flex items-center justify-center">
+            <div className="w-[170px] sm:w-[205px] h-[270px] sm:h-[325px] rounded-2xl bg-white/10 border border-white/15 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeSlideProduct) {
+    return (
+      <div className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 py-12 lg:py-16">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_40%,rgba(250,204,21,0.14)_0%,rgba(10,10,10,0)_62%)]"
+        />
+        <div className="relative z-10 max-w-2xl space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
+            AuraHut Co. Eswatini
+          </p>
+          <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
+            <span className="block text-white">Signature</span>
+            <span className="block text-[#FACC15]">Extraits</span>
+          </h1>
+          <p className="text-sm sm:text-base text-white/75 max-w-lg">
+            New seasonal special offers are updating soon. Explore our in-stock Arabian bottles and travel decants across Manzini and Mbabane.
+          </p>
+          <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+            {fallbackProduct && (
+              <motion.button
+                type="button"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onQuickWhatsApp(fallbackProduct)}
+                className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Buy Now</span>
+              </motion.button>
+            )}
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() =>
+                onNavigate('shop', {
+                  category: 'All',
+                  brand: 'All',
+                  size: 'All',
+                  priceRange: 'all',
+                  season: 'all',
+                  onlySpecials: false,
+                })
+              }
+              className={`px-7 py-3.5 rounded-full transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 ${
+                fallbackProduct
+                  ? 'border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A]'
+                  : 'bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] shadow-[0_12px_30px_rgba(250,204,21,0.28)]'
+              }`}
+            >
+              <span>Browse Available Catalogue</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </motion.button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const rawTitle = showingNewArrivals
+    ? campaign.newArrivalsTitle || 'New Arrivals'
+    : campaign.enabled && campaign.title
+    ? campaign.title
+    : 'Signature Extraits';
+  const [lineOne, lineTwo] = splitHeroHeadline(rawTitle);
+  const activeSpecialTag = formatSpecialDiscountTag(
+    activeSlideProduct.onSpecial,
+    activeSlideProduct.specialDiscountPercent,
+    activeSlideProduct.specialDiscountType,
+    activeSlideProduct.specialDiscountAmount
+  );
+  const activeSizes = [...activeSlideProduct.sizes]
+    .filter((s) => s.available)
+    .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
+  const activeBranchLabel = getBranchAvailabilityLabel(activeSlideProduct);
+
+  return (
+    <div
+      onMouseEnter={() => setHeroPaused(true)}
+      onMouseLeave={() => setHeroPaused(false)}
+      onTouchStart={(e) => setHeroTouchStartX(e.changedTouches[0]?.clientX ?? null)}
+      onTouchEnd={(e) => {
+        if (heroTouchStartX === null) return;
+        const deltaX = (e.changedTouches[0]?.clientX ?? heroTouchStartX) - heroTouchStartX;
+        if (Math.abs(deltaX) > 40) {
+          stepHeroSlide(deltaX < 0 ? 1 : -1);
+        }
+        setHeroTouchStartX(null);
+      }}
+      className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_45%,rgba(250,204,21,0.16)_0%,rgba(255,255,255,0.06)_38%,rgba(10,10,10,0)_64%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(250,204,21,0.08)_0%,transparent_48%)]"
+      />
+
+      {slideshowPerfumes.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={() => stepHeroSlide(-1)}
+            aria-label="Previous featured perfume"
+            className="hidden sm:flex absolute left-3 lg:left-4 top-1/2 -translate-y-1/2 z-40 w-9 h-9 rounded-full bg-white/12 hover:bg-white text-white hover:text-[#0A0A0A] border border-white/25 items-center justify-center transition-colors backdrop-blur-xs"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => stepHeroSlide(1)}
+            aria-label="Next featured perfume"
+            className="hidden sm:flex absolute right-3 lg:right-4 top-1/2 -translate-y-1/2 z-40 w-9 h-9 rounded-full bg-white/12 hover:bg-white text-white hover:text-[#0A0A0A] border border-white/25 items-center justify-center transition-colors backdrop-blur-xs"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </>
+      )}
+
+      <div className="relative z-10 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
+        <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start min-w-0">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
+            {showingNewArrivals
+              ? campaign.newArrivalsBadge || 'JUST LANDED'
+              : campaign.enabled && campaign.badgeText
+              ? campaign.badgeText
+              : 'Featured Specials'}
+          </p>
+
+          <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
+            <span className="block text-white">{lineOne}</span>
+            <span className="block text-[#FACC15]">{lineTwo}</span>
+          </h1>
+
+          {showingNewArrivals ? (
+            <div className="w-full max-w-md space-y-2.5 pt-1">
+              <p className="text-xs sm:text-sm text-white/80 leading-relaxed">
+                {campaign.newArrivalsSubtitle ||
+                  'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.'}
+              </p>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#FACC15]/45 bg-white/[0.05] px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FACC15]">
+                <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  {explicitNewArrivalsCount > 0
+                    ? `${explicitNewArrivalsCount} Newly Landed ${
+                        explicitNewArrivalsCount === 1 ? 'Scent' : 'Scents'
+                      }`
+                    : `Latest ${newArrivalsCount} Storefront Releases`}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <HeroCountdown endsAt={campaign.endsAt} />
+          )}
+
+          <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left min-h-[46px]">
+            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 min-w-0 min-h-[22px]">
+              <p className="text-xs font-semibold text-white/90 truncate min-w-0">
+                {activeSlideProduct.name}{' '}
+                <span className="text-white/55 font-normal">
+                  · {activeSlideProduct.brand}
+                </span>
+              </p>
+              {activeSlideProduct.availability !== 'Out of Stock' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/12 border border-white/25 text-[10px] font-semibold text-white shrink-0 whitespace-nowrap">
+                  <MapPin className="w-2.5 h-2.5 text-[#FACC15] shrink-0" aria-hidden="true" />
+                  <span>{activeBranchLabel}</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-white/75 tabular-nums truncate min-h-[18px]">
+              {activeSizes.length > 0 ? (
+                activeSizes.map((s, idx) => {
+                  const eff = getEffectiveUnitPrice(
+                    s.price,
+                    activeSlideProduct.onSpecial,
+                    activeSlideProduct.specialDiscountPercent,
+                    activeSlideProduct.specialDiscountType,
+                    activeSlideProduct.specialDiscountAmount,
+                    s.size,
+                    activeSlideProduct.sizes
+                  );
+                  const sizeOnSpecial =
+                    Boolean(activeSlideProduct.onSpecial) &&
+                    s.price !== null &&
+                    eff !== null &&
+                    eff < s.price;
+                  return (
+                    <React.Fragment key={`${activeSlideProduct.id}-hero-${s.size}`}>
+                      <span className="text-white/60">{s.size}</span>{' '}
+                      <span
+                        className={`font-semibold ${
+                          sizeOnSpecial ? 'text-[#FACC15]' : 'text-white/90'
+                        }`}
+                      >
+                        {eff !== null ? formatPrice(eff) : 'Ask'}
+                      </span>
+                      {sizeOnSpecial && s.price !== null && (
+                        <span className="ml-1 text-[10px] text-white/40 line-through">
+                          {formatPrice(s.price)}
+                        </span>
+                      )}
+                      {idx < activeSizes.length - 1 && (
+                        <span className="mx-1.5 text-white/30">·</span>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              ) : (
+                <span className="text-white/55">Tap Buy Now for available bottle sizes</span>
+              )}
+            </p>
+          </div>
+
+          <div className="pt-1 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onQuickWhatsApp(activeSlideProduct)}
+              className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Buy Now</span>
+            </motion.button>
+
+            <motion.button
+              type="button"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() =>
+                showingNewArrivals
+                  ? onNavigate('shop', {
+                      category: 'All',
+                      brand: 'All',
+                      size: 'All',
+                      priceRange: 'all',
+                      season: 'all',
+                      onlySpecials: false,
+                      onlyUnboxed: false,
+                      onlyNewArrivals: explicitNewArrivalsCount > 0,
+                    })
+                  : onNavigate('shop', {
+                      category: 'All',
+                      brand: 'All',
+                      size: 'All',
+                      priceRange: 'all',
+                      season: 'all',
+                      onlySpecials: true,
+                      onlyUnboxed: false,
+                      onlyNewArrivals: false,
+                    })
+              }
+              className="px-6 py-3.5 rounded-full border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <span>
+                {showingNewArrivals ? 'Explore New Arrivals' : 'Explore Special'}
+              </span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </motion.button>
+          </div>
+        </div>
+
+        <div className="lg:col-span-6 relative h-[300px] sm:h-[360px] lg:h-[400px] flex items-center justify-center select-none">
+          <div className="relative w-[158px] sm:w-[196px] xl:w-[224px] h-[255px] sm:h-[312px] xl:h-[350px]">
+            <motion.div
+              aria-hidden="true"
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
+              className="pointer-events-none absolute -top-5 -left-5 sm:-top-6 sm:-left-7 z-40 w-[68px] h-[68px] sm:w-[82px] sm:h-[82px] rounded-full bg-[#FACC15] text-[#0A0A0A] border-2 border-[#0A0A0A] shadow-2xl flex items-center justify-center"
+            >
+              <motion.svg
+                viewBox="0 0 100 100"
+                className="w-full h-full will-change-transform"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
+              >
+                <defs>
+                  <path
+                    id="aurahut-seal-ring"
+                    d="M 50, 50 m -36, 0 a 36,36 0 1,1 72,0 a 36,36 0 1,1 -72,0"
+                  />
+                </defs>
+                <text
+                  fill="#0A0A0A"
+                  fontSize="7.8"
+                  fontWeight="700"
+                  letterSpacing="2"
+                >
+                  <textPath href="#aurahut-seal-ring">
+                    AURAHUT CO. • AUTHENTIC •{' '}
+                  </textPath>
+                </text>
+              </motion.svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none">
+                <span className="text-xs sm:text-sm font-extrabold tabular-nums text-[#0A0A0A]">
+                  {activeSpecialTag || (showingNewArrivals ? 'NEW' : '100%')}
+                </span>
+                <span className="text-[7px] sm:text-[8px] font-bold uppercase tracking-wider text-[#0A0A0A]/80 mt-0.5">
+                  {activeSpecialTag
+                    ? 'SPECIAL'
+                    : showingNewArrivals
+                    ? 'ARRIVAL'
+                    : 'PURE'}
+                </span>
+              </div>
+            </motion.div>
+
+            <AnimatePresence initial={false} custom={heroSlideDirection}>
+              {visibleDeckSlots.map(({ pos, idx, product }) => {
+                const summary = getProductPriceSummary(product);
+                const isCenter = pos === 0;
+                const targetX = pos === 0 ? 0 : pos * deckOffsetPx;
+                const targetRotate = pos === 0 ? 0 : pos * 7.5;
+                const targetScale = pos === 0 ? 1 : 0.85;
+                const targetY = pos === 0 ? 0 : 12;
+
+                return (
+                  <motion.div
+                    key={product.id}
+                    custom={heroSlideDirection}
+                    initial={{
+                      opacity: 0,
+                      x: heroSlideDirection * (deckOffsetPx * 1.35),
+                      scale: 0.78,
+                      rotate: heroSlideDirection * 11,
+                    }}
+                    animate={{
+                      opacity: isCenter ? 1 : 0.88,
+                      x: targetX,
+                      y: targetY,
+                      scale: targetScale,
+                      rotate: targetRotate,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      x: -heroSlideDirection * (deckOffsetPx * 1.35),
+                      scale: 0.78,
+                      rotate: -heroSlideDirection * 11,
+                    }}
+                    transition={{
+                      duration: 0.62,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                    style={{ zIndex: isCenter ? 30 : pos === 1 ? 20 : 10 }}
+                    className="absolute inset-0 will-change-transform"
+                  >
+                    <motion.button
+                      type="button"
+                      animate={
+                        isCenter ? { y: [0, -5, 0] } : { y: 0 }
+                      }
+                      transition={
+                        isCenter
+                          ? {
+                              duration: 4.2,
+                              repeat: Infinity,
+                              ease: 'easeInOut',
+                            }
+                          : { duration: 0.2 }
+                      }
+                      onClick={() => {
+                        if (isCenter) {
+                          onSelectProduct(product);
+                        } else {
+                          goToHeroSlide(idx);
+                        }
+                      }}
+                      aria-label={
+                        isCenter
+                          ? `View details for ${product.name}`
+                          : `Bring ${product.name} to spotlight`
+                      }
+                      className={`group w-full h-full rounded-2xl overflow-hidden bg-white text-[#0A0A0A] flex flex-col text-left transition-shadow ${
+                        isCenter
+                          ? 'ring-2 ring-[#FACC15] shadow-[0_26px_60px_-12px_rgba(0,0,0,0.9)]'
+                          : 'border border-white/70 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.75)] opacity-90 hover:opacity-100'
+                      }`}
+                    >
+                      <div className="relative flex-1 w-full bg-white overflow-hidden">
+                        <ResilientImage
+                          src={product.image}
+                          alt={`${product.name} by ${product.brand}`}
+                          fallbackTitle={product.name}
+                          loading={isCenter ? 'eager' : 'lazy'}
+                          fetchPriority={isCenter ? 'high' : 'low'}
+                          variant="card"
+                          className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
+                        />
+                        {(() => {
+                          const tag = formatSpecialDiscountTag(
+                            product.onSpecial,
+                            product.specialDiscountPercent,
+                            product.specialDiscountType,
+                            product.specialDiscountAmount
+                          );
+                          if (tag) {
+                            return (
+                              <span className="absolute top-2.5 right-2.5 bg-[#FACC15] text-[#0A0A0A] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tabular-nums shadow-xs">
+                                {tag}
+                              </span>
+                            );
+                          }
+                          if (showingNewArrivals || product.isNewArrival) {
+                            return (
+                              <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/90 text-[#FACC15] border border-[#FACC15]/50 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                New Arrival
+                              </span>
+                            );
+                          }
+                          if (product.bestseller) {
+                            return (
+                              <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/85 text-white text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                                Bestseller
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+
+                      <div className="p-2.5 sm:p-3.5 bg-white border-t border-[#ECECEC] space-y-0.5 shrink-0">
+                        <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.14em] text-[#737373] font-semibold truncate">
+                          {product.brand}
+                        </p>
+                        <p className="text-xs sm:text-sm font-bold italic uppercase tracking-tight text-[#0A0A0A] truncate">
+                          {product.name}
+                        </p>
+                        {(() => {
+                          const targetOpt =
+                            !summary.hasDiscount && summary.specialTargetOption
+                              ? summary.specialTargetOption
+                              : null;
+                          const deckEffective = targetOpt
+                            ? targetOpt.effectivePrice
+                            : summary.highestEffective;
+                          const deckOriginal = targetOpt
+                            ? targetOpt.originalPrice
+                            : summary.highestOriginal;
+                          const deckSize = targetOpt
+                            ? targetOpt.size
+                            : summary.highestSize;
+                          const deckHasDiscount =
+                            Boolean(targetOpt) || summary.hasDiscount;
+                          return (
+                            <div className="pt-0.5 flex items-baseline gap-1.5 text-[11px] sm:text-xs">
+                              <span
+                                className={`font-bold tabular-nums ${
+                                  deckHasDiscount ? 'text-[#DC2626]' : 'text-[#0A0A0A]'
+                                }`}
+                              >
+                                {deckEffective !== null
+                                  ? formatPrice(deckEffective)
+                                  : 'Ask Price'}
+                              </span>
+                              {deckHasDiscount && deckOriginal !== null ? (
+                                <>
+                                  <span className="text-[10px] text-[#737373] line-through tabular-nums">
+                                    {formatPrice(deckOriginal)}
+                                  </span>
+                                  {deckSize && (
+                                    <span className="text-[9px] text-[#737373] font-semibold tabular-nums">
+                                      ({deckSize})
+                                    </span>
+                                  )}
+                                </>
+                              ) : deckSize ? (
+                                <span className="text-[10px] text-[#737373] font-medium tabular-nums">
+                                  {deckSize}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
+                        {(() => {
+                          const decant5 = product.sizes.find(
+                            (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 5
+                          );
+                          const decant10 = product.sizes.find(
+                            (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 10
+                          );
+                          if (!decant5 && !decant10) return null;
+                          const p5 = decant5
+                            ? getEffectiveUnitPrice(
+                                decant5.price,
+                                product.onSpecial,
+                                product.specialDiscountPercent,
+                                product.specialDiscountType,
+                                product.specialDiscountAmount,
+                                decant5.size,
+                                product.sizes
+                              )
+                            : null;
+                          const p10 = decant10
+                            ? getEffectiveUnitPrice(
+                                decant10.price,
+                                product.onSpecial,
+                                product.specialDiscountPercent,
+                                product.specialDiscountType,
+                                product.specialDiscountAmount,
+                                decant10.size,
+                                product.sizes
+                              )
+                            : null;
+                          return (
+                            <p className="text-[10px] text-[#525252] tabular-nums truncate">
+                              {p5 !== null ? `5ml ${formatPrice(p5)}` : ''}
+                              {p5 !== null && p10 !== null ? ' · ' : ''}
+                              {p10 !== null ? `10ml ${formatPrice(p10)}` : ''}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    </motion.button>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      {slideshowPerfumes.length > 1 && (
+        <div
+          className="absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2"
+          role="tablist"
+          aria-label="Special fragrance slides"
+        >
+          {slideshowPerfumes.map((slide, idx) => {
+            const active = idx === safeSlideIndex;
+            return (
+              <button
+                key={slide.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={`View slide ${idx + 1}: ${slide.name}`}
+                onClick={() => goToHeroSlide(idx)}
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  active
+                    ? 'w-7 bg-[#FACC15]'
+                    : 'w-2 bg-white/40 hover:bg-white/75'
+                }`}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+interface MoodFragrancePickerProps {
+  availablePerfumes: FragranceProduct[];
+  onNavigate: HomePageProps['onNavigate'];
+  onSelectProduct: HomePageProps['onSelectProduct'];
+  onQuickWhatsApp: HomePageProps['onQuickWhatsApp'];
+  onAddToBasket: HomePageProps['onAddToBasket'];
+}
+
+const MoodFragrancePicker: React.FC<MoodFragrancePickerProps> = React.memo(({
+  availablePerfumes,
+  onNavigate,
+  onSelectProduct,
+  onQuickWhatsApp,
+  onAddToBasket,
+}) => {
+  const [activeMood, setActiveMood] = useState<ScentMood>('all');
+  const [moodSlideIndex, setMoodSlideIndex] = useState(0);
+  const [moodPaused, setMoodPaused] = useState(false);
+  const [moodCardsPerView, setMoodCardsPerView] = useState(() => {
+    if (typeof window === 'undefined') return 4;
+    if (window.innerWidth < 640) return 1;
+    if (window.innerWidth < 1024) return 2;
+    return 4;
+  });
+
+  useEffect(() => {
+    const updatePerView = () => {
+      if (window.innerWidth < 640) setMoodCardsPerView(1);
+      else if (window.innerWidth < 1024) setMoodCardsPerView(2);
+      else setMoodCardsPerView(4);
+    };
+    updatePerView();
+    window.addEventListener('resize', updatePerView);
+    return () => window.removeEventListener('resize', updatePerView);
+  }, []);
+
+  useEffect(() => {
+    setMoodSlideIndex(0);
+  }, [activeMood]);
+
   const activeMoodObj = MOOD_OPTIONS.find((m) => m.id === activeMood) ?? MOOD_OPTIONS[0];
 
   const curatedProducts = useMemo(() => {
@@ -402,30 +992,6 @@ export const HomePage: React.FC<HomePageProps> = ({
     return (scored.length > 0 ? scored : availablePerfumes).slice(0, 12);
   }, [availablePerfumes, activeMood, activeMoodObj]);
 
-  const [moodSlideIndex, setMoodSlideIndex] = useState(0);
-  const [moodPaused, setMoodPaused] = useState(false);
-  const [moodCardsPerView, setMoodCardsPerView] = useState(() => {
-    if (typeof window === 'undefined') return 4;
-    if (window.innerWidth < 640) return 1;
-    if (window.innerWidth < 1024) return 2;
-    return 4;
-  });
-
-  useEffect(() => {
-    const updatePerView = () => {
-      if (window.innerWidth < 640) setMoodCardsPerView(1);
-      else if (window.innerWidth < 1024) setMoodCardsPerView(2);
-      else setMoodCardsPerView(4);
-    };
-    updatePerView();
-    window.addEventListener('resize', updatePerView);
-    return () => window.removeEventListener('resize', updatePerView);
-  }, []);
-
-  useEffect(() => {
-    setMoodSlideIndex(0);
-  }, [activeMood]);
-
   const canSlideMood = curatedProducts.length > moodCardsPerView;
   const maxMoodSlideIndex = Math.max(0, curatedProducts.length - moodCardsPerView);
   const clampedMoodSlideIndex = Math.min(moodSlideIndex, maxMoodSlideIndex);
@@ -437,6 +1003,229 @@ export const HomePage: React.FC<HomePageProps> = ({
     }, 4500);
     return () => window.clearInterval(timer);
   }, [moodPaused, canSlideMood, maxMoodSlideIndex]);
+
+  return (
+    <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+        <div className="space-y-1.5">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
+            Choose by Feeling
+          </p>
+          <h2 className="text-2xl sm:text-4xl font-bold text-[#0A0A0A]">
+            How Do You Want to Feel Wearing It?
+          </h2>
+          <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
+            {activeMoodObj.hint}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            onNavigate('shop', {
+              category: 'All',
+              brand: 'All',
+              size: 'All',
+              priceRange: 'all',
+              season: 'all',
+              onlySpecials: false,
+            })
+          }
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold uppercase tracking-[0.12em] text-[#0A0A0A] transition-colors self-start md:self-auto whitespace-nowrap shrink-0"
+        >
+          <span>Browse Full Catalogue</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-wrap items-center gap-2">
+          {MOOD_OPTIONS.map((mood) => {
+            const active = activeMood === mood.id;
+            return (
+              <button
+                key={mood.id}
+                type="button"
+                onClick={() => setActiveMood(mood.id)}
+                className={`px-4 py-2 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 ${
+                  active
+                    ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                    : 'bg-[#F6F6F7] text-[#404040] border-[#E5E5E5] hover:border-[#0A0A0A] hover:text-[#0A0A0A]'
+                }`}
+              >
+                {mood.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {canSlideMood && (
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <span className="text-[11px] font-mono text-[#737373] tabular-nums mr-1">
+              {String(clampedMoodSlideIndex + 1).padStart(2, '0')} /{' '}
+              {String(maxMoodSlideIndex + 1).padStart(2, '0')}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setMoodSlideIndex((prev) =>
+                  prev <= 0 ? maxMoodSlideIndex : prev - 1
+                )
+              }
+              aria-label="Previous fragrance slide"
+              className="w-9 h-9 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] flex items-center justify-center text-[#0A0A0A] transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setMoodSlideIndex((prev) =>
+                  prev >= maxMoodSlideIndex ? 0 : prev + 1
+                )
+              }
+              aria-label="Next fragrance slide"
+              className="w-9 h-9 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] flex items-center justify-center text-[#0A0A0A] transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div
+        onMouseEnter={() => setMoodPaused(true)}
+        onMouseLeave={() => setMoodPaused(false)}
+        className="space-y-5"
+      >
+        <div className="overflow-hidden -mx-2.5 py-2">
+          <motion.div
+            key={activeMood}
+            initial={{ opacity: 0.4 }}
+            animate={{
+              opacity: 1,
+              x: `-${(clampedMoodSlideIndex * 100) / moodCardsPerView}%`,
+            }}
+            transition={{
+              x: { duration: 0.72, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.25 },
+            }}
+            className="flex items-stretch will-change-transform"
+          >
+            {curatedProducts.map((product, idx) => (
+              <div
+                key={product.id}
+                style={{ width: `${100 / moodCardsPerView}%` }}
+                className="shrink-0 px-2.5"
+              >
+                <ProductCard
+                  product={product}
+                  index={idx}
+                  disableEntranceAnimation
+                  imageLoading={idx < moodCardsPerView ? 'eager' : 'lazy'}
+                  fetchPriority={idx < moodCardsPerView ? 'auto' : 'low'}
+                  onViewDetails={onSelectProduct}
+                  onQuickWhatsApp={onQuickWhatsApp}
+                  onAddToBasket={onAddToBasket}
+                />
+              </div>
+            ))}
+          </motion.div>
+        </div>
+
+        {canSlideMood && (
+          <div
+            className="flex items-center justify-center gap-1.5"
+            role="tablist"
+            aria-label="Mood fragrance slides"
+          >
+            {Array.from({ length: maxMoodSlideIndex + 1 }).map((_, idx) => {
+              const active = idx === clampedMoodSlideIndex;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={`View slide ${idx + 1}`}
+                  onClick={() => setMoodSlideIndex(idx)}
+                  className={`h-[3px] rounded-full transition-all duration-300 ${
+                    active
+                      ? 'w-7 bg-[#0A0A0A]'
+                      : 'w-3 bg-[#D4D4D4] hover:bg-[#737373]'
+                  }`}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </RevealSection>
+  );
+});
+
+export const HomePage: React.FC<HomePageProps> = ({
+  onNavigate,
+  onSelectProduct,
+  onQuickWhatsApp,
+  onAddToBasket,
+  onSelectBranchAndBasket,
+  onAddWeeklyPackToBasket,
+  onAddExclusiveFiveMlToBasket,
+}) => {
+  const {
+    perfumes,
+    campaign,
+    campaignLoading,
+    catalogueLoading,
+    catalogueComplete,
+    catalogueHasMore,
+    ensureAllPerfumesLoaded,
+    usingSampleHampers,
+  } = useStore();
+  const heroBooting = campaignLoading || catalogueLoading;
+
+  useEffect(() => {
+    if (!catalogueComplete && catalogueHasMore) {
+      void ensureAllPerfumesLoaded();
+    }
+  }, [catalogueComplete, catalogueHasMore, ensureAllPerfumesLoaded]);
+
+  const availablePerfumes = useMemo(
+    () => perfumes.filter((p) => p.availability !== 'Out of Stock'),
+    [perfumes]
+  );
+  const specialPerfumes = useMemo(
+    () => availablePerfumes.filter((p) => Boolean(p.onSpecial)),
+    [availablePerfumes]
+  );
+  const explicitNewArrivals = useMemo(
+    () => availablePerfumes.filter((p) => Boolean(p.isNewArrival)),
+    [availablePerfumes]
+  );
+  const autoLatestArrivals = useMemo(
+    () =>
+      [...availablePerfumes]
+        .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
+        .slice(0, 8),
+    [availablePerfumes]
+  );
+  const newArrivalsPerfumes =
+    explicitNewArrivals.length > 0 ? explicitNewArrivals : autoLatestArrivals;
+  const heroMode = campaign.heroMode ?? 'auto';
+  const showingNewArrivals =
+    heroMode === 'new-arrivals'
+      ? newArrivalsPerfumes.length > 0
+      : heroMode === 'auto'
+      ? specialPerfumes.length === 0 && newArrivalsPerfumes.length > 0
+      : false;
+  const [activeDecantIndex, setActiveDecantIndex] = useState(1);
+  const [showAllDecantLineup, setShowAllDecantLineup] = useState(false);
+
+  const slideshowPerfumes = showingNewArrivals
+    ? newArrivalsPerfumes
+    : specialPerfumes;
+
+  const activeDecant = siteContent.decantsSection.tiers[activeDecantIndex];
 
   const priceDeals: {
     id: Exclude<PriceRangeFilter, 'all'>;
@@ -522,549 +1311,18 @@ export const HomePage: React.FC<HomePageProps> = ({
     <div className="bg-white text-[#0A0A0A]">
       {/* HERO SPECIALS SHOWCASE — Animated Responsive Fan Deck */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        {heroBooting ? (
-          <div
-            aria-label="Loading featured collection"
-            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
-          >
-            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
-              <div className="lg:col-span-6 space-y-5 flex flex-col items-center lg:items-start">
-                <div className="h-3.5 w-32 rounded bg-white/15 animate-pulse" />
-                <div className="space-y-3 w-full max-w-md flex flex-col items-center lg:items-start">
-                  <div className="h-12 sm:h-14 w-3/4 rounded-xl bg-white/15 animate-pulse" />
-                  <div className="h-12 sm:h-14 w-2/3 rounded-xl bg-[#FACC15]/25 animate-pulse" />
-                </div>
-                <div className="flex gap-2 w-full max-w-md justify-center lg:justify-start pt-1">
-                  {[0, 1, 2, 3].map((slot) => (
-                    <div
-                      key={slot}
-                      className="flex-1 min-w-[58px] max-w-[84px] h-[64px] rounded-xl border border-white/10 bg-white/[0.05] animate-pulse"
-                    />
-                  ))}
-                </div>
-                <div className="h-11 w-44 rounded-full bg-[#FACC15]/30 animate-pulse mt-2" />
-              </div>
-              <div className="lg:col-span-6 h-[300px] sm:h-[360px] lg:h-[400px] flex items-center justify-center">
-                <div className="w-[170px] sm:w-[205px] h-[270px] sm:h-[325px] rounded-2xl bg-white/10 border border-white/15 animate-pulse" />
-              </div>
-            </div>
-          </div>
-        ) : activeSlideProduct ? (
-          <div
-            onMouseEnter={() => setHeroPaused(true)}
-            onMouseLeave={() => setHeroPaused(false)}
-            onTouchStart={(e) => setHeroTouchStartX(e.changedTouches[0]?.clientX ?? null)}
-            onTouchEnd={(e) => {
-              if (heroTouchStartX === null) return;
-              const deltaX = (e.changedTouches[0]?.clientX ?? heroTouchStartX) - heroTouchStartX;
-              if (Math.abs(deltaX) > 40) {
-                stepHeroSlide(deltaX < 0 ? 1 : -1);
-              }
-              setHeroTouchStartX(null);
-            }}
-            className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 pt-8 pb-14 sm:py-12 lg:py-14 min-h-[660px] sm:min-h-[720px] lg:min-h-[512px] flex items-center"
-          >
-            {/* Subtle Warm Gold & Monochrome Ambient Rim Lighting */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_45%,rgba(250,204,21,0.16)_0%,rgba(255,255,255,0.06)_38%,rgba(10,10,10,0)_64%)]"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(250,204,21,0.08)_0%,transparent_48%)]"
-            />
-
-            {/* Left & Right Circular Edge Controls */}
-            {slideshowPerfumes.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => stepHeroSlide(-1)}
-                  aria-label="Previous featured perfume"
-                  className="hidden sm:flex absolute left-3 lg:left-4 top-1/2 -translate-y-1/2 z-40 w-9 h-9 rounded-full bg-white/12 hover:bg-white text-white hover:text-[#0A0A0A] border border-white/25 items-center justify-center transition-colors backdrop-blur-xs"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => stepHeroSlide(1)}
-                  aria-label="Next featured perfume"
-                  className="hidden sm:flex absolute right-3 lg:right-4 top-1/2 -translate-y-1/2 z-40 w-9 h-9 rounded-full bg-white/12 hover:bg-white text-white hover:text-[#0A0A0A] border border-white/25 items-center justify-center transition-colors backdrop-blur-xs"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </>
-            )}
-
-            {(() => {
-              const rawTitle = showingNewArrivals
-                ? campaign.newArrivalsTitle || 'New Arrivals'
-                : campaign.enabled && campaign.title
-                ? campaign.title
-                : 'Signature Extraits';
-              const [lineOne, lineTwo] = splitHeroHeadline(rawTitle);
-              const activeSpecialTag = formatSpecialDiscountTag(
-                activeSlideProduct.onSpecial,
-                activeSlideProduct.specialDiscountPercent,
-                activeSlideProduct.specialDiscountType,
-                activeSlideProduct.specialDiscountAmount
-              );
-              const activeSizes = [...activeSlideProduct.sizes]
-                .filter((s) => s.available)
-                .sort((a, b) => parseVolumeMl(a.size) - parseVolumeMl(b.size));
-              const activeBranchLabel = getBranchAvailabilityLabel(activeSlideProduct);
-
-              return (
-                <div className="relative z-10 w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-6 items-center">
-                  {/* Left Column — Campaign Headline, Countdown/New Arrivals Callout, Spotlight Prices & Buy Now */}
-                  <div className="lg:col-span-6 space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
-                      {showingNewArrivals
-                        ? campaign.newArrivalsBadge || 'JUST LANDED'
-                        : campaign.enabled && campaign.badgeText
-                        ? campaign.badgeText
-                        : 'Featured Specials'}
-                    </p>
-
-                    <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
-                      <span className="block text-white">{lineOne}</span>
-                      <span className="block text-[#FACC15]">{lineTwo}</span>
-                    </h1>
-
-                    {/* Live Special Countdown OR New Arrivals Spotlight Callout */}
-                    {showingNewArrivals ? (
-                      <div className="w-full max-w-md space-y-2.5 pt-1">
-                        <p className="text-xs sm:text-sm text-white/80 leading-relaxed">
-                          {campaign.newArrivalsSubtitle ||
-                            'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.'}
-                        </p>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-[#FACC15]/45 bg-white/[0.05] px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FACC15]">
-                          <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                          <span>
-                            {explicitNewArrivals.length > 0
-                              ? `${explicitNewArrivals.length} Newly Landed ${
-                                  explicitNewArrivals.length === 1 ? 'Scent' : 'Scents'
-                                }`
-                              : `Latest ${newArrivalsPerfumes.length} Storefront Releases`}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <HeroCountdown endsAt={campaign.endsAt} />
-                    )}
-
-                    {/* Spotlight Perfume Name, Branch Tag & Transparent Size Prices */}
-                    <div className="w-full max-w-md space-y-1.5 pt-0.5 text-center lg:text-left min-h-[46px]">
-                      <div className="flex items-center justify-center lg:justify-start gap-2 min-w-0 h-[22px]">
-                        <p className="text-xs font-semibold text-white/90 truncate min-w-0">
-                          {activeSlideProduct.name}{' '}
-                          <span className="text-white/55 font-normal">
-                            · {activeSlideProduct.brand}
-                          </span>
-                        </p>
-                        {activeSlideProduct.availability !== 'Out of Stock' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/12 border border-white/25 text-[10px] font-semibold text-white shrink-0 whitespace-nowrap">
-                            <MapPin className="w-2.5 h-2.5 text-[#FACC15] shrink-0" aria-hidden="true" />
-                            <span>{activeBranchLabel}</span>
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-white/75 tabular-nums truncate min-h-[18px]">
-                        {activeSizes.length > 0 ? (
-                          activeSizes.map((s, idx) => {
-                            const eff = getEffectiveUnitPrice(
-                              s.price,
-                              activeSlideProduct.onSpecial,
-                              activeSlideProduct.specialDiscountPercent,
-                              activeSlideProduct.specialDiscountType,
-                              activeSlideProduct.specialDiscountAmount
-                            );
-                            return (
-                              <React.Fragment key={`${activeSlideProduct.id}-hero-${s.size}`}>
-                                <span className="text-white/60">{s.size}</span>{' '}
-                                <span className="text-[#FACC15] font-semibold">
-                                  {eff !== null ? formatPrice(eff) : 'Ask'}
-                                </span>
-                                {idx < activeSizes.length - 1 && (
-                                  <span className="mx-1.5 text-white/30">·</span>
-                                )}
-                              </React.Fragment>
-                            );
-                          })
-                        ) : (
-                          <span className="text-white/55">Tap Buy Now for available bottle sizes</span>
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Hero Actions: Buy Now & Explore Special */}
-                    <div className="pt-1 flex flex-wrap items-center justify-center lg:justify-start gap-3">
-                      <motion.button
-                        type="button"
-                        whileHover={{ y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => onQuickWhatsApp(activeSlideProduct)}
-                        className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
-                      >
-                        <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Buy Now</span>
-                      </motion.button>
-
-                      <motion.button
-                        type="button"
-                        whileHover={{ y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() =>
-                          showingNewArrivals
-                            ? onNavigate('shop', {
-                                category: 'All',
-                                brand: 'All',
-                                size: 'All',
-                                priceRange: 'all',
-                                season: 'all',
-                                onlySpecials: false,
-                                onlyUnboxed: false,
-                                onlyNewArrivals: explicitNewArrivals.length > 0,
-                              })
-                            : onNavigate('shop', {
-                                category: 'All',
-                                brand: 'All',
-                                size: 'All',
-                                priceRange: 'all',
-                                season: 'all',
-                                onlySpecials: true,
-                                onlyUnboxed: false,
-                                onlyNewArrivals: false,
-                              })
-                        }
-                        className="px-6 py-3.5 rounded-full border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0"
-                      >
-                        <span>
-                          {showingNewArrivals ? 'Explore New Arrivals' : 'Explore Special'}
-                        </span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </motion.button>
-                    </div>
-                  </div>
-
-                  {/* Right Column — Animated Responsive 3-Card Fanned Product Deck */}
-                  <div className="lg:col-span-6 relative h-[300px] sm:h-[360px] lg:h-[400px] flex items-center justify-center select-none">
-                    <div className="relative w-[158px] sm:w-[196px] xl:w-[224px] h-[255px] sm:h-[312px] xl:h-[350px]">
-                      {/* Rotating Circular Authenticity Seal Badge on Top-Left Corner */}
-                      <motion.div
-                        aria-hidden="true"
-                        animate={{ y: [0, -4, 0] }}
-                        transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-                        className="pointer-events-none absolute -top-5 -left-5 sm:-top-6 sm:-left-7 z-40 w-[68px] h-[68px] sm:w-[82px] sm:h-[82px] rounded-full bg-[#FACC15] text-[#0A0A0A] border-2 border-[#0A0A0A] shadow-2xl flex items-center justify-center"
-                      >
-                        <motion.svg
-                          viewBox="0 0 100 100"
-                          className="w-full h-full will-change-transform"
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}
-                        >
-                          <defs>
-                            <path
-                              id="aurahut-seal-ring"
-                              d="M 50, 50 m -36, 0 a 36,36 0 1,1 72,0 a 36,36 0 1,1 -72,0"
-                            />
-                          </defs>
-                          <text
-                            fill="#0A0A0A"
-                            fontSize="7.8"
-                            fontWeight="700"
-                            letterSpacing="2"
-                          >
-                            <textPath href="#aurahut-seal-ring">
-                              AURAHUT CO. • AUTHENTIC •{' '}
-                            </textPath>
-                          </text>
-                        </motion.svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-none">
-                          <span className="text-xs sm:text-sm font-extrabold tabular-nums text-[#0A0A0A]">
-                            {activeSpecialTag || (showingNewArrivals ? 'NEW' : '100%')}
-                          </span>
-                          <span className="text-[7px] sm:text-[8px] font-bold uppercase tracking-wider text-[#0A0A0A]/80 mt-0.5">
-                            {activeSpecialTag
-                              ? 'SPECIAL'
-                              : showingNewArrivals
-                              ? 'ARRIVAL'
-                              : 'PURE'}
-                          </span>
-                        </div>
-                      </motion.div>
-
-                      <AnimatePresence initial={false} custom={heroSlideDirection}>
-                        {visibleDeckSlots.map(({ pos, idx, product }) => {
-                          const summary = getProductPriceSummary(product);
-                          const isCenter = pos === 0;
-                          const targetX = pos === 0 ? 0 : pos * deckOffsetPx;
-                          const targetRotate = pos === 0 ? 0 : pos * 7.5;
-                          const targetScale = pos === 0 ? 1 : 0.85;
-                          const targetY = pos === 0 ? 0 : 12;
-
-                          return (
-                            <motion.div
-                              key={product.id}
-                              custom={heroSlideDirection}
-                              initial={{
-                                opacity: 0,
-                                x: heroSlideDirection * (deckOffsetPx * 1.35),
-                                scale: 0.78,
-                                rotate: heroSlideDirection * 11,
-                              }}
-                              animate={{
-                                opacity: isCenter ? 1 : 0.88,
-                                x: targetX,
-                                y: targetY,
-                                scale: targetScale,
-                                rotate: targetRotate,
-                              }}
-                              exit={{
-                                opacity: 0,
-                                x: -heroSlideDirection * (deckOffsetPx * 1.35),
-                                scale: 0.78,
-                                rotate: -heroSlideDirection * 11,
-                              }}
-                              transition={{
-                                duration: 0.62,
-                                ease: [0.22, 1, 0.36, 1],
-                              }}
-                              style={{ zIndex: isCenter ? 30 : pos === 1 ? 20 : 10 }}
-                              className="absolute inset-0 will-change-transform"
-                            >
-                              <motion.button
-                                type="button"
-                                animate={
-                                  isCenter ? { y: [0, -5, 0] } : { y: 0 }
-                                }
-                                transition={
-                                  isCenter
-                                    ? {
-                                        duration: 4.2,
-                                        repeat: Infinity,
-                                        ease: 'easeInOut',
-                                      }
-                                    : { duration: 0.2 }
-                                }
-                                onClick={() => {
-                                  if (isCenter) {
-                                    onSelectProduct(product);
-                                  } else {
-                                    goToHeroSlide(idx);
-                                  }
-                                }}
-                                aria-label={
-                                  isCenter
-                                    ? `View details for ${product.name}`
-                                    : `Bring ${product.name} to spotlight`
-                                }
-                                className={`group w-full h-full rounded-2xl overflow-hidden bg-white text-[#0A0A0A] flex flex-col text-left transition-shadow ${
-                                  isCenter
-                                    ? 'ring-2 ring-[#FACC15] shadow-[0_26px_60px_-12px_rgba(0,0,0,0.9)]'
-                                    : 'border border-white/70 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.75)] opacity-90 hover:opacity-100'
-                                }`}
-                              >
-                                <div className="relative flex-1 w-full bg-white overflow-hidden">
-                                    <ResilientImage
-                                      src={product.image}
-                                      alt={`${product.name} by ${product.brand}`}
-                                      fallbackTitle={product.name}
-                                      loading={isCenter ? 'eager' : 'lazy'}
-                                      fetchPriority={isCenter ? 'high' : 'low'}
-                                      variant="card"
-                                      className="w-full h-full object-cover object-center saturate-[1.12] contrast-[1.03] transition-transform duration-500 ease-out group-hover:scale-105"
-                                    />
-                                  {(() => {
-                                    const tag = formatSpecialDiscountTag(
-                                      product.onSpecial,
-                                      product.specialDiscountPercent,
-                                      product.specialDiscountType,
-                                      product.specialDiscountAmount
-                                    );
-                                    if (tag) {
-                                      return (
-                                        <span className="absolute top-2.5 right-2.5 bg-[#FACC15] text-[#0A0A0A] text-[9px] sm:text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tabular-nums shadow-xs">
-                                          {tag}
-                                        </span>
-                                      );
-                                    }
-                                    if (showingNewArrivals || product.isNewArrival) {
-                                      return (
-                                        <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/90 text-[#FACC15] border border-[#FACC15]/50 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                                          New Arrival
-                                        </span>
-                                      );
-                                    }
-                                    if (product.bestseller) {
-                                      return (
-                                        <span className="absolute top-2.5 right-2.5 bg-[#0A0A0A]/85 text-white text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                                          Bestseller
-                                        </span>
-                                      );
-                                    }
-                                    return null;
-                                  })()}
-                                </div>
-
-                                <div className="p-2.5 sm:p-3.5 bg-white border-t border-[#ECECEC] space-y-0.5 shrink-0">
-                                  <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.14em] text-[#737373] font-semibold truncate">
-                                    {product.brand}
-                                  </p>
-                                  <p className="text-xs sm:text-sm font-bold italic uppercase tracking-tight text-[#0A0A0A] truncate">
-                                    {product.name}
-                                  </p>
-                                  <div className="pt-0.5 flex items-baseline gap-1.5 text-[11px] sm:text-xs">
-                                    <span
-                                      className={`font-bold tabular-nums ${
-                                        summary.hasDiscount ? 'text-[#DC2626]' : 'text-[#0A0A0A]'
-                                      }`}
-                                    >
-                                      {summary.highestEffective !== null
-                                        ? formatPrice(summary.highestEffective)
-                                        : 'Ask Price'}
-                                    </span>
-                                    {summary.hasDiscount && summary.highestOriginal !== null ? (
-                                      <span className="text-[10px] text-[#737373] line-through tabular-nums">
-                                        {formatPrice(summary.highestOriginal)}
-                                      </span>
-                                    ) : summary.highestSize ? (
-                                      <span className="text-[10px] text-[#737373] font-medium tabular-nums">
-                                        {summary.highestSize}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  {(() => {
-                                    const decant5 = product.sizes.find(
-                                      (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 5
-                                    );
-                                    const decant10 = product.sizes.find(
-                                      (s) => s.available && s.price !== null && parseVolumeMl(s.size) === 10
-                                    );
-                                    if (!decant5 && !decant10) return null;
-                                    const p5 = decant5
-                                      ? getEffectiveUnitPrice(
-                                          decant5.price,
-                                          product.onSpecial,
-                                          product.specialDiscountPercent,
-                                          product.specialDiscountType,
-                                          product.specialDiscountAmount
-                                        )
-                                      : null;
-                                    const p10 = decant10
-                                      ? getEffectiveUnitPrice(
-                                          decant10.price,
-                                          product.onSpecial,
-                                          product.specialDiscountPercent,
-                                          product.specialDiscountType,
-                                          product.specialDiscountAmount
-                                        )
-                                      : null;
-                                    return (
-                                      <p className="text-[10px] text-[#525252] tabular-nums truncate">
-                                        {p5 !== null ? `5ml ${formatPrice(p5)}` : ''}
-                                        {p5 !== null && p10 !== null ? ' · ' : ''}
-                                        {p10 !== null ? `10ml ${formatPrice(p10)}` : ''}
-                                      </p>
-                                    );
-                                  })()}
-                                </div>
-                              </motion.button>
-                            </motion.div>
-                          );
-                        })}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Centered Bottom Dot/Pill Pagination */}
-            {slideshowPerfumes.length > 1 && (
-              <div
-                className="absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2"
-                role="tablist"
-                aria-label="Special fragrance slides"
-              >
-                {slideshowPerfumes.map((slide, idx) => {
-                  const active = idx === safeSlideIndex;
-                  return (
-                    <button
-                      key={slide.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      aria-label={`View slide ${idx + 1}: ${slide.name}`}
-                      onClick={() => goToHeroSlide(idx)}
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        active
-                          ? 'w-7 bg-[#FACC15]'
-                          : 'w-2 bg-white/40 hover:bg-white/75'
-                      }`}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="relative bg-[#0A0A0A] text-white rounded-3xl overflow-hidden px-5 sm:px-10 lg:px-14 py-12 lg:py-16">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_40%,rgba(250,204,21,0.14)_0%,rgba(10,10,10,0)_62%)]"
-            />
-            <div className="relative z-10 max-w-2xl space-y-5 text-center lg:text-left flex flex-col items-center lg:items-start">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
-                AuraHut Co. Eswatini
-              </p>
-              <h1 className="text-[clamp(2.35rem,5vw,4.35rem)] font-extrabold italic uppercase leading-[0.9] tracking-tight text-white -skew-x-3 [text-wrap:balance]">
-                <span className="block text-white">Signature</span>
-                <span className="block text-[#FACC15]">Extraits</span>
-              </h1>
-              <p className="text-sm sm:text-base text-white/75 max-w-lg">
-                New seasonal special offers are updating soon. Explore our in-stock Arabian bottles and travel decants across Manzini and Mbabane.
-              </p>
-              <div className="pt-2 flex flex-wrap items-center justify-center lg:justify-start gap-3">
-                {availablePerfumes[0] && (
-                  <motion.button
-                    type="button"
-                    whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => onQuickWhatsApp(availablePerfumes[0])}
-                    className="px-7 py-3.5 rounded-full bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_12px_30px_rgba(250,204,21,0.28)]"
-                  >
-                    <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Buy Now</span>
-                  </motion.button>
-                )}
-                <motion.button
-                  type="button"
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() =>
-                    onNavigate('shop', {
-                      category: 'All',
-                      brand: 'All',
-                      size: 'All',
-                      priceRange: 'all',
-                      season: 'all',
-                      onlySpecials: false,
-                    })
-                  }
-                  className={`px-7 py-3.5 rounded-full transition-colors text-xs font-bold uppercase tracking-[0.12em] inline-flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                    availablePerfumes[0]
-                      ? 'border border-white/30 bg-white/10 text-white hover:bg-white hover:text-[#0A0A0A]'
-                      : 'bg-[#FACC15] text-[#0A0A0A] hover:bg-[#FDE047] shadow-[0_12px_30px_rgba(250,204,21,0.28)]'
-                  }`}
-                >
-                  <span>Browse Available Catalogue</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </motion.button>
-              </div>
-            </div>
-          </div>
-        )}
+        <HeroSpecialsShowcase
+          heroBooting={heroBooting}
+          showingNewArrivals={showingNewArrivals}
+          campaign={campaign}
+          slideshowPerfumes={slideshowPerfumes}
+          explicitNewArrivalsCount={explicitNewArrivals.length}
+          newArrivalsCount={newArrivalsPerfumes.length}
+          fallbackProduct={availablePerfumes[0] ?? null}
+          onNavigate={onNavigate}
+          onSelectProduct={onSelectProduct}
+          onQuickWhatsApp={onQuickWhatsApp}
+        />
 
         {/* Immediate Trust Strip — Zero Guesswork */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4 border border-[#E5E5E5] rounded-2xl bg-[#F6F6F7] p-5 sm:px-7 sm:py-5">
@@ -1129,6 +1387,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 fetchPriority={idx < 4 ? 'auto' : 'low'}
                 onViewDetails={onSelectProduct}
                 onQuickWhatsApp={onQuickWhatsApp}
+                onAddToBasket={onAddToBasket}
               />
             ))}
           </div>
@@ -1286,162 +1545,14 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </RevealSection>
 
-      {/* INSTANT MOOD & SIGNATURE PICKER (Spend Less Time Guessing) */}
-      <RevealSection className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
-          <div className="space-y-1.5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#666666] font-medium">
-              Choose by Feeling
-            </p>
-            <h2 className="text-2xl sm:text-4xl font-bold text-[#0A0A0A]">
-              How Do You Want to Feel Wearing It?
-            </h2>
-            <p className="text-xs sm:text-sm text-[#525252] max-w-2xl">
-              {activeMoodObj.hint}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              onNavigate('shop', {
-                category: 'All',
-                brand: 'All',
-                size: 'All',
-                priceRange: 'all',
-                season: 'all',
-                onlySpecials: false,
-              })
-            }
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold uppercase tracking-[0.12em] text-[#0A0A0A] transition-colors self-start md:self-auto whitespace-nowrap shrink-0"
-          >
-            <span>Browse Full Catalogue</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Mood Selector Tabs + Slideshow Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div className="flex flex-wrap items-center gap-2">
-            {MOOD_OPTIONS.map((mood) => {
-              const active = activeMood === mood.id;
-              return (
-                <button
-                  key={mood.id}
-                  type="button"
-                  onClick={() => setActiveMood(mood.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-medium border transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
-                      : 'bg-[#F6F6F7] text-[#404040] border-[#E5E5E5] hover:border-[#0A0A0A] hover:text-[#0A0A0A]'
-                  }`}
-                >
-                  {mood.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {canSlideMood && (
-            <div className="flex items-center gap-2 self-end sm:self-auto">
-              <span className="text-[11px] font-mono text-[#737373] tabular-nums mr-1">
-                {String(clampedMoodSlideIndex + 1).padStart(2, '0')} /{' '}
-                {String(maxMoodSlideIndex + 1).padStart(2, '0')}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setMoodSlideIndex((prev) =>
-                    prev <= 0 ? maxMoodSlideIndex : prev - 1
-                  )
-                }
-                aria-label="Previous fragrance slide"
-                className="w-9 h-9 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] flex items-center justify-center text-[#0A0A0A] transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setMoodSlideIndex((prev) =>
-                    prev >= maxMoodSlideIndex ? 0 : prev + 1
-                  )
-                }
-                aria-label="Next fragrance slide"
-                className="w-9 h-9 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] flex items-center justify-center text-[#0A0A0A] transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div
-          onMouseEnter={() => setMoodPaused(true)}
-          onMouseLeave={() => setMoodPaused(false)}
-          className="space-y-5"
-        >
-          <div className="overflow-hidden -mx-2.5 py-2">
-            <motion.div
-              key={activeMood}
-              initial={{ opacity: 0.4 }}
-              animate={{
-                opacity: 1,
-                x: `-${(clampedMoodSlideIndex * 100) / moodCardsPerView}%`,
-              }}
-              transition={{
-                x: { duration: 0.72, ease: [0.22, 1, 0.36, 1] },
-                opacity: { duration: 0.25 },
-              }}
-              className="flex items-stretch will-change-transform"
-            >
-              {curatedProducts.map((product, idx) => (
-                <div
-                  key={product.id}
-                  style={{ width: `${100 / moodCardsPerView}%` }}
-                  className="shrink-0 px-2.5"
-                >
-                  <ProductCard
-                    product={product}
-                    index={idx}
-                    disableEntranceAnimation
-                    imageLoading={idx < moodCardsPerView ? 'eager' : 'lazy'}
-                    fetchPriority={idx < moodCardsPerView ? 'auto' : 'low'}
-                    onViewDetails={onSelectProduct}
-                    onQuickWhatsApp={onQuickWhatsApp}
-                  />
-                </div>
-              ))}
-            </motion.div>
-          </div>
-
-          {canSlideMood && (
-            <div
-              className="flex items-center justify-center gap-1.5"
-              role="tablist"
-              aria-label="Mood fragrance slides"
-            >
-              {Array.from({ length: maxMoodSlideIndex + 1 }).map((_, idx) => {
-                const active = idx === clampedMoodSlideIndex;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    aria-label={`View slide ${idx + 1}`}
-                    onClick={() => setMoodSlideIndex(idx)}
-                    className={`h-[3px] rounded-full transition-all duration-300 ${
-                      active
-                        ? 'w-7 bg-[#0A0A0A]'
-                        : 'w-3 bg-[#D4D4D4] hover:bg-[#737373]'
-                    }`}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </RevealSection>
+      {/* INSTANT MOOD & SIGNATURE PICKER (Isolated slideshow timer) */}
+      <MoodFragrancePicker
+        availablePerfumes={availablePerfumes}
+        onNavigate={onNavigate}
+        onSelectProduct={onSelectProduct}
+        onQuickWhatsApp={onQuickWhatsApp}
+        onAddToBasket={onAddToBasket}
+      />
 
       {/* SHOP BY CATEGORY */}
       <RevealSection className="bg-[#F6F6F7] border-y border-[#E5E5E5] py-14 sm:py-20">

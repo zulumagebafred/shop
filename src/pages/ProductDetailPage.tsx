@@ -406,9 +406,11 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
           {/* Bottle Size Picker + Real-Life Wear Duration */}
           <div className="space-y-2.5">
-            <span className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
-              Choose Your Bottle
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
+                Choose Your Bottle
+              </span>
+            </div>
             <div
               className={`grid gap-2.5 ${
                 product.sizes.length === 1
@@ -427,8 +429,16 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   product.onSpecial,
                   product.specialDiscountPercent,
                   product.specialDiscountType,
-                  product.specialDiscountAmount
+                  product.specialDiscountAmount,
+                  opt.size,
+                  product.sizes
                 );
+                const optHasSpecial =
+                  opt.available &&
+                  Boolean(product.onSpecial) &&
+                  opt.price !== null &&
+                  eff !== null &&
+                  eff < opt.price;
                 return (
                   <button
                     key={`${opt.size}-${idx}`}
@@ -443,15 +453,29 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                         : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
                     }`}
                   >
-                    <span className="block text-xs font-semibold tabular-nums">
-                      {opt.size}
+                    <span className="flex items-center justify-center gap-1 text-xs font-semibold tabular-nums">
+                      <span>{opt.size}</span>
+                      {optHasSpecial && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-[#FACC15] text-[#0A0A0A] text-[9px] font-bold uppercase tracking-wider">
+                          Special
+                        </span>
+                      )}
                     </span>
                     <span
                       className={`block text-[11px] tabular-nums mt-0.5 ${
-                        active ? 'text-white/75' : 'text-[#666666]'
+                        active ? 'text-white/75' : optHasSpecial ? 'text-[#DC2626] font-semibold' : 'text-[#666666]'
                       }`}
                     >
                       {opt.available ? formatPrice(eff) : 'Unavailable'}
+                      {optHasSpecial && opt.price !== null && (
+                        <span
+                          className={`ml-1 line-through text-[10px] ${
+                            active ? 'text-white/45' : 'text-[#888888]'
+                          }`}
+                        >
+                          {formatPrice(opt.price)}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
@@ -657,6 +681,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 index={idx}
                 onViewDetails={onSelectProduct}
                 onQuickWhatsApp={onQuickWhatsApp}
+                onAddToBasket={onAddToBasket}
               />
             ))}
           </div>

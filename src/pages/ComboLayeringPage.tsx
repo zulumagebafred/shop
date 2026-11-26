@@ -152,7 +152,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
             <div className="space-y-3.5 max-w-2xl">
               <p className="text-[11px] uppercase tracking-[0.22em] text-[#FACC15] font-semibold">
-                Bundles &amp; Scent Alchemy
+                All Deals &amp; Scent Alchemy
               </p>
               <h1 className="text-3xl sm:text-5xl font-extrabold italic uppercase tracking-tight leading-[0.96] [text-wrap:balance]">
                 Combo Deals &amp;{' '}
@@ -163,13 +163,13 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
               </p>
             </div>
 
-            {/* Clean View Filter Tabs */}
-            <div className="inline-flex items-center p-1 rounded-full bg-white/10 border border-white/15 self-start lg:self-auto">
+            {/* Hierarchical Filter Tabs: All Deals -> Combo Deals -> Layering Ideas */}
+            <div className="flex flex-wrap sm:inline-flex items-center gap-1.5 p-1.5 rounded-2xl sm:rounded-full bg-white/10 border border-white/15 self-start lg:self-auto w-full sm:w-auto">
               {(
                 [
-                  { id: 'all', label: 'All Deals & Ideas' },
+                  { id: 'all', label: 'All Deals' },
                   { id: 'combos', label: `Combo Deals (${visibleCombos.length})` },
-                  { id: 'layering', label: `Layering (${visibleLayering.length})` },
+                  { id: 'layering', label: `Layering Ideas (${visibleLayering.length})` },
                 ] as const
               ).map((tab) => {
                 const active = activeView === tab.id;
@@ -178,7 +178,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveView(tab.id)}
-                    className={`px-4 py-2 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
+                    className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl sm:rounded-full text-xs font-semibold transition-colors whitespace-nowrap text-center ${
                       active
                         ? 'bg-[#FACC15] text-[#0A0A0A]'
                         : 'text-white/80 hover:text-white'
@@ -259,7 +259,6 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                     }`}
                   >
                     <div className="p-6 sm:p-7 space-y-5 flex-1 flex flex-col">
-                      {/* Header & Savings Callout */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="space-y-1">
                           <p
@@ -297,7 +296,6 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                         </p>
                       )}
 
-                      {/* Included Fragrances */}
                       <div className="space-y-2.5 pt-1 flex-1">
                         <p
                           className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${
@@ -322,7 +320,7 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                                     : 'bg-white border-[#E5E5E5]'
                                 }`}
                               >
-                                <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
                                   <div className="w-11 h-11 rounded-xl overflow-hidden bg-white shrink-0 border border-black/10">
                                     <ResilientImage
                                       src={thumbSrc}
@@ -331,8 +329,8 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                                       className="w-full h-full object-cover"
                                     />
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs sm:text-sm font-semibold truncate">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs sm:text-sm font-semibold break-words leading-tight">
                                       {product ? product.name : name}
                                     </p>
                                     <p
@@ -367,7 +365,6 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Bundle Price & Add Button */}
                     <div
                       className={`px-6 sm:px-7 py-5 border-t space-y-4 ${
                         combo.featured
@@ -510,28 +507,28 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.22, delay: Math.min(idx * 0.04, 0.2) }}
-                      className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-7 flex flex-col justify-between space-y-5"
+                      className="bg-white border border-[#E5E5E5] rounded-3xl p-6 sm:p-7 flex flex-col justify-between space-y-6 shadow-xs"
                     >
                       <div className="space-y-4">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="space-y-1">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0 flex-1">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#525252]">
                               {idea.vibe}
                               {idea.occasion ? ` · ${idea.occasion}` : ''}
                             </p>
-                            <h3 className="text-xl font-bold text-[#0A0A0A]">
+                            <h3 className="text-xl sm:text-2xl font-bold text-[#0A0A0A] leading-snug break-words">
                               {idea.title}
                             </h3>
                           </div>
-                          <span className="text-[11px] font-semibold text-[#0A0A0A] bg-[#FACC15] px-3 py-1 rounded-full whitespace-nowrap">
+                          <span className="text-[11px] font-semibold text-[#0A0A0A] bg-[#FACC15] px-3 py-1 rounded-full whitespace-nowrap shrink-0">
                             {idea.sprayRatio}
                           </span>
                         </div>
 
-                        {/* Base + Topper Visual Pairing Strip */}
-                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-2.5 items-center">
+                        {/* Base + Topper Visual Pairing Strip with mobile vertical stack */}
+                        <div className="flex flex-col sm:grid sm:grid-cols-[1fr_auto_1fr] gap-2.5 sm:gap-3 items-center">
                           {/* Layer 1: Base */}
-                          <div className="p-3 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] flex items-center gap-3 min-w-0">
+                          <div className="w-full p-3.5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] flex items-center gap-3 min-w-0">
                             <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-[#E5E5E5] shrink-0">
                               <ResilientImage
                                 src={
@@ -551,17 +548,17 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectProduct(baseMatch)}
-                                  className="text-xs font-bold text-[#0A0A0A] hover:underline truncate block w-full text-left"
+                                  className="text-xs sm:text-sm font-bold text-[#0A0A0A] hover:underline break-words block w-full text-left leading-tight"
                                 >
                                   {baseMatch.name}
                                 </button>
                               ) : (
-                                <p className="text-xs font-bold text-[#0A0A0A] truncate">
+                                <p className="text-xs sm:text-sm font-bold text-[#0A0A0A] break-words leading-tight">
                                   {idea.basePerfumeName}
                                 </p>
                               )}
                               {baseMatch && baseSize && (
-                                <span className="text-[11px] text-[#525252] tabular-nums">
+                                <span className="block text-[11px] text-[#525252] tabular-nums mt-0.5">
                                   {baseSize}
                                   {basePrice !== null ? ` · ${formatPrice(basePrice)}` : ''}
                                 </span>
@@ -569,14 +566,14 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-center">
-                            <span className="w-7 h-7 rounded-full bg-[#0A0A0A] text-white flex items-center justify-center">
+                          <div className="flex items-center justify-center my-1 sm:my-0">
+                            <span className="w-7 h-7 rounded-full bg-[#0A0A0A] text-white flex items-center justify-center shadow-xs">
                               <Plus className="w-3.5 h-3.5" />
                             </span>
                           </div>
 
                           {/* Layer 2: Topper */}
-                          <div className="p-3 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] flex items-center gap-3 min-w-0">
+                          <div className="w-full p-3.5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] flex items-center gap-3 min-w-0">
                             <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-[#E5E5E5] shrink-0">
                               <ResilientImage
                                 src={
@@ -596,17 +593,17 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectProduct(topMatch)}
-                                  className="text-xs font-bold text-[#0A0A0A] hover:underline truncate block w-full text-left"
+                                  className="text-xs sm:text-sm font-bold text-[#0A0A0A] hover:underline break-words block w-full text-left leading-tight"
                                 >
                                   {topMatch.name}
                                 </button>
                               ) : (
-                                <p className="text-xs font-bold text-[#0A0A0A] truncate">
+                                <p className="text-xs sm:text-sm font-bold text-[#0A0A0A] break-words leading-tight">
                                   {idea.topPerfumeName}
                                 </p>
                               )}
                               {topMatch && topSize && (
-                                <span className="text-[11px] text-[#525252] tabular-nums">
+                                <span className="block text-[11px] text-[#525252] tabular-nums mt-0.5">
                                   {topSize}
                                   {topPrice !== null ? ` · ${formatPrice(topPrice)}` : ''}
                                 </span>
@@ -615,26 +612,29 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                           </div>
                         </div>
 
-                        <p className="text-xs sm:text-sm text-[#404040] leading-relaxed">
-                          {idea.whyItWorks}
-                        </p>
+                        {/* Unclipped Layering Description */}
+                        <div className="p-4 rounded-2xl bg-[#FAFAFA] border border-[#E5E5E5]/80">
+                          <p className="text-xs sm:text-sm text-[#333333] leading-relaxed break-words">
+                            {idea.whyItWorks}
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="pt-4 border-t border-[#E5E5E5] flex flex-wrap items-center justify-between gap-3">
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
                         {baseMatch || topMatch ? (
                           <button
                             type="button"
                             onClick={() => handleAddLayeringPair(idea, baseMatch, topMatch)}
-                            className="flex-1 min-w-[200px] py-3 px-5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-2"
+                            className="w-full py-3.5 px-6 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-bold uppercase tracking-[0.14em] inline-flex items-center justify-center gap-2 shadow-sm"
                           >
                             {pairAdded ? (
                               <>
-                                <Check className="w-4 h-4" />
-                                <span>Added Layering Duo</span>
+                                <Check className="w-4 h-4 text-emerald-400" />
+                                <span>Added Layering Duo to Cart</span>
                               </>
                             ) : (
                               <>
-                                <Sparkles className="w-3.5 h-3.5 text-[#FACC15]" />
+                                <Sparkles className="w-4 h-4 text-[#FACC15]" />
                                 <span>
                                   Add Both to Cart
                                   {combinedSampleEstimate && combinedSampleEstimate > 0
@@ -655,10 +655,10 @@ export const ComboLayeringPage: React.FC<ComboLayeringPageProps> = ({
                                 query: idea.basePerfumeName,
                               })
                             }
-                            className="flex-1 min-w-[200px] py-3 px-5 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold uppercase tracking-wider inline-flex items-center justify-center gap-2"
+                            className="w-full py-3.5 px-6 rounded-full border border-[#0A0A0A] text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-bold uppercase tracking-[0.14em] inline-flex items-center justify-center gap-2"
                           >
                             <span>Browse Catalogue</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
+                            <ArrowRight className="w-4 h-4" />
                           </button>
                         )}
                       </div>

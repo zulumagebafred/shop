@@ -54,11 +54,11 @@ service cloud.firestore {
       return entry is map &&
         entry.keys().hasAll(['size', 'price', 'available']) &&
         entry.keys().hasOnly(['size', 'price', 'available']) &&
-        entry.size is string &&
-        entry.size.size() >= 1 &&
-        entry.size.size() <= 24 &&
-        (entry.price == null || (entry.price is number && entry.price >= 0 && entry.price <= 100000)) &&
-        entry.available is bool;
+        entry['size'] is string &&
+        entry['size'].size() >= 1 &&
+        entry['size'].size() <= 24 &&
+        (entry['price'] == null || (entry['price'] is number && entry['price'] >= 0 && entry['price'] <= 100000)) &&
+        entry['available'] is bool;
     }
 
     function isValidSizeList(sizes) {
@@ -76,6 +76,14 @@ service cloud.firestore {
         branches.hasOnly(['manzini', 'mbabane']);
     }
 
+    function isValidSpecialSizeList(sizes) {
+      return sizes is list &&
+        sizes.size() <= 12 &&
+        (sizes.size() == 0 || (sizes[0] is string && sizes[0].size() >= 1 && sizes[0].size() <= 24)) &&
+        (sizes.size() <= 1 || (sizes[1] is string && sizes[1].size() >= 1 && sizes[1].size() <= 24)) &&
+        (sizes.size() <= 2 || (sizes[2] is string && sizes[2].size() >= 1 && sizes[2].size() <= 24));
+    }
+
     function isValidPerfume(data) {
       return data.keys().hasAll([
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
@@ -87,7 +95,7 @@ service cloud.firestore {
         'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
         'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
         'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountType',
-        'specialDiscountPercent', 'specialDiscountAmount',
+        'specialDiscountPercent', 'specialDiscountAmount', 'specialSizes',
         'isUnboxed', 'isNewArrival',
         'ownerUid', 'createdAt', 'updatedAt'
       ]) &&
@@ -115,6 +123,7 @@ service cloud.firestore {
       (!('specialDiscountType' in data) || data.specialDiscountType in ['percentage', 'fixed']) &&
       data.specialDiscountPercent is number && data.specialDiscountPercent >= 0 && data.specialDiscountPercent <= 90 &&
       (!('specialDiscountAmount' in data) || (data.specialDiscountAmount is number && data.specialDiscountAmount >= 0 && data.specialDiscountAmount <= 50000)) &&
+      (!('specialSizes' in data) || isValidSpecialSizeList(data.specialSizes)) &&
       (!('isUnboxed' in data) || data.isUnboxed is bool) &&
       (!('isNewArrival' in data) || data.isNewArrival is bool) &&
       data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
@@ -557,7 +566,8 @@ service cloud.firestore {
           'slug', 'isSampleListing', 'name', 'brand', 'category', 'concentration',
           'description', 'image', 'notes', 'sizes', 'availability', 'availableBranches', 'featured',
           'bestseller', 'onSpecial', 'specialLabel', 'specialDiscountType',
-          'specialDiscountPercent', 'specialDiscountAmount', 'isUnboxed', 'isNewArrival', 'updatedAt'
+          'specialDiscountPercent', 'specialDiscountAmount', 'specialSizes',
+          'isUnboxed', 'isNewArrival', 'updatedAt'
         ]);
       allow delete: if isAdmin() && isValidId(perfumeId);
     }

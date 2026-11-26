@@ -28,11 +28,7 @@ export interface PartnerApprovalEmailContent {
 
 export type PartnerEmailDispatchResult =
   | {
-      status: 'sent';
-      content: PartnerApprovalEmailContent;
-    }
-  | {
-      status: 'unconfigured';
+      status: 'sent' | 'manual-ready';
       content: PartnerApprovalEmailContent;
     }
   | {
@@ -108,74 +104,13 @@ export function buildPartnerApprovalEmailContent(
   };
 }
 
-function getEmailJsConfig(): {
-  serviceId: string;
-  templateId: string;
-  publicKey: string;
-} | null {
-  if (typeof import.meta === 'undefined' || !import.meta.env) return null;
-  const serviceId = String(import.meta.env.VITE_EMAILJS_SERVICE_ID ?? '').trim();
-  const templateId = String(import.meta.env.VITE_EMAILJS_TEMPLATE_ID ?? '').trim();
-  const publicKey = String(import.meta.env.VITE_EMAILJS_PUBLIC_KEY ?? '').trim();
-  if (!serviceId || !templateId || !publicKey) return null;
-  return { serviceId, templateId, publicKey };
-}
-
 export function isAutoPartnerEmailConfigured(): boolean {
-  return getEmailJsConfig() !== null;
+  return false;
 }
 
 export async function dispatchPartnerApprovalEmail(
   params: PartnerApprovalEmailParams
 ): Promise<PartnerEmailDispatchResult> {
   const content = buildPartnerApprovalEmailContent(params);
-  const emailJs = getEmailJsConfig();
-
-  if (!emailJs) {
-    return { status: 'unconfigured', content };
-  }
-
-  try {
-    const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        service_id: emailJs.serviceId,
-        template_id: emailJs.templateId,
-        user_id: emailJs.publicKey,
-        template_params: {
-          to_email: content.toEmail,
-          to_name: params.displayName || 'Partner',
-          partner_name: params.displayName || 'Partner',
-          referral_code: params.assignedCode.trim().toUpperCase(),
-          commission_summary: content.commissionSummary,
-          follower_perk: content.followerPerkSummary,
-          referral_link: content.referralLink,
-          dashboard_link: content.dashboardLink,
-          brand_name: siteConfig.brandName,
-          subject: content.subject,
-          message: content.body,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      return {
-        status: 'failed',
-        error: errorText || `Email service returned HTTP ${response.status}`,
-        content,
-      };
-    }
-
-    return { status: 'sent', content };
-  } catch (err) {
-    return {
-      status: 'failed',
-      error: err instanceof Error ? err.message : 'Network error sending confirmation email',
-      content,
-    };
-  }
+  return { status: 'manual-ready', content };
 }

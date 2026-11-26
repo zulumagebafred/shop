@@ -94,6 +94,7 @@ export function buildPerfumeDiff(
     specialDiscountType?: 'percentage' | 'fixed';
     specialDiscountPercent?: number;
     specialDiscountAmount?: number;
+    specialSizes?: string[];
   }
 ): string[] {
   const describeSpecial = (entry: {

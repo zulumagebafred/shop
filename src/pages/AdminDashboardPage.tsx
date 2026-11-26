@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -99,6 +99,7 @@ import {
   formatSpecialDiscountTag,
   getEffectiveUnitPrice,
   getProductPriceSummary,
+  getSpecialTargetSizeOption,
 } from '../utils/pricing';
 import {
   getWeekWindowBounds,
@@ -221,6 +222,66 @@ function getAvailabilityBadgeClass(status: AvailabilityStatus): string {
   if (status === 'Pre-Order') return 'bg-[#F4F4F5] text-[#0A0A0A] border-[#D4D4D4]';
   return 'bg-[#F0FDF4] text-[#166534] border-[#BBF7D0]';
 }
+
+const AdminCountdownCards: React.FC<{ endsAt: string }> = React.memo(({ endsAt }) => {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+  const countdown = getCountdownParts(endsAt, nowMs);
+  return (
+    <div className="flex items-center gap-2">
+      {[
+        { label: 'Days', val: countdown.days },
+        { label: 'Hours', val: countdown.hours },
+        { label: 'Mins', val: countdown.minutes },
+        { label: 'Secs', val: countdown.seconds },
+      ].map((unit) => (
+        <div
+          key={unit.label}
+          className="flex-1 py-2 rounded-xl bg-white/[0.06] border border-[#FACC15]/50 text-center"
+        >
+          <span className="block text-lg font-bold tabular-nums leading-none text-white">
+            {unit.val}
+          </span>
+          <span className="mt-1 block text-[8px] uppercase tracking-widest text-white/65">
+            {unit.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+const AdminCountdownBadge: React.FC<{ endsAt: string }> = React.memo(({ endsAt }) => {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(interval);
+  }, []);
+  const countdown = getCountdownParts(endsAt, nowMs);
+  return (
+    <span className="mt-0.5 block text-[11px] text-[#525252] truncate">
+      {countdown.hasTimer && !countdown.ended
+        ? `${countdown.days}d ${countdown.hours}h left`
+        : 'Configure timer'}
+    </span>
+  );
+});
+
+const AdminCountdownHint: React.FC<{ endsAt: string }> = React.memo(({ endsAt }) => {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(interval);
+  }, []);
+  return (
+    <p className="text-[11px] text-[#525252] leading-relaxed">
+      {formatRemainingSummary(endsAt, nowMs)}
+    </p>
+  );
+});
 
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   onBackToStorefront,
@@ -428,12 +489,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
-  // Live ticker for countdown preview
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+  // Stable mount timestamp for weekly 5ml window calculation (avoids 1-second full-page re-renders)
+  const [mountNowMs] = useState(() => Date.now());
 
   // Inventory filters & inline actions
   const [inventorySearch, setInventorySearch] = useState('');
@@ -494,7 +551,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [bulkSpecialDiscount, setBulkSpecialDiscount] = useState('20');
   const [customDurationDays, setCustomDurationDays] = useState('7');
   const [specialPickerSearch, setSpecialPickerSearch] = useState('');
+  const [specialPickerVisibleCount, setSpecialPickerVisibleCount] = useState(24);
   const [newArrivalPickerSearch, setNewArrivalPickerSearch] = useState('');
+  const deferredInventorySearch = useDeferredValue(inventorySearch);
+  const deferredSpecialPickerSearch = useDeferredValue(specialPickerSearch);
+  const deferredNewArrivalPickerSearch = useDeferredValue(newArrivalPickerSearch);
   const [discountEdits, setDiscountEdits] = useState<
     Record<string, { type: SpecialDiscountType; value: string }>
   >({});
@@ -731,33 +792,42 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   );
 
   const nonSpecialPerfumes = useMemo(() => {
-    const q = specialPickerSearch.trim().toLowerCase();
-    return livePerfumes
-      .filter((p) => !p.onSpecial)
-      .filter(
-        (p) =>
-          !q ||
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q)
+    const q = deferredSpecialPickerSearch.trim().toLowerCase();
+    return livePerfumes.filter((p) => {
+      if (p.onSpecial) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q)
       );
-  }, [livePerfumes, specialPickerSearch]);
+    });
+  }, [livePerfumes, deferredSpecialPickerSearch]);
+
+  useEffect(() => {
+    setSpecialPickerVisibleCount(24);
+  }, [deferredSpecialPickerSearch]);
+
+  const visibleNonSpecialPerfumes = useMemo(
+    () => nonSpecialPerfumes.slice(0, specialPickerVisibleCount),
+    [nonSpecialPerfumes, specialPickerVisibleCount]
+  );
 
   const nonNewArrivalPerfumes = useMemo(() => {
-    const q = newArrivalPickerSearch.trim().toLowerCase();
-    return livePerfumes
-      .filter((p) => !p.isNewArrival)
-      .filter(
-        (p) =>
-          !q ||
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q)
+    const q = deferredNewArrivalPickerSearch.trim().toLowerCase();
+    return livePerfumes.filter((p) => {
+      if (p.isNewArrival) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q)
       );
-  }, [livePerfumes, newArrivalPickerSearch]);
+    });
+  }, [livePerfumes, deferredNewArrivalPickerSearch]);
 
   const filteredLivePerfumes = useMemo(() => {
-    const q = inventorySearch.trim().toLowerCase();
+    const q = deferredInventorySearch.trim().toLowerCase();
     const list = livePerfumes.filter((p) => {
       if (inventoryFilter === 'Men' && p.category !== 'Men') return false;
       if (inventoryFilter === 'Women' && p.category !== 'Women') return false;
@@ -787,23 +857,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     });
 
     const sorted = [...list];
-    sorted.sort((a, b) => {
-      if (inventorySort === 'brand-asc') {
-        return a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name);
+    if (inventorySort === 'price-desc' || inventorySort === 'price-asc') {
+      const priceMap = new Map<string, number>();
+      for (const item of sorted) {
+        priceMap.set(item.id, getProductPriceSummary(item).highestEffective ?? 0);
       }
-      if (inventorySort === 'price-desc' || inventorySort === 'price-asc') {
-        const pa = getProductPriceSummary(a).highestEffective ?? 0;
-        const pb = getProductPriceSummary(b).highestEffective ?? 0;
+      sorted.sort((a, b) => {
+        const pa = priceMap.get(a.id) ?? 0;
+        const pb = priceMap.get(b.id) ?? 0;
         return inventorySort === 'price-desc' ? pb - pa : pa - pb;
-      }
-      return a.name.localeCompare(b.name);
-    });
+      });
+    } else if (inventorySort === 'brand-asc') {
+      sorted.sort(
+        (a, b) => a.brand.localeCompare(b.brand) || a.name.localeCompare(b.name)
+      );
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    }
     return sorted;
-  }, [livePerfumes, inventorySearch, inventoryFilter, inventorySort]);
+  }, [livePerfumes, deferredInventorySearch, inventoryFilter, inventorySort]);
 
   useEffect(() => {
     setInventoryVisibleCount(40);
-  }, [inventorySearch, inventoryFilter, inventorySort]);
+  }, [deferredInventorySearch, inventoryFilter, inventorySort]);
 
   const visibleLivePerfumes = useMemo(
     () => filteredLivePerfumes.slice(0, inventoryVisibleCount),
@@ -1062,12 +1138,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setEditorOpen(true);
   };
 
-  const handleQuickAvailabilityChange = async (
+  const handleQuickAvailabilityChange = (
     product: FragranceProduct,
     nextAvailability: AvailabilityStatus
   ) => {
     if (product.availability === nextAvailability) return;
-    setUpdatingStatusId(product.id);
     const existingBranches = getAvailableBranches(product);
     const nextBranches: BranchId[] =
       nextAvailability === 'Out of Stock'
@@ -1075,42 +1150,40 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         : existingBranches.length > 0
         ? existingBranches
         : ['manzini', 'mbabane'];
-    try {
-      await savePerfume(
-        {
-          slug: product.slug,
-          isSampleListing: product.isSampleListing,
-          name: product.name,
-          brand: product.brand,
-          category: product.category,
-          concentration: product.concentration,
-          description: product.description,
-          image: product.image,
-          notes: product.notes,
-          sizes: product.sizes,
-          availability: nextAvailability,
-          availableBranches: nextBranches,
-          featured: product.featured,
-          bestseller: product.bestseller,
-          isUnboxed: Boolean(product.isUnboxed),
-          isNewArrival: Boolean(product.isNewArrival),
-          onSpecial: product.onSpecial,
-          specialLabel: product.specialLabel,
-          specialDiscountType: product.specialDiscountType,
-          specialDiscountPercent: product.specialDiscountPercent,
-          specialDiscountAmount: product.specialDiscountAmount,
-        },
-        product.id
-      );
-      onNotify('Availability Updated', `${product.name} marked as ${nextAvailability}.`);
-    } catch (err) {
+
+    const promise = savePerfume(
+      {
+        slug: product.slug,
+        isSampleListing: product.isSampleListing,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        concentration: product.concentration,
+        description: product.description,
+        image: product.image,
+        notes: product.notes,
+        sizes: product.sizes,
+        availability: nextAvailability,
+        availableBranches: nextBranches,
+        featured: product.featured,
+        bestseller: product.bestseller,
+        isUnboxed: Boolean(product.isUnboxed),
+        isNewArrival: Boolean(product.isNewArrival),
+        onSpecial: product.onSpecial,
+        specialLabel: product.specialLabel,
+        specialDiscountType: product.specialDiscountType,
+        specialDiscountPercent: product.specialDiscountPercent,
+        specialDiscountAmount: product.specialDiscountAmount,
+      },
+      product.id
+    );
+    onNotify('Availability Updated', `${product.name} marked as ${nextAvailability}.`);
+    void promise.catch((err) => {
       onNotify(
         'Status Update Failed',
         extractReadableError(err, 'Could not update availability.')
       );
-    } finally {
-      setUpdatingStatusId(null);
-    }
+    });
   };
 
   const handleAddSizeSlot = (rawLabel: string) => {
@@ -1232,19 +1305,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         pOnSpecial && pSpecialDiscountType === 'fixed' ? safeDiscountAmt : 0,
     };
 
-    setSavingPerfume(true);
-    try {
-      await savePerfume(payload, editingPerfumeId ?? undefined);
-      setEditorOpen(false);
+    const targetEditingId = editingPerfumeId ?? undefined;
+    const isEditing = Boolean(targetEditingId);
+
+    // Apply optimistic state immediately and close modal without waiting on network round-trip
+    const persistPromise = savePerfume(payload, targetEditingId);
+    setEditorOpen(false);
+    setSavingPerfume(false);
+    onNotify(
+      isEditing ? 'Perfume Updated' : 'Perfume Added',
+      `${payload.name} (${payload.brand}) saved to your live catalogue.`
+    );
+    void persistPromise.catch((err) => {
       onNotify(
-        editingPerfumeId ? 'Perfume Updated' : 'Perfume Added',
-        `${payload.name} (${payload.brand}) saved to your live catalogue.`
+        'Save Failed',
+        extractReadableError(err, `Could not save ${payload.name}. Changes were reverted.`)
       );
-    } catch (err) {
-      setFormError(extractReadableError(err, 'Could not save perfume.'));
-    } finally {
-      setSavingPerfume(false);
-    }
+    });
   };
 
   const handleImportStarter = async () => {
@@ -1265,43 +1342,41 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
-  const handleSaveCampaign = async (e: React.FormEvent) => {
+  const handleSaveCampaign = (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingCampaign(true);
-    try {
-      await saveCampaign(campaignDraft);
-      const mode = campaignDraft.heroMode ?? 'auto';
-      const title =
+    const draftSnapshot = campaignDraft;
+    const mode = draftSnapshot.heroMode ?? 'auto';
+    const title =
+      mode === 'new-arrivals'
+        ? 'New Arrivals Hero Live'
+        : draftSnapshot.enabled
+        ? 'Special Campaign Live'
+        : 'Hero Showcase Settings Saved';
+    const persistPromise = saveCampaign(draftSnapshot);
+    setSavingCampaign(false);
+    onNotify(
+      title,
+      `${
         mode === 'new-arrivals'
-          ? 'New Arrivals Hero Live'
-          : campaignDraft.enabled
-          ? 'Special Campaign Live'
-          : 'Hero Showcase Settings Saved';
-      onNotify(
-        title,
-        `${
-          mode === 'new-arrivals'
-            ? campaignDraft.newArrivalsTitle || 'New Arrivals'
-            : campaignDraft.title
-        } synced to storefront.`
-      );
-    } catch (err) {
+          ? draftSnapshot.newArrivalsTitle || 'New Arrivals'
+          : draftSnapshot.title
+      } synced to storefront.`
+    );
+    void persistPromise.catch((err) => {
       onNotify(
         'Campaign Save Error',
         extractReadableError(err, 'Could not save campaign.')
       );
-    } finally {
-      setSavingCampaign(false);
-    }
+    });
   };
 
   const resolvedWeeklyDraft = useMemo(
-    () => resolveWeeklyFiveMlSelection(catalogForBuilders, weeklyDraft, nowMs),
-    [catalogForBuilders, weeklyDraft, nowMs]
+    () => resolveWeeklyFiveMlSelection(catalogForBuilders, weeklyDraft, mountNowMs),
+    [catalogForBuilders, weeklyDraft, mountNowMs]
   );
 
   const handleRandomizeWeeklyPicks = (target: WeeklyFiveMlAudience | 'Both' = 'Both') => {
-    const activeWeek = getWeekWindowBounds(nowMs).weekKey;
+    const activeWeek = getWeekWindowBounds(Date.now()).weekKey;
     const nextSeed = (weeklyDraft.seedOffset ?? 0) + 1;
     setWeeklyDraft((prev) => {
       const next = {
@@ -1333,40 +1408,37 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     });
   };
 
-  const handleSaveWeeklySpecial = async (e?: React.FormEvent) => {
+  const handleSaveWeeklySpecial = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setSavingWeeklySpecial(true);
-    try {
-      const currentWeekKey = resolvedWeeklyDraft.weekKey;
-      const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
-      const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
-      const men500Ids = resolvedWeeklyDraft.men.under500Picks.map((c) => c.product.id);
-      const men800Ids = resolvedWeeklyDraft.men.under800Picks.map((c) => c.product.id);
-      await saveWeeklySpecial({
-        ...weeklyDraft,
-        weekKey: currentWeekKey,
-        under500Ids: women500Ids,
-        under800Ids: women800Ids,
-        womenUnder500Ids: women500Ids,
-        womenUnder800Ids: women800Ids,
-        menUnder500Ids: men500Ids,
-        menUnder800Ids: men800Ids,
-      });
-      onNotify(
-        weeklyDraft.enabled ? 'Weekly 5ml Special Saved' : 'Weekly 5ml Special Paused',
-        `Updated For Women & For Men 5ml picks for ${resolvedWeeklyDraft.weekLabel}.`
-      );
-    } catch (err) {
+    const currentWeekKey = resolvedWeeklyDraft.weekKey;
+    const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
+    const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
+    const men500Ids = resolvedWeeklyDraft.men.under500Picks.map((c) => c.product.id);
+    const men800Ids = resolvedWeeklyDraft.men.under800Picks.map((c) => c.product.id);
+    const persistPromise = saveWeeklySpecial({
+      ...weeklyDraft,
+      weekKey: currentWeekKey,
+      under500Ids: women500Ids,
+      under800Ids: women800Ids,
+      womenUnder500Ids: women500Ids,
+      womenUnder800Ids: women800Ids,
+      menUnder500Ids: men500Ids,
+      menUnder800Ids: men800Ids,
+    });
+    setSavingWeeklySpecial(false);
+    onNotify(
+      weeklyDraft.enabled ? 'Weekly 5ml Special Saved' : 'Weekly 5ml Special Paused',
+      `Updated For Women & For Men 5ml picks for ${resolvedWeeklyDraft.weekLabel}.`
+    );
+    void persistPromise.catch((err) => {
       onNotify(
         'Save Error',
         extractReadableError(err, 'Could not save Weekly 5ml Special.')
       );
-    } finally {
-      setSavingWeeklySpecial(false);
-    }
+    });
   };
 
-  const handleSaveExclusiveSpecial = async (e?: React.FormEvent) => {
+  const handleSaveExclusiveSpecial = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (weeklyDraft.exclusiveEnabled && (weeklyDraft.exclusiveItems?.length ?? 0) === 0) {
       onNotify(
@@ -1375,37 +1447,34 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       );
       return;
     }
-    setSavingExclusiveSpecial(true);
-    try {
-      const currentWeekKey = resolvedWeeklyDraft.weekKey;
-      const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
-      const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
-      const men500Ids = resolvedWeeklyDraft.men.under500Picks.map((c) => c.product.id);
-      const men800Ids = resolvedWeeklyDraft.men.under800Picks.map((c) => c.product.id);
-      await saveWeeklySpecial({
-        ...weeklyDraft,
-        weekKey: currentWeekKey,
-        under500Ids: women500Ids,
-        under800Ids: women800Ids,
-        womenUnder500Ids: women500Ids,
-        womenUnder800Ids: women800Ids,
-        menUnder500Ids: men500Ids,
-        menUnder800Ids: men800Ids,
-      });
-      onNotify(
-        weeklyDraft.exclusiveEnabled
-          ? 'Exclusive Special Saved'
-          : 'Exclusive Special Paused',
-        `${weeklyDraft.exclusiveItems?.length ?? 0} custom-sized & custom-priced special picks saved.`
-      );
-    } catch (err) {
+    const currentWeekKey = resolvedWeeklyDraft.weekKey;
+    const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
+    const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
+    const men500Ids = resolvedWeeklyDraft.men.under500Picks.map((c) => c.product.id);
+    const men800Ids = resolvedWeeklyDraft.men.under800Picks.map((c) => c.product.id);
+    const persistPromise = saveWeeklySpecial({
+      ...weeklyDraft,
+      weekKey: currentWeekKey,
+      under500Ids: women500Ids,
+      under800Ids: women800Ids,
+      womenUnder500Ids: women500Ids,
+      womenUnder800Ids: women800Ids,
+      menUnder500Ids: men500Ids,
+      menUnder800Ids: men800Ids,
+    });
+    setSavingExclusiveSpecial(false);
+    onNotify(
+      weeklyDraft.exclusiveEnabled
+        ? 'Exclusive Special Saved'
+        : 'Exclusive Special Paused',
+      `${weeklyDraft.exclusiveItems?.length ?? 0} custom-sized & custom-priced special picks saved.`
+    );
+    void persistPromise.catch((err) => {
       onNotify(
         'Save Error',
         extractReadableError(err, 'Could not save Exclusive 5ml Special.')
       );
-    } finally {
-      setSavingExclusiveSpecial(false);
-    }
+    });
   };
 
   const handleApplyBulkSpecialDiscount = async () => {
@@ -1451,7 +1520,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
-  const handleCommitSingleSpecialDiscount = async (
+  const handleCommitSingleSpecialDiscount = (
     product: FragranceProduct,
     draftType: SpecialDiscountType,
     rawValue: string | number
@@ -1488,32 +1557,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       });
       return;
     }
-    try {
-      await togglePerfumeSpecial(
-        product,
-        true,
-        safePct,
-        product.specialLabel || campaignDraft.badgeText || 'Special Offer',
-        draftType,
-        safeAmt
-      );
-      setDiscountEdits((prev) => {
-        const next = { ...prev };
-        delete next[product.id];
-        return next;
-      });
-      onNotify(
-        'Special Price Saved',
-        draftType === 'fixed'
-          ? `${product.name} updated to -E${safeAmt} off.`
-          : `${product.name} updated to -${safePct}% off.`
-      );
-    } catch (err) {
+
+    setDiscountEdits((prev) => {
+      const next = { ...prev };
+      delete next[product.id];
+      return next;
+    });
+    const persistPromise = togglePerfumeSpecial(
+      product,
+      true,
+      safePct,
+      product.specialLabel || campaignDraft.badgeText || 'Special Offer',
+      draftType,
+      safeAmt,
+      false
+    );
+    onNotify(
+      'Special Price Saved',
+      draftType === 'fixed'
+        ? `${product.name} updated to -E${safeAmt} off.`
+        : `${product.name} updated to -${safePct}% off.`
+    );
+    void persistPromise.catch((err) => {
       onNotify(
         'Discount Save Error',
         extractReadableError(err, 'Could not update discount.')
       );
-    }
+    });
   };
 
   const handleResetCouponForm = () => {
@@ -1631,7 +1701,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             product.onSpecial,
             product.specialDiscountPercent,
             product.specialDiscountType,
-            product.specialDiscountAmount
+            product.specialDiscountAmount,
+            sizeOpt.size,
+            product.sizes
           )
         : null;
     const nextPicks = [
@@ -2223,16 +2295,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       ? campaignDraft.newArrivalsTitle || 'New Arrivals'
       : campaignDraft.title
   );
-  const previewCountdown = getCountdownParts(campaignDraft.endsAt, nowMs);
 
-  // Live highest priced sample in modal for instant Special preview
+  // Live highest full-bottle size sample in modal for instant Special preview
   const editorSamplePrice = useMemo(() => {
-    const priced = pSizes
-      .filter((s) => s.available && typeof s.price === 'number' && s.price > 0)
-      .map((s) => ({ size: s.size, price: s.price as number }));
-    if (priced.length === 0) return null;
-    priced.sort((a, b) => b.price - a.price);
-    const highest = priced[0];
+    const highest = getSpecialTargetSizeOption(pSizes);
+    if (!highest || typeof highest.price !== 'number' || highest.price <= 0) {
+      return null;
+    }
     const pct = Math.min(90, Math.max(0, Number(pSpecialDiscount || 0)));
     const amt = Math.min(50000, Math.max(0, Number(pSpecialDiscountAmount || 0)));
     const effective =
@@ -2241,7 +2310,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         true,
         pct,
         pSpecialDiscountType,
-        amt
+        amt,
+        highest.size,
+        pSizes
       ) ?? highest.price;
     return {
       size: highest.size,
@@ -2776,11 +2847,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   <span className="mt-1 block text-xl sm:text-3xl font-bold text-[#0A0A0A] tabular-nums">
                     {specialPerfumes.length}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-[#525252] truncate">
-                    {previewCountdown.hasTimer && !previewCountdown.ended
-                      ? `${previewCountdown.days}d ${previewCountdown.hours}h left`
-                      : 'Configure timer'}
-                  </span>
+                  <AdminCountdownBadge endsAt={campaignDraft.endsAt} />
                 </button>
 
                 <button
@@ -3126,7 +3193,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   product.onSpecial,
                                   product.specialDiscountPercent,
                                   product.specialDiscountType,
-                                  product.specialDiscountAmount
+                                  product.specialDiscountAmount,
+                                  s.size,
+                                  product.sizes
                                 );
                                 const discounted =
                                   s.available &&
@@ -3189,50 +3258,50 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                           <button
                             type="button"
-                            onClick={async () => {
-                              try {
-                                const hasFixed =
-                                  product.specialDiscountType === 'fixed' &&
-                                  (product.specialDiscountAmount ?? 0) > 0;
-                                const nextType: SpecialDiscountType =
-                                  product.specialDiscountType === 'fixed' ||
-                                  product.specialDiscountType === 'percentage'
-                                    ? product.specialDiscountType
-                                    : bulkSpecialType;
-                                const nextPct =
-                                  nextType === 'percentage'
-                                    ? product.specialDiscountPercent ||
-                                      (bulkSpecialType === 'percentage'
-                                        ? Number(bulkSpecialDiscount) || 20
-                                        : 20)
-                                    : 0;
-                                const nextAmt =
-                                  nextType === 'fixed'
-                                    ? product.specialDiscountAmount ||
-                                      (bulkSpecialType === 'fixed'
-                                        ? Number(bulkSpecialDiscount) || 100
-                                        : 100)
-                                    : hasFixed
-                                    ? product.specialDiscountAmount
-                                    : 0;
-                                await togglePerfumeSpecial(
-                                  product,
-                                  !product.onSpecial,
-                                  nextPct,
-                                  campaign.badgeText || 'Black Friday Special',
-                                  nextType,
-                                  nextAmt
-                                );
-                                onNotify(
-                                  !product.onSpecial ? 'Added to Specials' : 'Removed from Specials',
-                                  `${product.name} updated.`
-                                );
-                              } catch (err) {
+                            onClick={() => {
+                              const nextOnSpecial = !product.onSpecial;
+                              const hasFixed =
+                                product.specialDiscountType === 'fixed' &&
+                                (product.specialDiscountAmount ?? 0) > 0;
+                              const nextType: SpecialDiscountType =
+                                product.specialDiscountType === 'fixed' ||
+                                product.specialDiscountType === 'percentage'
+                                  ? product.specialDiscountType
+                                  : bulkSpecialType;
+                              const nextPct =
+                                nextType === 'percentage'
+                                  ? product.specialDiscountPercent ||
+                                    (bulkSpecialType === 'percentage'
+                                      ? Number(bulkSpecialDiscount) || 20
+                                      : 20)
+                                  : 0;
+                              const nextAmt =
+                                nextType === 'fixed'
+                                  ? product.specialDiscountAmount ||
+                                    (bulkSpecialType === 'fixed'
+                                      ? Number(bulkSpecialDiscount) || 100
+                                      : 100)
+                                  : hasFixed
+                                  ? product.specialDiscountAmount
+                                  : 0;
+                              const persistPromise = togglePerfumeSpecial(
+                                product,
+                                nextOnSpecial,
+                                nextPct,
+                                campaign.badgeText || 'Black Friday Special',
+                                nextType,
+                                nextAmt
+                              );
+                              onNotify(
+                                nextOnSpecial ? 'Added to Specials' : 'Removed from Specials',
+                                `${product.name} updated.`
+                              );
+                              void persistPromise.catch((err) => {
                                 onNotify(
                                   'Special Toggle Failed',
                                   extractReadableError(err, 'Could not update special status.')
                                 );
-                              }
+                              });
                             }}
                             className={`px-3 py-2 text-xs font-semibold border rounded-full transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ${
                               product.onSpecial
@@ -4279,26 +4348,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
-                          {[
-                            { label: 'Days', val: previewCountdown.days },
-                            { label: 'Hours', val: previewCountdown.hours },
-                            { label: 'Mins', val: previewCountdown.minutes },
-                            { label: 'Secs', val: previewCountdown.seconds },
-                          ].map((unit) => (
-                            <div
-                              key={unit.label}
-                              className="flex-1 py-2 rounded-xl bg-white/[0.06] border border-[#FACC15]/50 text-center"
-                            >
-                              <span className="block text-lg font-bold tabular-nums leading-none text-white">
-                                {unit.val}
-                              </span>
-                              <span className="mt-1 block text-[8px] uppercase tracking-widest text-white/65">
-                                {unit.label}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                        <AdminCountdownCards endsAt={campaignDraft.endsAt} />
                       )}
                     </div>
                   </div>
@@ -4680,9 +4730,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-[11px] text-[#525252] leading-relaxed">
-                        {formatRemainingSummary(campaignDraft.endsAt, nowMs)}
-                      </p>
+                      <AdminCountdownHint endsAt={campaignDraft.endsAt} />
                     </div>
 
                     <div className="space-y-1.5">
@@ -4742,7 +4790,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               Perfumes on Special ({specialPerfumes.length})
                             </h3>
                             <p className="text-xs text-[#666666]">
-                              Reduce each perfume by a percentage (%) or fixed amount (e.g. -E100).
+                              Discounts apply automatically to each perfume&apos;s highest full-bottle size. Decant sizes remain at regular price.
                             </p>
                           </div>
                           {specialPerfumes.length > 0 && (
@@ -4868,6 +4916,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     ? Math.min(50000, Math.max(0, numDraft))
                                     : 0,
                               });
+                              const previewTarget =
+                                !previewSummary.hasDiscount &&
+                                previewSummary.specialTargetOption
+                                  ? previewSummary.specialTargetOption
+                                  : previewSummary.highestEffective !== null
+                                  ? {
+                                      size: previewSummary.highestSize ?? '',
+                                      effectivePrice: previewSummary.highestEffective,
+                                      originalPrice:
+                                        previewSummary.highestOriginal ??
+                                        previewSummary.highestEffective,
+                                    }
+                                  : null;
                               const isDirty =
                                 editEntry !== undefined &&
                                 (editEntry.type !== savedType ||
@@ -4877,55 +4938,62 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 <div
                                   key={p.id}
                                   data-special-row={p.id}
-                                  className="p-3.5 bg-[#F7F7F8] border border-[#E5E5E5] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                  className="p-3.5 bg-[#F7F7F8] border border-[#E5E5E5] rounded-2xl flex flex-col gap-3"
                                 >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-14 h-14 bg-white border border-[#F0F0F0] rounded-xl shrink-0 overflow-hidden">
-                                      <ResilientImage
-                                        src={p.image}
-                                        alt={p.name}
-                                        className="w-full h-full object-cover saturate-[1.12] contrast-[1.03]"
-                                      />
-                                    </div>
-                                    <div className="min-w-0 space-y-0.5">
-                                      <p className="text-[11px] uppercase tracking-wider text-[#525252] font-semibold">
-                                        {p.brand}
-                                      </p>
-                                      <p className="text-base font-bold text-[#0A0A0A] truncate">
-                                        {p.name}
-                                      </p>
-                                      {p.availability === 'Out of Stock' && (
-                                        <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                                          Out of Stock · Hidden on Front Page
-                                        </span>
-                                      )}
-                                      {previewSummary.highestEffective !== null && (
-                                        <p className="text-xs tabular-nums flex flex-wrap items-center gap-1.5">
-                                          <span className="text-[#DC2626] font-bold">
-                                            {formatPrice(previewSummary.highestEffective)}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="w-14 h-14 bg-white border border-[#F0F0F0] rounded-xl shrink-0 overflow-hidden">
+                                        <ResilientImage
+                                          src={p.image}
+                                          alt={p.name}
+                                          loading="lazy"
+                                          variant="thumb"
+                                          className="w-full h-full object-cover saturate-[1.12] contrast-[1.03]"
+                                        />
+                                      </div>
+                                      <div className="min-w-0 space-y-0.5">
+                                        <p className="text-[11px] uppercase tracking-wider text-[#525252] font-semibold">
+                                          {p.brand}
+                                        </p>
+                                        <p className="text-base font-bold text-[#0A0A0A] truncate">
+                                          {p.name}
+                                        </p>
+                                        {p.availability === 'Out of Stock' && (
+                                          <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                                            Out of Stock · Hidden on Front Page
                                           </span>
-                                          {previewSummary.highestOriginal !== null &&
-                                            previewSummary.highestOriginal >
-                                              previewSummary.highestEffective && (
+                                        )}
+                                        {previewTarget && (
+                                          <p className="text-xs tabular-nums flex flex-wrap items-center gap-1.5">
+                                            {previewTarget.size && (
+                                              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
+                                                {previewTarget.size}:
+                                              </span>
+                                            )}
+                                            <span className="text-[#DC2626] font-bold">
+                                              {formatPrice(previewTarget.effectivePrice)}
+                                            </span>
+                                            {previewTarget.originalPrice >
+                                              previewTarget.effectivePrice && (
                                               <>
                                                 <span className="text-[#737373] line-through">
-                                                  {formatPrice(previewSummary.highestOriginal)}
+                                                  {formatPrice(previewTarget.originalPrice)}
                                                 </span>
                                                 <span className="text-[10px] font-semibold text-[#92400E] bg-[#FEF3C7] px-1.5 py-0.5 rounded-full">
                                                   Save{' '}
                                                   {formatPrice(
-                                                    previewSummary.highestOriginal -
-                                                      previewSummary.highestEffective
+                                                    previewTarget.originalPrice -
+                                                      previewTarget.effectivePrice
                                                   )}
                                                 </span>
                                               </>
                                             )}
-                                        </p>
-                                      )}
+                                          </p>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
 
-                                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                                     <div
                                       className="inline-flex rounded-full border border-[#D4D4D4] bg-white p-0.5 text-[11px] font-bold"
                                       role="group"
@@ -5055,30 +5123,37 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       )}
                                     </div>
 
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        try {
-                                          await togglePerfumeSpecial(
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setDiscountEdits((prev) => {
+                                            if (!(p.id in prev)) return prev;
+                                            const next = { ...prev };
+                                            delete next[p.id];
+                                            return next;
+                                          });
+                                          const persistPromise = togglePerfumeSpecial(
                                             p,
                                             false,
                                             0,
                                             '',
                                             'percentage',
-                                            0
+                                            0,
+                                            false
                                           );
                                           onNotify('Removed', `${p.name} removed from specials.`);
-                                        } catch (err) {
-                                          onNotify(
-                                            'Update Failed',
-                                            extractReadableError(err, 'Could not remove from specials.')
-                                          );
-                                        }
-                                      }}
-                                      className="px-3.5 py-1.5 border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] rounded-full text-xs font-medium"
-                                    >
-                                      Remove
-                                    </button>
+                                          void persistPromise.catch((err) => {
+                                            onNotify(
+                                              'Update Failed',
+                                              extractReadableError(err, 'Could not remove from specials.')
+                                            );
+                                          });
+                                        }}
+                                        className="px-3.5 py-1.5 border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] rounded-full text-xs font-medium"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -5112,74 +5187,110 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               : 'Every perfume in your catalogue is currently in the Specials list.'}
                           </p>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {nonSpecialPerfumes.map((p) => (
-                              <div
-                                key={p.id}
-                                className="p-3 border border-[#E5E5E5] rounded-2xl flex items-center justify-between gap-3 hover:border-[#0A0A0A]/40 transition-colors"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div className="w-10 h-10 bg-white border border-[#F0F0F0] rounded-lg shrink-0 overflow-hidden">
-                                    <ResilientImage
-                                      src={p.image}
-                                      alt={p.name}
-                                      className="w-full h-full object-cover saturate-[1.12]"
-                                    />
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
+                              {visibleNonSpecialPerfumes.map((p) => {
+                                const highestBottle = getSpecialTargetSizeOption(p.sizes);
+                                return (
+                                  <div
+                                    key={p.id}
+                                    className="p-3.5 border border-[#E5E5E5] rounded-2xl flex items-center justify-between gap-3 bg-white hover:border-[#0A0A0A]/40 transition-colors"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <div className="w-10 h-10 bg-white border border-[#F0F0F0] rounded-lg shrink-0 overflow-hidden">
+                                        <ResilientImage
+                                          src={p.image}
+                                          alt={p.name}
+                                          loading="lazy"
+                                          variant="thumb"
+                                          className="w-full h-full object-cover saturate-[1.12]"
+                                        />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-[10px] uppercase tracking-wider text-[#666666]">
+                                          {p.brand}
+                                        </p>
+                                        <p className="text-sm font-bold text-[#0A0A0A] truncate">
+                                          {p.name}
+                                        </p>
+                                        {highestBottle ? (
+                                          <p className="text-[11px] text-[#525252] tabular-nums">
+                                            {highestBottle.size}
+                                            {highestBottle.price !== null
+                                              ? ` · ${formatPrice(highestBottle.price)}`
+                                              : ''}
+                                          </p>
+                                        ) : (
+                                          <p className="text-[10px] text-[#737373]">
+                                            No full bottle size
+                                          </p>
+                                        )}
+                                        {p.availability === 'Out of Stock' && (
+                                          <p className="text-[10px] font-semibold text-amber-700">
+                                            Out of Stock (hidden on front page)
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      disabled={!highestBottle}
+                                      onClick={() => {
+                                        if (!highestBottle) return;
+                                        const rawNum = Number(bulkSpecialDiscount || 0);
+                                        const addPct =
+                                          bulkSpecialType === 'percentage'
+                                            ? Math.min(90, Math.max(0, rawNum || 20))
+                                            : 0;
+                                        const addAmt =
+                                          bulkSpecialType === 'fixed'
+                                            ? Math.min(50000, Math.max(0, rawNum || 100))
+                                            : 0;
+                                        const persistPromise = togglePerfumeSpecial(
+                                          p,
+                                          true,
+                                          addPct,
+                                          campaignDraft.badgeText || 'Special Offer',
+                                          bulkSpecialType,
+                                          addAmt,
+                                          false
+                                        );
+                                        onNotify(
+                                          'Added to Specials',
+                                          `${p.name} (${highestBottle.size}) added to Specials.`
+                                        );
+                                        void persistPromise.catch((err) => {
+                                          onNotify(
+                                            'Special Failed',
+                                            extractReadableError(err, 'Could not add special.')
+                                          );
+                                        });
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+                                    >
+                                      {highestBottle ? '+ Add' : 'Decants Only'}
+                                    </button>
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="text-[10px] uppercase tracking-wider text-[#666666]">
-                                      {p.brand}
-                                    </p>
-                                    <p className="text-sm font-bold text-[#0A0A0A] truncate">
-                                      {p.name}
-                                    </p>
-                                    {p.availability === 'Out of Stock' && (
-                                      <p className="text-[10px] font-semibold text-amber-700">
-                                        Out of Stock (won&apos;t show until restocked)
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
+                                );
+                              })}
+                            </div>
+                            {nonSpecialPerfumes.length > specialPickerVisibleCount && (
+                              <div className="flex items-center justify-between pt-1">
+                                <span className="text-[11px] text-[#666666] tabular-nums">
+                                  Showing {visibleNonSpecialPerfumes.length} of {nonSpecialPerfumes.length} perfumes
+                                </span>
                                 <button
                                   type="button"
-                                  onClick={async () => {
-                                    try {
-                                      const rawNum = Number(bulkSpecialDiscount || 0);
-                                      const addPct =
-                                        bulkSpecialType === 'percentage'
-                                          ? Math.min(90, Math.max(0, rawNum || 20))
-                                          : 0;
-                                      const addAmt =
-                                        bulkSpecialType === 'fixed'
-                                          ? Math.min(50000, Math.max(0, rawNum || 100))
-                                          : 0;
-                                      await togglePerfumeSpecial(
-                                        p,
-                                        true,
-                                        addPct,
-                                        campaignDraft.badgeText || 'Black Friday Special',
-                                        bulkSpecialType,
-                                        addAmt
-                                      );
-                                      onNotify(
-                                        'Added to Specials',
-                                        bulkSpecialType === 'fixed'
-                                          ? `${p.name} added (-E${addAmt} off).`
-                                          : `${p.name} added (-${addPct}% off).`
-                                      );
-                                    } catch (err) {
-                                      onNotify(
-                                        'Special Failed',
-                                        extractReadableError(err, 'Could not add special.')
-                                      );
-                                    }
-                                  }}
-                                  className="px-3.5 py-1.5 bg-[#0A0A0A] text-white rounded-full text-xs font-semibold shrink-0 hover:bg-[#262626]"
+                                  onClick={() =>
+                                    setSpecialPickerVisibleCount((prev) => prev + 24)
+                                  }
+                                  className="px-4 py-1.5 rounded-full border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] text-xs font-semibold text-[#0A0A0A] transition-colors"
                                 >
-                                  + Special
+                                  Show More (+24)
                                 </button>
                               </div>
-                            ))}
+                            )}
                           </div>
                         )}
                       </div>
@@ -5209,6 +5320,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <ResilientImage
                                       src={p.image}
                                       alt={p.name}
+                                      loading="lazy"
+                                      variant="thumb"
                                       className="w-full h-full object-cover saturate-[1.12]"
                                     />
                                   </div>
@@ -5223,16 +5336,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={async () => {
-                                    try {
-                                      await togglePerfumeNewArrival(p, false);
-                                      onNotify('Removed', `${p.name} removed from New Arrivals.`);
-                                    } catch (err) {
+                                  onClick={() => {
+                                    const persistPromise = togglePerfumeNewArrival(p, false);
+                                    onNotify('Removed', `${p.name} removed from New Arrivals.`);
+                                    void persistPromise.catch((err) => {
                                       onNotify(
                                         'Update Failed',
                                         extractReadableError(err, 'Could not update New Arrival status.')
                                       );
-                                    }
+                                    });
                                   }}
                                   className="px-3 py-1.5 border border-[#D4D4D4] bg-white hover:border-[#0A0A0A] rounded-full text-xs font-medium shrink-0"
                                 >
@@ -5278,6 +5390,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       <ResilientImage
                                         src={p.image}
                                         alt={p.name}
+                                        loading="lazy"
+                                        variant="thumb"
                                         className="w-full h-full object-cover saturate-[1.12]"
                                       />
                                     </div>
@@ -5292,16 +5406,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={async () => {
-                                      try {
-                                        await togglePerfumeNewArrival(p, true);
-                                        onNotify('Added', `${p.name} marked as New Arrival.`);
-                                      } catch (err) {
+                                    onClick={() => {
+                                      const persistPromise = togglePerfumeNewArrival(p, true);
+                                      onNotify('Added', `${p.name} marked as New Arrival.`);
+                                      void persistPromise.catch((err) => {
                                         onNotify(
                                           'Update Failed',
                                           extractReadableError(err, 'Could not mark New Arrival.')
                                         );
-                                      }
+                                      });
                                     }}
                                     className="px-3 py-1.5 bg-[#0A0A0A] text-[#FACC15] rounded-full text-xs font-semibold shrink-0 hover:bg-[#262626]"
                                   >
@@ -5820,7 +5933,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                           item.onSpecial,
                                           item.specialDiscountPercent,
                                           item.specialDiscountType,
-                                          item.specialDiscountAmount
+                                          item.specialDiscountAmount,
+                                          sz.size,
+                                          item.sizes
                                         )
                                       : null;
                                   return (
@@ -9259,8 +9374,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             )}
                             {pSpecialDiscountType === 'fixed' && (
                               <p className="text-[11px] text-[#666666]">
-                                Example: entering 100 reduces E550 to E450 (applies to sizes priced above E
-                                {Number(pSpecialDiscountAmount || 0)}).
+                                Example: entering 100 reduces E550 to E450 on the highest full-bottle size.
                               </p>
                             )}
                           </div>

@@ -4,7 +4,10 @@ import { ArrowRight, Search, X } from 'lucide-react';
 import { formatPrice } from '../config/siteConfig';
 import { useStore } from '../context/StoreContext';
 import { FragranceProduct } from '../types/fragrance';
-import { getProductPriceSummary, parseVolumeMl } from '../utils/pricing';
+import {
+  getProductPriceSummary,
+  parseVolumeMl,
+} from '../utils/pricing';
 import { sanitizeSearchQuery } from '../utils/sanitize';
 import { ResilientImage } from './ResilientImage';
 

@@ -72,6 +72,8 @@ export interface FragranceProduct {
   specialDiscountType?: SpecialDiscountType;
   specialDiscountPercent?: number;
   specialDiscountAmount?: number;
+  /** Optional list of bottle/decant sizes eligible for this special (empty or omitted = all sizes) */
+  specialSizes?: string[];
 }
 
 export type SpecialDiscountType = 'percentage' | 'fixed';

@@ -84,7 +84,11 @@ import {
   DEFAULT_WEEKLY_FIVE_ML_SPECIAL,
   getWeekWindowBounds,
 } from '../utils/weeklySpecial';
-import { calculateReferralCommission } from '../utils/pricing';
+import {
+  calculateReferralCommission,
+  getSpecialTargetSizeLabel,
+  normalizeSpecialSizes,
+} from '../utils/pricing';
 import { normalizeBranches } from '../utils/branches';
 import {
   buildCampaignDiff,
@@ -414,6 +418,7 @@ type CompactPerfumeTuple = {
   spt?: 'f';
   spd?: number;
   spa?: number;
+  sps?: string[];
 };
 
 function getCacheTimestamp(section: string): number {
@@ -480,6 +485,9 @@ function encodeCompactPerfumes(items: FragranceProduct[]): string {
     if (p.specialDiscountType === 'fixed') obj.spt = 'f';
     if (p.specialDiscountPercent) obj.spd = p.specialDiscountPercent;
     if (p.specialDiscountAmount) obj.spa = p.specialDiscountAmount;
+    if (p.specialSizes && p.specialSizes.length > 0) {
+      obj.sps = normalizeSpecialSizes(p.specialSizes);
+    }
     return obj;
   });
   return JSON.stringify(packed);
@@ -535,6 +543,7 @@ function decodeCompactPerfumes(jsonStr: string): FragranceProduct[] {
       typeof row.spd === 'number' ? row.spd : 0,
     specialDiscountAmount:
       typeof row.spa === 'number' ? row.spa : 0,
+    specialSizes: Array.isArray(row.sps) ? normalizeSpecialSizes(row.sps) : [],
   }));
 }
 
@@ -621,6 +630,9 @@ function mapPerfumeDoc(id: string, d: DocumentData): FragranceProduct {
       typeof d.specialDiscountPercent === 'number' ? d.specialDiscountPercent : 0,
     specialDiscountAmount:
       typeof d.specialDiscountAmount === 'number' ? d.specialDiscountAmount : 0,
+    specialSizes: Array.isArray(d.specialSizes)
+      ? normalizeSpecialSizes(d.specialSizes)
+      : [],
   };
 }
 
@@ -770,6 +782,10 @@ function readCachedPerfumes(): {
   return { items: [], complete: false };
 }
 
+let pendingPerfumesCacheTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingPerfumesCachePayload: { items: FragranceProduct[]; complete: boolean } | null = null;
+let perfumesCacheFlushBound = false;
+
 function writePerfumesCache(items: FragranceProduct[], complete: boolean): void {
   try {
     if (items.length > 0) {
@@ -785,6 +801,37 @@ function writePerfumesCache(items: FragranceProduct[], complete: boolean): void 
   } catch {
     // Ignore storage quota errors in restricted browsers
   }
+}
+
+function flushPendingPerfumesCache(): void {
+  if (pendingPerfumesCacheTimer !== null) {
+    clearTimeout(pendingPerfumesCacheTimer);
+    pendingPerfumesCacheTimer = null;
+  }
+  if (pendingPerfumesCachePayload) {
+    const payload = pendingPerfumesCachePayload;
+    pendingPerfumesCachePayload = null;
+    writePerfumesCache(payload.items, payload.complete);
+  }
+}
+
+function schedulePerfumesCacheWrite(items: FragranceProduct[], complete: boolean): void {
+  pendingPerfumesCachePayload = { items, complete };
+  if (!perfumesCacheFlushBound && typeof window !== 'undefined') {
+    perfumesCacheFlushBound = true;
+    window.addEventListener('pagehide', flushPendingPerfumesCache);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flushPendingPerfumesCache();
+      }
+    });
+  }
+  if (pendingPerfumesCacheTimer !== null) {
+    clearTimeout(pendingPerfumesCacheTimer);
+  }
+  pendingPerfumesCacheTimer = setTimeout(() => {
+    flushPendingPerfumesCache();
+  }, 280);
 }
 
 function readCachedCombos(): ComboDeal[] {
@@ -960,6 +1007,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
   const promoLookupInFlightRef = useRef<Record<string, Promise<unknown> | undefined>>({});
   const recentReferralSalesRef = useRef<Map<string, number>>(new Map());
   const publicReferralsSyncedRef = useRef(false);
+  const snapshotPublishTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const adminSnapshotCheckedRef = useRef(false);
   const livePerfumesRef = useRef<FragranceProduct[]>(livePerfumes);
   livePerfumesRef.current = livePerfumes;
 
@@ -1052,12 +1101,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                 1,
                 performance.now() - started
               );
-              setLivePerfumes(decoded);
+
+              // Protective merge: if local in-memory/cache already has active specials that the snapshot lacks
+              // (e.g. recent admin edits before snapshot sync or during write), preserve those specials!
+              const currentSpecials = livePerfumesRef.current.filter((p) => Boolean(p.onSpecial));
+              let finalList = decoded;
+              if (currentSpecials.length > 0) {
+                finalList = mergePerfumeLists(decoded, currentSpecials);
+              }
+
+              setLivePerfumes(finalList);
               setCatalogueComplete(true);
               setCatalogueHasMore(false);
               setCatalogueError(null);
               setCatalogueLoading(false);
-              writePerfumesCache(decoded, true);
+              writePerfumesCache(finalList, true);
               return;
             }
           }
@@ -1097,6 +1155,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     if (isOwner && adminConsoleActive) {
       wasAdminConsoleActiveRef.current = true;
       return;
+    }
+    // If browser is on an admin/portal route, do not load the public snapshot (admin onSnapshot handles live catalogue)
+    if (typeof window !== 'undefined') {
+      const hash = (window.location.hash || '').toLowerCase();
+      const search = (window.location.search || '').toLowerCase();
+      if (hash.includes('admin') || search.includes('admin') || search.includes('portal')) {
+        return;
+      }
     }
     const returningFromAdmin = wasAdminConsoleActiveRef.current;
     wasAdminConsoleActiveRef.current = false;
@@ -1188,12 +1254,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         items.sort((a, b) => a.name.localeCompare(b.name));
         recordFirestoreRead('admin:perfumes-snapshot', items.length, 0);
-        setLivePerfumes(items);
+
+        // Merge with existing catalogue to preserve all house listings
+        const baseList =
+          livePerfumesRef.current.length >= fragranceCatalogue.length
+            ? livePerfumesRef.current
+            : fragranceCatalogue;
+        const merged =
+          items.length >= fragranceCatalogue.length
+            ? items
+            : mergePerfumeLists(baseList, items);
+
+        setLivePerfumes(merged);
         setCatalogueComplete(true);
         setCatalogueHasMore(false);
         setCatalogueError(null);
         setCatalogueLoading(false);
-        writePerfumesCache(items, true);
+        writePerfumesCache(merged, true);
       },
       (error) => {
         setCatalogueLoading(false);
@@ -1259,34 +1336,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     [isOwner]
   );
 
-  // Auto-seed or refresh 1-read public snapshot when Admin opens Admin Console and count differs
-  useEffect(() => {
-    if (!authReady || !isOwner || !adminConsoleActive) return;
-    if (!catalogueComplete || livePerfumes.length === 0) return;
+  // Helper: Debounced Snapshot Publishing (prevents blocking admin UI & hammering Firestore on rapid edits)
+  const scheduleDebouncedSnapshotPublish = useCallback(
+    (delayMs = 2000) => {
+      if (snapshotPublishTimeoutRef.current) {
+        clearTimeout(snapshotPublishTimeoutRef.current);
+      }
+      snapshotPublishTimeoutRef.current = setTimeout(() => {
+        snapshotPublishTimeoutRef.current = null;
+        void publishCatalogueSnapshot(livePerfumesRef.current).catch(() => {});
+      }, delayMs);
+    },
+    [publishCatalogueSnapshot]
+  );
 
+  useEffect(() => {
+    return () => {
+      if (snapshotPublishTimeoutRef.current) {
+        clearTimeout(snapshotPublishTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-seed or verify 1-read public snapshot once when Admin opens Admin Console if missing
+  useEffect(() => {
+    if (!authReady || !isOwner || !adminConsoleActive) {
+      adminSnapshotCheckedRef.current = false;
+      return;
+    }
+    if (adminSnapshotCheckedRef.current) return;
+    if (!catalogueComplete || livePerfumesRef.current.length === 0) return;
+
+    adminSnapshotCheckedRef.current = true;
     let cancelled = false;
     void (async () => {
       try {
         const snap = await getDoc(doc(db, 'catalogueSnapshots', SNAPSHOT_DOC_ID));
         if (cancelled) return;
-        const sortedLive = [...livePerfumes].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
-        const expectedJson = encodeCompactPerfumes(sortedLive);
-        const remoteCount = snap.exists() ? Number(snap.data().totalCount ?? -1) : -1;
-        const remoteJson = snap.exists() ? String(snap.data().itemsJson ?? '') : '';
-        if (
-          !snap.exists() ||
-          remoteCount !== sortedLive.length ||
-          remoteJson !== expectedJson
-        ) {
-          await publishCatalogueSnapshot(sortedLive);
+        const currentList = livePerfumesRef.current;
+        if (!snap.exists() || Number(snap.data().totalCount ?? 0) === 0) {
+          await publishCatalogueSnapshot(currentList);
         } else {
           const ts = snap.data().updatedAt as { toMillis?: () => number } | undefined;
           setSnapshotStatus({
-            count: remoteCount,
+            count: Number(snap.data().totalCount ?? currentList.length),
             updatedAtMs: ts && typeof ts.toMillis === 'function' ? ts.toMillis() : null,
-            bytes: remoteJson.length,
+            bytes:
+              typeof snap.data().itemsJson === 'string'
+                ? snap.data().itemsJson.length
+                : 0,
           });
         }
       } catch {
@@ -1297,7 +1395,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       cancelled = true;
     };
-  }, [authReady, isOwner, adminConsoleActive, catalogueComplete, livePerfumes, publishCatalogueSnapshot]);
+  }, [authReady, isOwner, adminConsoleActive, catalogueComplete, publishCatalogueSnapshot]);
 
   // 3. Cached One-Shot Promos (Campaign & Weekly 5ml Special — Replaces 2 Continuous Listeners!)
   useEffect(() => {
@@ -2655,10 +2753,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
     async (input: PerfumeInput, existingId?: string): Promise<string> => {
       const ownerUid = requireOwnerUid();
       const id = existingId || `${slugifyId(input.name)}-${Date.now().toString(36)}`;
-      const slug = (input.slug?.trim() || slugifyId(`${input.brand}-${input.name}`)).slice(
-        0,
-        160
-      );
+      const slug = (
+        input.slug?.trim() ||
+        slugifyId(`${input.brand}-${input.name}`) ||
+        id
+      ).slice(0, 160);
 
       const cleanName = sanitizeText(input.name, 140);
       const cleanBrand = sanitizeText(input.brand, 100);
@@ -2699,7 +2798,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           ? []
           : normalizeBranches(input.availableBranches ?? ['manzini', 'mbabane']);
 
-      const cleanImage = input.image.trim().slice(0, 500);
+      const cleanImage = (
+        input.image.trim() || '/images/perfume-placeholder.png'
+      ).slice(0, 500);
       const basePayload = {
         slug,
         isSampleListing: Boolean(input.isSampleListing),
@@ -2729,12 +2830,63 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         updatedAt: serverTimestamp(),
       };
 
+      const previousList = livePerfumesRef.current;
+      const prevPerfume = existingId
+        ? previousList.find((p) => p.id === existingId)
+        : undefined;
+
+      const updatedProduct: FragranceProduct = {
+        id,
+        slug,
+        isSampleListing: basePayload.isSampleListing,
+        name: cleanName,
+        brand: cleanBrand,
+        category: input.category,
+        concentration: basePayload.concentration,
+        description: cleanDescription,
+        image: cleanImage,
+        notes: basePayload.notes,
+        sizes: sanitizedSizes,
+        availability: input.availability,
+        availableBranches: cleanBranches,
+        featured: basePayload.featured,
+        bestseller: basePayload.bestseller,
+        isUnboxed: basePayload.isUnboxed,
+        isNewArrival: basePayload.isNewArrival,
+        createdAtMs: prevPerfume?.createdAtMs ?? Date.now(),
+        onSpecial: basePayload.onSpecial,
+        specialLabel: basePayload.specialLabel,
+        specialDiscountType,
+        specialDiscountPercent: safeDiscount,
+        specialDiscountAmount: safeDiscountAmount,
+      };
+
+      // 1. Instant Optimistic Local Update (non-blocking)
+      const nextList = mergePerfumeLists(previousList, [updatedProduct]);
+      livePerfumesRef.current = nextList;
+      setLivePerfumes(nextList);
+      schedulePerfumesCacheWrite(nextList, true);
+
+      // 2. Persist to Firestore with automatic rollback on failure
       try {
-        const prevPerfume = existingId
-          ? livePerfumesRef.current.find((p) => p.id === existingId)
-          : undefined;
         if (existingId) {
-          await setDoc(ref, basePayload, { merge: true });
+          try {
+            await setDoc(ref, basePayload, { merge: true });
+          } catch (innerErr) {
+            const docSnap = await getDoc(ref);
+            if (!docSnap.exists()) {
+              await setDoc(ref, {
+                ...basePayload,
+                ownerUid,
+                createdAt: serverTimestamp(),
+              });
+            } else if (auth.currentUser) {
+              await auth.currentUser.getIdToken(true);
+              await setDoc(ref, basePayload, { merge: true });
+            } else {
+              throw innerErr;
+            }
+          }
         } else {
           await setDoc(ref, {
             ...basePayload,
@@ -2742,7 +2894,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             createdAt: serverTimestamp(),
           });
         }
-        await writeAuditLog({
+        void writeAuditLog({
           action: existingId ? 'update' : 'create',
           section: 'perfume',
           targetId: id,
@@ -2751,40 +2903,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             ? `Updated perfume "${cleanName}"`
             : `Added new perfume "${cleanName}"`,
           changes: buildPerfumeDiff(prevPerfume, basePayload),
-        });
+        }).catch(() => {});
 
-        const updatedProduct: FragranceProduct = {
-          id,
-          slug,
-          isSampleListing: basePayload.isSampleListing,
-          name: cleanName,
-          brand: cleanBrand,
-          category: input.category,
-          concentration: basePayload.concentration,
-          description: cleanDescription,
-          image: cleanImage,
-          notes: basePayload.notes,
-          sizes: sanitizedSizes,
-          availability: input.availability,
-          availableBranches: cleanBranches,
-          featured: basePayload.featured,
-          bestseller: basePayload.bestseller,
-          isUnboxed: basePayload.isUnboxed,
-          isNewArrival: basePayload.isNewArrival,
-          createdAtMs: prevPerfume?.createdAtMs ?? Date.now(),
-          onSpecial: basePayload.onSpecial,
-          specialLabel: basePayload.specialLabel,
-          specialDiscountType,
-          specialDiscountPercent: safeDiscount,
-          specialDiscountAmount: safeDiscountAmount,
-        };
-        const nextList = mergePerfumeLists(livePerfumesRef.current, [updatedProduct]);
-        livePerfumesRef.current = nextList;
-        setLivePerfumes(nextList);
-        writePerfumesCache(nextList, true);
-        await publishCatalogueSnapshot(nextList);
+        scheduleDebouncedSnapshotPublish(1500);
         return id;
       } catch (error) {
+        livePerfumesRef.current = previousList;
+        setLivePerfumes(previousList);
+        schedulePerfumesCacheWrite(previousList, true);
         handleFirestoreError(
           error,
           existingId ? OperationType.UPDATE : OperationType.CREATE,
@@ -2792,7 +2918,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       }
     },
-    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+    [requireOwnerUid, scheduleDebouncedSnapshotPublish, writeAuditLog]
   );
 
   const togglePerfumeSpecial = useCallback(
@@ -2805,16 +2931,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       specialDiscountAmount?: number,
       skipSnapshotPublish = false
     ): Promise<void> => {
-      requireOwnerUid();
+      const ownerUid = requireOwnerUid();
       const path = `perfumes/${perfume.id}`;
       const resolvedType: SpecialDiscountType =
         (specialDiscountType ?? perfume.specialDiscountType) === 'fixed'
           ? 'fixed'
           : 'percentage';
-      const safeDiscount = Math.min(
-        90,
-        Math.max(0, specialDiscountPercent ?? perfume.specialDiscountPercent ?? 0)
+      const rawDiscount = Number(
+        specialDiscountPercent ?? perfume.specialDiscountPercent ?? 0
       );
+      const safeDiscount = Number.isFinite(rawDiscount)
+        ? Math.min(90, Math.max(0, rawDiscount))
+        : 0;
       const rawAmount = Number(
         specialDiscountAmount ?? perfume.specialDiscountAmount ?? 0
       );
@@ -2825,81 +2953,198 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         specialLabel ?? perfume.specialLabel ?? campaign.badgeText ?? 'Special Offer',
         60
       );
+      const highestBottleSize = onSpecial
+        ? getSpecialTargetSizeLabel(perfume.sizes)
+        : null;
       const offerSummary =
         resolvedType === 'fixed'
           ? `-E${safeDiscountAmount} Off`
           : `${safeDiscount}% Off`;
+      const sizesSummary = highestBottleSize ?? 'Full bottle';
 
+      // 1. Instant Optimistic Local Update
+      const previousList = livePerfumesRef.current;
+      const nextList = previousList.map((p) =>
+        p.id === perfume.id
+          ? {
+              ...p,
+              onSpecial,
+              specialDiscountType: resolvedType,
+              specialDiscountPercent: safeDiscount,
+              specialDiscountAmount: safeDiscountAmount,
+              specialLabel: cleanLabel,
+            }
+          : p
+      );
+      livePerfumesRef.current = nextList;
+      setLivePerfumes(nextList);
+      schedulePerfumesCacheWrite(nextList, true);
+
+      // 2. Persist to Firestore with fallback for unseeded catalogue docs
       try {
-        await setDoc(
-          doc(db, 'perfumes', perfume.id),
-          {
-            onSpecial,
-            specialDiscountType: resolvedType,
-            specialDiscountPercent: safeDiscount,
-            specialDiscountAmount: safeDiscountAmount,
-            specialLabel: cleanLabel,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        const docRef = doc(db, 'perfumes', perfume.id);
+        const updatePayload = {
+          onSpecial,
+          specialDiscountType: resolvedType,
+          specialDiscountPercent: safeDiscount,
+          specialDiscountAmount: safeDiscountAmount,
+          specialLabel: cleanLabel,
+          updatedAt: serverTimestamp(),
+        };
 
-        const nextList = livePerfumesRef.current.map((p) =>
-          p.id === perfume.id
-            ? {
-                ...p,
-                onSpecial,
-                specialDiscountType: resolvedType,
-                specialDiscountPercent: safeDiscount,
-                specialDiscountAmount: safeDiscountAmount,
-                specialLabel: cleanLabel,
-              }
-            : p
-        );
-        livePerfumesRef.current = nextList;
-        setLivePerfumes(nextList);
-        writePerfumesCache(nextList, true);
+        try {
+          await setDoc(docRef, updatePayload, { merge: true });
+        } catch (innerErr) {
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) {
+            await setDoc(docRef, {
+              slug: (perfume.slug || perfume.id).slice(0, 160),
+              isSampleListing: Boolean(perfume.isSampleListing),
+              name: perfume.name.slice(0, 140),
+              brand: perfume.brand.slice(0, 100),
+              category: perfume.category,
+              concentration: (perfume.concentration || 'Eau de Parfum').slice(0, 100),
+              description: (perfume.description || '').slice(0, 2000),
+              image: perfume.image.slice(0, 500),
+              notes: {
+                top: (perfume.notes?.top ?? []).slice(0, 10),
+                heart: (perfume.notes?.heart ?? []).slice(0, 10),
+                base: (perfume.notes?.base ?? []).slice(0, 10),
+              },
+              sizes: perfume.sizes.slice(0, 12),
+              availability: perfume.availability,
+              availableBranches:
+                perfume.availability === 'Out of Stock'
+                  ? []
+                  : normalizeBranches(perfume.availableBranches ?? ['manzini', 'mbabane']),
+              featured: Boolean(perfume.featured),
+              bestseller: Boolean(perfume.bestseller),
+              isUnboxed: Boolean(perfume.isUnboxed),
+              isNewArrival: Boolean(perfume.isNewArrival),
+              ...updatePayload,
+              ownerUid,
+              createdAt: serverTimestamp(),
+            });
+          } else if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+            await setDoc(docRef, updatePayload, { merge: true });
+          } else {
+            throw innerErr;
+          }
+        }
 
-        await writeAuditLog({
+        // 3. Background audit log
+        void writeAuditLog({
           action: 'update',
           section: 'perfume',
           targetId: perfume.id,
           targetLabel: `${perfume.name} (${perfume.brand})`,
           summary: onSpecial
-            ? `Marked "${perfume.name}" on special (${offerSummary})`
+            ? `Marked "${perfume.name}" on special (${offerSummary} · ${sizesSummary})`
             : `Removed "${perfume.name}" from specials`,
           changes: [
             `On Special: ${perfume.onSpecial ? 'Yes' : 'No'} → ${onSpecial ? 'Yes' : 'No'}`,
             onSpecial
-              ? `Special Discount: ${offerSummary} · Label: ${cleanLabel || 'None'}`
+              ? `Special Discount: ${offerSummary} · Sizes: ${sizesSummary} · Label: ${cleanLabel || 'None'}`
               : 'Special offer deactivated',
           ],
-        });
+        }).catch(() => {});
 
+        // 4. Debounced snapshot publish (non-blocking)
         if (!skipSnapshotPublish) {
-          await publishCatalogueSnapshot(livePerfumesRef.current);
+          scheduleDebouncedSnapshotPublish(1500);
         }
       } catch (error) {
+        livePerfumesRef.current = previousList;
+        setLivePerfumes(previousList);
+        schedulePerfumesCacheWrite(previousList, true);
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [campaign.badgeText, publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+    [
+      campaign.badgeText,
+      requireOwnerUid,
+      scheduleDebouncedSnapshotPublish,
+      writeAuditLog,
+    ]
   );
 
   const togglePerfumeNewArrival = useCallback(
     async (perfume: FragranceProduct, isNewArrival: boolean): Promise<void> => {
-      requireOwnerUid();
+      const ownerUid = requireOwnerUid();
       const path = `perfumes/${perfume.id}`;
+      const docRef = doc(db, 'perfumes', perfume.id);
+
+      const previousList = livePerfumesRef.current;
+      const nextList = previousList.map((p) =>
+        p.id === perfume.id ? { ...p, isNewArrival } : p
+      );
+      livePerfumesRef.current = nextList;
+      setLivePerfumes(nextList);
+      schedulePerfumesCacheWrite(nextList, true);
+
       try {
-        await setDoc(
-          doc(db, 'perfumes', perfume.id),
-          {
-            isNewArrival,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        await writeAuditLog({
+        try {
+          await setDoc(
+            docRef,
+            {
+              isNewArrival,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (innerErr) {
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) {
+            await setDoc(docRef, {
+              slug: (perfume.slug || perfume.id).slice(0, 160),
+              isSampleListing: Boolean(perfume.isSampleListing),
+              name: perfume.name.slice(0, 140),
+              brand: perfume.brand.slice(0, 100),
+              category: perfume.category,
+              concentration: (perfume.concentration || 'Eau de Parfum').slice(0, 100),
+              description: (perfume.description || '').slice(0, 2000),
+              image: perfume.image.slice(0, 500),
+              notes: {
+                top: (perfume.notes?.top ?? []).slice(0, 10),
+                heart: (perfume.notes?.heart ?? []).slice(0, 10),
+                base: (perfume.notes?.base ?? []).slice(0, 10),
+              },
+              sizes: perfume.sizes.slice(0, 12),
+              availability: perfume.availability,
+              availableBranches:
+                perfume.availability === 'Out of Stock'
+                  ? []
+                  : normalizeBranches(perfume.availableBranches ?? ['manzini', 'mbabane']),
+              featured: Boolean(perfume.featured),
+              bestseller: Boolean(perfume.bestseller),
+              isUnboxed: Boolean(perfume.isUnboxed),
+              isNewArrival,
+              onSpecial: Boolean(perfume.onSpecial),
+              specialLabel: sanitizeText(perfume.specialLabel ?? '', 60),
+              specialDiscountType: perfume.specialDiscountType || 'percentage',
+              specialDiscountPercent: perfume.specialDiscountPercent || 0,
+              specialDiscountAmount: perfume.specialDiscountAmount || 0,
+              ownerUid,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          } else if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+            await setDoc(
+              docRef,
+              {
+                isNewArrival,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          } else {
+            throw innerErr;
+          }
+        }
+
+        void writeAuditLog({
           action: 'update',
           section: 'perfume',
           targetId: perfume.id,
@@ -2910,19 +3155,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           changes: [
             `New Arrival: ${perfume.isNewArrival ? 'Yes' : 'No'} → ${isNewArrival ? 'Yes' : 'No'}`,
           ],
-        });
-        const nextList = livePerfumesRef.current.map((p) =>
-          p.id === perfume.id ? { ...p, isNewArrival } : p
-        );
-        livePerfumesRef.current = nextList;
-        setLivePerfumes(nextList);
-        writePerfumesCache(nextList, true);
-        await publishCatalogueSnapshot(nextList);
+        }).catch(() => {});
+
+        scheduleDebouncedSnapshotPublish(1500);
       } catch (error) {
+        livePerfumesRef.current = previousList;
+        setLivePerfumes(previousList);
+        schedulePerfumesCacheWrite(previousList, true);
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+    [requireOwnerUid, scheduleDebouncedSnapshotPublish, writeAuditLog]
   );
 
   const deletePerfume = useCallback(
@@ -2930,13 +3173,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       requireOwnerUid();
       const path = `perfumes/${perfumeId}`;
       const existing = livePerfumesRef.current.find((p) => p.id === perfumeId);
+      const previousList = livePerfumesRef.current;
+      const nextList = previousList.filter((p) => p.id !== perfumeId);
+      livePerfumesRef.current = nextList;
+      setLivePerfumes(nextList);
+      schedulePerfumesCacheWrite(nextList, true);
+
       try {
         await deleteDoc(doc(db, 'perfumes', perfumeId));
-        const nextList = livePerfumesRef.current.filter((p) => p.id !== perfumeId);
-        livePerfumesRef.current = nextList;
-        setLivePerfumes(nextList);
-        writePerfumesCache(nextList, true);
-        await writeAuditLog({
+        void writeAuditLog({
           action: 'delete',
           section: 'perfume',
           targetId: perfumeId,
@@ -2950,56 +3195,63 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
                 `Previous availability: ${existing.availability}`,
               ]
             : [`Deleted perfume document ${perfumeId}`],
-        });
-        await publishCatalogueSnapshot(nextList);
+        }).catch(() => {});
+        scheduleDebouncedSnapshotPublish(1500);
       } catch (error) {
+        livePerfumesRef.current = previousList;
+        setLivePerfumes(previousList);
+        schedulePerfumesCacheWrite(previousList, true);
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]
+    [requireOwnerUid, scheduleDebouncedSnapshotPublish, writeAuditLog]
   );
 
   const importStarterCatalogue = useCallback(async (): Promise<number> => {
     const ownerUid = requireOwnerUid();
-    const batch = writeBatch(db);
+    const CHUNK_SIZE = 300;
     try {
-      for (const item of fragranceCatalogue) {
-        const ref = doc(db, 'perfumes', item.id);
-        batch.set(ref, {
-          slug: item.slug.slice(0, 160),
-          isSampleListing: true,
-          name: item.name.slice(0, 140),
-          brand: item.brand.slice(0, 100),
-          category: item.category,
-          concentration: item.concentration.slice(0, 100),
-          description: item.description.slice(0, 2000),
-          image: item.image.slice(0, 500),
-          notes: {
-            top: item.notes.top.slice(0, 10),
-            heart: item.notes.heart.slice(0, 10),
-            base: item.notes.base.slice(0, 10),
-          },
-          sizes: item.sizes.slice(0, 12),
-          availability: item.availability,
-          availableBranches:
-            item.availability === 'Out of Stock'
-              ? []
-              : normalizeBranches(item.availableBranches ?? ['manzini', 'mbabane']),
-          featured: item.featured,
-          bestseller: item.bestseller,
-          isUnboxed: Boolean(item.isUnboxed),
-          isNewArrival: false,
-          onSpecial: false,
-          specialLabel: '',
-          specialDiscountType: 'percentage',
-          specialDiscountPercent: 0,
-          specialDiscountAmount: 0,
-          ownerUid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+      for (let i = 0; i < fragranceCatalogue.length; i += CHUNK_SIZE) {
+        const chunk = fragranceCatalogue.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        for (const item of chunk) {
+          const ref = doc(db, 'perfumes', item.id);
+          batch.set(ref, {
+            slug: item.slug.slice(0, 160),
+            isSampleListing: true,
+            name: item.name.slice(0, 140),
+            brand: item.brand.slice(0, 100),
+            category: item.category,
+            concentration: item.concentration.slice(0, 100),
+            description: item.description.slice(0, 2000),
+            image: item.image.slice(0, 500),
+            notes: {
+              top: item.notes.top.slice(0, 10),
+              heart: item.notes.heart.slice(0, 10),
+              base: item.notes.base.slice(0, 10),
+            },
+            sizes: item.sizes.slice(0, 12),
+            availability: item.availability,
+            availableBranches:
+              item.availability === 'Out of Stock'
+                ? []
+                : normalizeBranches(item.availableBranches ?? ['manzini', 'mbabane']),
+            featured: item.featured,
+            bestseller: item.bestseller,
+            isUnboxed: Boolean(item.isUnboxed),
+            isNewArrival: false,
+            onSpecial: false,
+            specialLabel: '',
+            specialDiscountType: 'percentage',
+            specialDiscountPercent: 0,
+            specialDiscountAmount: 0,
+            ownerUid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        await batch.commit();
       }
-      await batch.commit();
       await writeAuditLog({
         action: 'import',
         section: 'perfume',
@@ -3012,12 +3264,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       livePerfumesRef.current = merged;
       setLivePerfumes(merged);
       writePerfumesCache(merged, true);
-      await publishCatalogueSnapshot(merged);
+      scheduleDebouncedSnapshotPublish(1500);
       return fragranceCatalogue.length;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'perfumes');
     }
-  }, [publishCatalogueSnapshot, requireOwnerUid, writeAuditLog]);
+  }, [requireOwnerUid, scheduleDebouncedSnapshotPublish, writeAuditLog]);
 
   const saveCoupon = useCallback(
     async (input: CouponInput, isEdit = false): Promise<void> => {
@@ -3794,48 +4046,58 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const ownerUid = requireOwnerUid();
       const ref = doc(db, 'campaigns', 'active-special');
       const path = 'campaigns/active-special';
+      const previousCampaign = campaign;
+
+      const rawEndsAt = String(next.endsAt ?? '').trim();
+      const parsedEnd = rawEndsAt ? new Date(rawEndsAt) : null;
+      const cleanEndsAt =
+        parsedEnd && !Number.isNaN(parsedEnd.getTime())
+          ? parsedEnd.toISOString().slice(0, 64)
+          : '';
+
+      const cleanNextCampaign: SpecialCampaign = {
+        title: sanitizeText(next.title, 100) || 'Special Offers',
+        badgeText: sanitizeText(next.badgeText, 40) || 'SPECIAL',
+        subtitle: sanitizeText(next.subtitle, 400),
+        announcementText: sanitizeText(next.announcementText, 240),
+        promoCodeHint: sanitizePromoCode(next.promoCodeHint).slice(0, 32),
+        endsAt: cleanEndsAt,
+        enabled: Boolean(next.enabled),
+        heroMode:
+          next.heroMode === 'new-arrivals' || next.heroMode === 'specials'
+            ? next.heroMode
+            : 'auto',
+        newArrivalsTitle: sanitizeText(next.newArrivalsTitle ?? '', 100) || 'New Arrivals',
+        newArrivalsBadge: sanitizeText(next.newArrivalsBadge ?? '', 40) || 'JUST LANDED',
+        newArrivalsSubtitle: sanitizeText(next.newArrivalsSubtitle ?? '', 400),
+      };
+
+      // Instant optimistic update
+      setCampaign(cleanNextCampaign);
       try {
-        const existing = await getDoc(ref);
-        const rawEndsAt = String(next.endsAt ?? '').trim();
-        const parsedEnd = rawEndsAt ? new Date(rawEndsAt) : null;
-        const cleanEndsAt =
-          parsedEnd && !Number.isNaN(parsedEnd.getTime())
-            ? parsedEnd.toISOString().slice(0, 64)
-            : '';
+        localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(cleanNextCampaign));
+        setCacheTimestamp('campaign');
+      } catch {
+        // Ignore storage quota errors
+      }
 
-        const cleanNextCampaign: SpecialCampaign = {
-          title: sanitizeText(next.title, 100) || 'Special Offers',
-          badgeText: sanitizeText(next.badgeText, 40) || 'SPECIAL',
-          subtitle: sanitizeText(next.subtitle, 400),
-          announcementText: sanitizeText(next.announcementText, 240),
-          promoCodeHint: sanitizePromoCode(next.promoCodeHint).slice(0, 32),
-          endsAt: cleanEndsAt,
-          enabled: Boolean(next.enabled),
-          heroMode:
-            next.heroMode === 'new-arrivals' || next.heroMode === 'specials'
-              ? next.heroMode
-              : 'auto',
-          newArrivalsTitle: sanitizeText(next.newArrivalsTitle ?? '', 100) || 'New Arrivals',
-          newArrivalsBadge: sanitizeText(next.newArrivalsBadge ?? '', 40) || 'JUST LANDED',
-          newArrivalsSubtitle: sanitizeText(next.newArrivalsSubtitle ?? '', 400),
-        };
-
+      try {
         const payload = { ...cleanNextCampaign, updatedAt: serverTimestamp() };
-        if (existing.exists()) {
-          await setDoc(ref, payload, { merge: true });
-        } else {
-          await setDoc(ref, { ...payload, ownerUid });
-        }
-
-        setCampaign(cleanNextCampaign);
         try {
-          localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(cleanNextCampaign));
-          setCacheTimestamp('campaign');
-        } catch {
-          // Ignore storage quota errors
+          await setDoc(ref, payload, { merge: true });
+        } catch (innerErr) {
+          const existing = await getDoc(ref);
+          if (!existing.exists()) {
+            await setDoc(ref, { ...payload, ownerUid });
+          } else if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+            await setDoc(ref, payload, { merge: true });
+          } else {
+            throw innerErr;
+          }
         }
 
-        await writeAuditLog({
+        void writeAuditLog({
           action: 'update',
           section: 'specials',
           targetId: 'active-special',
@@ -3843,9 +4105,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           summary: `Updated seasonal campaign "${cleanNextCampaign.title}" (${
             cleanNextCampaign.enabled ? 'Live' : 'Paused'
           })`,
-          changes: buildCampaignDiff(campaign, cleanNextCampaign),
-        });
+          changes: buildCampaignDiff(previousCampaign, cleanNextCampaign),
+        }).catch(() => {});
       } catch (error) {
+        setCampaign(previousCampaign);
+        try {
+          localStorage.setItem(CAMPAIGN_CACHE_KEY, JSON.stringify(previousCampaign));
+        } catch {
+          // Ignore storage quota errors
+        }
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
@@ -3857,115 +4125,125 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       const ownerUid = requireOwnerUid();
       const ref = doc(db, 'weeklySpecials', 'active-5ml');
       const path = 'weeklySpecials/active-5ml';
+      const previousWeekly = weeklySpecial;
+
+      const safeId = (val: string) =>
+        val.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
+      const fourPackPrice = Math.min(
+        10000,
+        Math.max(1, Number(next.fourPackPrice || 100))
+      );
+      const twoPackPrice = Math.min(
+        fourPackPrice,
+        Math.max(1, Number(next.twoPackPrice || 50))
+      );
+      const activeWeek = (next.weekKey.trim() || getWeekWindowBounds().weekKey).slice(
+        0,
+        24
+      );
+      const sanitizeList = (
+        arr: string[],
+        maxLen: number,
+        exclude?: Set<string>
+      ) =>
+        arr
+          .map(safeId)
+          .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
+          .slice(0, maxLen);
+
+      const womenUnder500Ids = sanitizeList(next.womenUnder500Ids ?? [], 3);
+      const womenUnder800Ids = sanitizeList(
+        next.womenUnder800Ids ?? [],
+        3,
+        new Set(womenUnder500Ids)
+      );
+      const menUnder500Ids = sanitizeList(next.menUnder500Ids ?? [], 3);
+      const menUnder800Ids = sanitizeList(
+        next.menUnder800Ids ?? [],
+        3,
+        new Set(menUnder500Ids)
+      );
+
+      const under500Ids = sanitizeList(
+        next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids,
+        3
+      );
+      const under800Ids = sanitizeList(
+        next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
+        3,
+        new Set(under500Ids)
+      );
+
+      const cleanExclusiveItems = sanitizeExclusiveItemsInput(next.exclusiveItems);
+      const cleanExclusiveTitle =
+        sanitizeText(next.exclusiveTitle ?? '', 100) ||
+        DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle;
+      const cleanExclusiveBadge =
+        sanitizeText(next.exclusiveBadge ?? '', 40) ||
+        DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge;
+      const cleanExclusiveSubtitle = sanitizeText(
+        next.exclusiveSubtitle ?? '',
+        240
+      );
+      const cleanBundlePrice = Math.min(
+        50000,
+        Math.max(0, Number(next.exclusiveBundlePrice ?? 0) || 0)
+      );
+
+      const cleanNextWeekly: WeeklyFiveMlSpecial = {
+        enabled: Boolean(next.enabled),
+        autoRotateWeekly: Boolean(next.autoRotateWeekly),
+        weekKey: activeWeek,
+        seedOffset: Math.min(
+          1000000,
+          Math.max(0, Math.floor(Number(next.seedOffset || 0)))
+        ),
+        under500Ids,
+        under800Ids,
+        womenUnder500Ids,
+        womenUnder800Ids,
+        menUnder500Ids,
+        menUnder800Ids,
+        fourPackPrice,
+        twoPackPrice,
+        exclusiveEnabled: Boolean(next.exclusiveEnabled),
+        exclusiveTitle: cleanExclusiveTitle,
+        exclusiveBadge: cleanExclusiveBadge,
+        exclusiveSubtitle: cleanExclusiveSubtitle,
+        exclusiveBundleEnabled:
+          Boolean(next.exclusiveBundleEnabled) &&
+          cleanExclusiveItems.length >= 2 &&
+          cleanBundlePrice > 0,
+        exclusiveBundlePrice: cleanBundlePrice,
+        exclusiveItems: cleanExclusiveItems,
+      };
+
+      // Instant optimistic update
+      setWeeklySpecial(cleanNextWeekly);
       try {
-        const existingSnap = await getDoc(ref);
-        const safeId = (val: string) =>
-          val.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128);
-        const fourPackPrice = Math.min(
-          10000,
-          Math.max(1, Number(next.fourPackPrice || 100))
-        );
-        const twoPackPrice = Math.min(
-          fourPackPrice,
-          Math.max(1, Number(next.twoPackPrice || 50))
-        );
-        const activeWeek = (next.weekKey.trim() || getWeekWindowBounds().weekKey).slice(
-          0,
-          24
-        );
-        const sanitizeList = (
-          arr: string[],
-          maxLen: number,
-          exclude?: Set<string>
-        ) =>
-          arr
-            .map(safeId)
-            .filter((id) => Boolean(id) && (!exclude || !exclude.has(id)))
-            .slice(0, maxLen);
+        localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(cleanNextWeekly));
+        setCacheTimestamp('weeklySpecial');
+      } catch {
+        // Ignore storage quota errors
+      }
 
-        const womenUnder500Ids = sanitizeList(next.womenUnder500Ids ?? [], 3);
-        const womenUnder800Ids = sanitizeList(
-          next.womenUnder800Ids ?? [],
-          3,
-          new Set(womenUnder500Ids)
-        );
-        const menUnder500Ids = sanitizeList(next.menUnder500Ids ?? [], 3);
-        const menUnder800Ids = sanitizeList(
-          next.menUnder800Ids ?? [],
-          3,
-          new Set(menUnder500Ids)
-        );
-
-        const under500Ids = sanitizeList(
-          next.under500Ids.length > 0 ? next.under500Ids : womenUnder500Ids,
-          3
-        );
-        const under800Ids = sanitizeList(
-          next.under800Ids.length > 0 ? next.under800Ids : womenUnder800Ids,
-          3,
-          new Set(under500Ids)
-        );
-
-        const cleanExclusiveItems = sanitizeExclusiveItemsInput(next.exclusiveItems);
-        const cleanExclusiveTitle =
-          sanitizeText(next.exclusiveTitle ?? '', 100) ||
-          DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveTitle;
-        const cleanExclusiveBadge =
-          sanitizeText(next.exclusiveBadge ?? '', 40) ||
-          DEFAULT_WEEKLY_FIVE_ML_SPECIAL.exclusiveBadge;
-        const cleanExclusiveSubtitle = sanitizeText(
-          next.exclusiveSubtitle ?? '',
-          240
-        );
-        const cleanBundlePrice = Math.min(
-          50000,
-          Math.max(0, Number(next.exclusiveBundlePrice ?? 0) || 0)
-        );
-
-        const cleanNextWeekly: WeeklyFiveMlSpecial = {
-          enabled: Boolean(next.enabled),
-          autoRotateWeekly: Boolean(next.autoRotateWeekly),
-          weekKey: activeWeek,
-          seedOffset: Math.min(
-            1000000,
-            Math.max(0, Math.floor(Number(next.seedOffset || 0)))
-          ),
-          under500Ids,
-          under800Ids,
-          womenUnder500Ids,
-          womenUnder800Ids,
-          menUnder500Ids,
-          menUnder800Ids,
-          fourPackPrice,
-          twoPackPrice,
-          exclusiveEnabled: Boolean(next.exclusiveEnabled),
-          exclusiveTitle: cleanExclusiveTitle,
-          exclusiveBadge: cleanExclusiveBadge,
-          exclusiveSubtitle: cleanExclusiveSubtitle,
-          exclusiveBundleEnabled:
-            Boolean(next.exclusiveBundleEnabled) &&
-            cleanExclusiveItems.length >= 2 &&
-            cleanBundlePrice > 0,
-          exclusiveBundlePrice: cleanBundlePrice,
-          exclusiveItems: cleanExclusiveItems,
-        };
-
+      try {
         const payload = { ...cleanNextWeekly, updatedAt: serverTimestamp() };
-        if (existingSnap.exists()) {
-          await setDoc(ref, payload, { merge: true });
-        } else {
-          await setDoc(ref, { ...payload, ownerUid });
-        }
-
-        setWeeklySpecial(cleanNextWeekly);
         try {
-          localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(cleanNextWeekly));
-          setCacheTimestamp('weeklySpecial');
-        } catch {
-          // Ignore storage quota errors
+          await setDoc(ref, payload, { merge: true });
+        } catch (innerErr) {
+          const existingSnap = await getDoc(ref);
+          if (!existingSnap.exists()) {
+            await setDoc(ref, { ...payload, ownerUid });
+          } else if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+            await setDoc(ref, payload, { merge: true });
+          } else {
+            throw innerErr;
+          }
         }
 
-        await writeAuditLog({
+        void writeAuditLog({
           action: 'update',
           section: 'weekly-special',
           targetId: 'active-5ml',
@@ -3974,12 +4252,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             cleanNextWeekly.enabled ? 'Active' : 'Paused'
           })`,
           changes: buildWeeklySpecialDiff(
-            weeklySpecial,
+            previousWeekly,
             cleanNextWeekly,
             (id) => livePerfumesRef.current.find((p) => p.id === id)?.name ?? id
           ),
-        });
+        }).catch(() => {});
       } catch (error) {
+        setWeeklySpecial(previousWeekly);
+        try {
+          localStorage.setItem(WEEKLY_5ML_CACHE_KEY, JSON.stringify(previousWeekly));
+        } catch {
+          // Ignore storage quota errors
+        }
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },

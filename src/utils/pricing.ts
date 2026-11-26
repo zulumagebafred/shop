@@ -14,16 +14,102 @@ import {
   WeeklyFiveMlSpecial,
 } from '../types/fragrance';
 
+export const DECANT_MAX_ML = 22;
+
+export function parseVolumeMl(sizeLabel: string): number {
+  const match = sizeLabel.match(/\d+(?:\.\d+)?/);
+  return match ? Number.parseFloat(match[0]) : 0;
+}
+
+export function normalizeSpecialSizes(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const clean = entry.trim().slice(0, 24);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/**
+ * Returns the single full-bottle size (> 22ml) eligible for Perfumes on Special:
+ * always the highest ml size (never decants like 5ml, 10ml, or 22ml).
+ */
+export function getSpecialTargetSizeOption(
+  sizes?: SizeOption[] | null
+): SizeOption | null {
+  if (!sizes || sizes.length === 0) return null;
+  const fullBottles = sizes.filter((s) => parseVolumeMl(s.size) > DECANT_MAX_ML);
+  if (fullBottles.length === 0) return null;
+  const availablePriced = fullBottles.filter((s) => s.available && s.price !== null);
+  const availableOnly = fullBottles.filter((s) => s.available);
+  const pool =
+    availablePriced.length > 0
+      ? availablePriced
+      : availableOnly.length > 0
+      ? availableOnly
+      : fullBottles;
+
+  return pool.reduce((best, cur) => {
+    const bestMl = parseVolumeMl(best.size);
+    const curMl = parseVolumeMl(cur.size);
+    if (curMl !== bestMl) return curMl > bestMl ? cur : best;
+    return (cur.price ?? 0) > (best.price ?? 0) ? cur : best;
+  }, pool[0]);
+}
+
+export function getSpecialTargetSizeLabel(
+  sizes?: SizeOption[] | null
+): string | null {
+  return getSpecialTargetSizeOption(sizes)?.size ?? null;
+}
+
+export function doesSpecialApplyToSize(
+  onSpecial?: boolean,
+  productSizes?: SizeOption[] | null,
+  sizeLabel?: string | null
+): boolean {
+  if (!onSpecial || !sizeLabel) return false;
+  const targetMl = parseVolumeMl(sizeLabel);
+  // Decants (5ml, 10ml, 22ml) are never discounted by Perfumes on Special
+  if (targetMl <= DECANT_MAX_ML) return false;
+
+  if (productSizes && productSizes.length > 0) {
+    const highestFullBottle = getSpecialTargetSizeOption(productSizes);
+    if (!highestFullBottle) return false;
+    return (
+      highestFullBottle.size.trim().toLowerCase() ===
+      sizeLabel.trim().toLowerCase()
+    );
+  }
+
+  return targetMl > DECANT_MAX_ML;
+}
+
 export function getEffectiveUnitPrice(
   rawPrice: number | null,
   onSpecial?: boolean,
   specialDiscountPercent?: number,
   specialDiscountType: SpecialDiscountType = 'percentage',
-  specialDiscountAmount?: number
+  specialDiscountAmount?: number,
+  sizeLabel?: string | null,
+  productSizes?: SizeOption[] | null
 ): number | null {
   if (rawPrice === null || Number.isNaN(rawPrice)) return null;
   if (!onSpecial) {
     return rawPrice;
+  }
+  if (sizeLabel) {
+    if (!doesSpecialApplyToSize(onSpecial, productSizes, sizeLabel)) {
+      return rawPrice;
+    }
   }
   if (specialDiscountType === 'fixed') {
     const amount = Number(specialDiscountAmount ?? 0);
@@ -64,11 +150,6 @@ export function formatSpecialDiscountTag(
   return '';
 }
 
-export function parseVolumeMl(sizeLabel: string): number {
-  const match = sizeLabel.match(/\d+(?:\.\d+)?/);
-  return match ? Number.parseFloat(match[0]) : 0;
-}
-
 export function getHighestAvailableSize(product: FragranceProduct): SizeOption | null {
   const available = product.sizes.filter((s) => s.available);
   if (available.length === 0) return product.sizes[0] ?? null;
@@ -90,6 +171,13 @@ export function getProductPriceSummary(product: FragranceProduct): {
   highestEffective: number | null;
   highestSize: string | null;
   hasDiscount: boolean;
+  hasAnyDiscount: boolean;
+  discountedSizes: string[];
+  specialTargetOption: {
+    size: string;
+    originalPrice: number;
+    effectivePrice: number;
+  } | null;
   pricedCount: number;
 } {
   const availableSizes = product.sizes.filter((s) => s.available && s.price !== null);
@@ -103,45 +191,59 @@ export function getProductPriceSummary(product: FragranceProduct): {
       highestEffective: null,
       highestSize: null,
       hasDiscount: false,
+      hasAnyDiscount: false,
+      discountedSizes: [],
+      specialTargetOption: null,
       pricedCount: 0,
     };
   }
 
-  const originals = availableSizes.map((s) => s.price as number);
-  const effectives = availableSizes.map(
-    (s) =>
-      getEffectiveUnitPrice(
-        s.price,
-        product.onSpecial,
-        product.specialDiscountPercent,
-        product.specialDiscountType,
-        product.specialDiscountAmount
-      ) as number
-  );
+  const evaluated = availableSizes.map((s) => {
+    const originalPrice = s.price as number;
+    const effectivePrice = getEffectiveUnitPrice(
+      originalPrice,
+      product.onSpecial,
+      product.specialDiscountPercent,
+      product.specialDiscountType,
+      product.specialDiscountAmount,
+      s.size,
+      product.sizes
+    ) as number;
+    return {
+      option: s,
+      size: s.size,
+      originalPrice,
+      effectivePrice,
+      hasDiscount: Boolean(product.onSpecial) && effectivePrice < originalPrice,
+      ml: parseVolumeMl(s.size),
+    };
+  });
 
-  const highestOption = availableSizes.reduce((best, cur) => {
-    const bestMl = parseVolumeMl(best.size);
-    const curMl = parseVolumeMl(cur.size);
-    if (curMl !== bestMl) return curMl > bestMl ? cur : best;
-    return (cur.price as number) > (best.price as number) ? cur : best;
-  }, availableSizes[0]);
+  const originals = evaluated.map((e) => e.originalPrice);
+  const effectives = evaluated.map((e) => e.effectivePrice);
 
-  const highestOriginal = highestOption.price as number;
-  const highestEffective = getEffectiveUnitPrice(
-    highestOriginal,
-    product.onSpecial,
-    product.specialDiscountPercent,
-    product.specialDiscountType,
-    product.specialDiscountAmount
-  ) as number;
+  const highestEval = evaluated.reduce((best, cur) => {
+    if (cur.ml !== best.ml) return cur.ml > best.ml ? cur : best;
+    return cur.originalPrice > best.originalPrice ? cur : best;
+  }, evaluated[0]);
+
+  const discountedList = evaluated.filter((e) => e.hasDiscount);
+  const specialTargetEval =
+    discountedList.length > 0
+      ? discountedList.reduce((best, cur) => {
+          if (cur.ml !== best.ml) return cur.ml > best.ml ? cur : best;
+          return cur.originalPrice > best.originalPrice ? cur : best;
+        }, discountedList[0])
+      : null;
+
+  const highestOriginal = highestEval.originalPrice;
+  const highestEffective = highestEval.effectivePrice;
 
   const minOriginal = Math.min(...originals);
   const maxOriginal = Math.max(...originals);
   const minEffective = Math.min(...effectives);
   const maxEffective = Math.max(...effectives);
-  const hasDiscount =
-    Boolean(product.onSpecial) &&
-    highestEffective < highestOriginal;
+  const hasDiscount = highestEval.hasDiscount;
 
   return {
     minOriginal,
@@ -150,8 +252,17 @@ export function getProductPriceSummary(product: FragranceProduct): {
     maxEffective,
     highestOriginal,
     highestEffective,
-    highestSize: highestOption.size,
+    highestSize: highestEval.size,
     hasDiscount,
+    hasAnyDiscount: discountedList.length > 0,
+    discountedSizes: discountedList.map((d) => d.size),
+    specialTargetOption: specialTargetEval
+      ? {
+          size: specialTargetEval.size,
+          originalPrice: specialTargetEval.originalPrice,
+          effectivePrice: specialTargetEval.effectivePrice,
+        }
+      : null,
     pricedCount: availableSizes.length,
   };
 }
@@ -176,7 +287,9 @@ export function getBestPriceOptionForRange(
         product.onSpecial,
         product.specialDiscountPercent,
         product.specialDiscountType,
-        product.specialDiscountAmount
+        product.specialDiscountAmount,
+        s.size,
+        product.sizes
       ) as number;
       return {
         size: s.size,
@@ -233,7 +346,9 @@ export function getSizeEffectivePrice(
     product.onSpecial,
     product.specialDiscountPercent,
     product.specialDiscountType,
-    product.specialDiscountAmount
+    product.specialDiscountAmount,
+    sizeOption.size,
+    product.sizes
   );
   return {
     originalPrice: sizeOption.price,
@@ -727,17 +842,28 @@ export function revalidateBasketItems(
     }
 
     const pricing = getSizeEffectivePrice(liveProduct, liveSizeOption);
+    const liveSizeOnSpecial = doesSpecialApplyToSize(
+      liveProduct.onSpecial,
+      liveProduct.sizes,
+      liveSizeOption.size
+    );
     const prevSpecialType = rawItem.specialDiscountType ?? 'percentage';
-    const liveSpecialType = liveProduct.specialDiscountType ?? 'percentage';
+    const liveSpecialType = liveSizeOnSpecial
+      ? liveProduct.specialDiscountType ?? 'percentage'
+      : 'percentage';
     const prevSpecialPct = Number(rawItem.specialDiscountPercent ?? 0);
-    const liveSpecialPct = Number(liveProduct.specialDiscountPercent ?? 0);
+    const liveSpecialPct = liveSizeOnSpecial
+      ? Number(liveProduct.specialDiscountPercent ?? 0)
+      : 0;
     const prevSpecialAmt = Number(rawItem.specialDiscountAmount ?? 0);
-    const liveSpecialAmt = Number(liveProduct.specialDiscountAmount ?? 0);
+    const liveSpecialAmt = liveSizeOnSpecial
+      ? Number(liveProduct.specialDiscountAmount ?? 0)
+      : 0;
     const priceChanged =
       pricesDiffer(rawItem.unitPrice, pricing.effectivePrice) ||
       pricesDiffer(rawItem.originalUnitPrice, pricing.originalPrice);
     const specialChanged =
-      Boolean(rawItem.onSpecial) !== Boolean(liveProduct.onSpecial) ||
+      Boolean(rawItem.onSpecial) !== liveSizeOnSpecial ||
       prevSpecialType !== liveSpecialType ||
       (liveSpecialType === 'fixed'
         ? prevSpecialAmt !== liveSpecialAmt
@@ -763,10 +889,10 @@ export function revalidateBasketItems(
       size: liveSizeOption.size,
       unitPrice: pricing.effectivePrice,
       originalUnitPrice: pricing.originalPrice,
-      onSpecial: liveProduct.onSpecial,
+      onSpecial: liveSizeOnSpecial,
       specialDiscountType: liveSpecialType,
-      specialDiscountPercent: liveProduct.specialDiscountPercent,
-      specialDiscountAmount: liveProduct.specialDiscountAmount,
+      specialDiscountPercent: liveSpecialPct,
+      specialDiscountAmount: liveSpecialAmt,
       isUnboxed: Boolean(liveProduct.isUnboxed),
       quantity: safeQuantity,
       isSampleListing: liveProduct.isSampleListing,

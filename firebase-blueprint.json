@@ -93,6 +93,10 @@
           "type": "number",
           "description": "Fixed SZL price reduction (0 to 50000) applied while on special when specialDiscountType is fixed"
         },
+        "specialSizes": {
+          "type": "array",
+          "description": "Optional list of bottle or decant sizes eligible for the special discount (empty or omitted applies to all sizes)"
+        },
         "isUnboxed": {
           "type": "boolean",
           "description": "True if offered as an authentic unboxed / tester full bottle without retail outer box packaging"

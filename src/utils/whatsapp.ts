@@ -13,6 +13,7 @@ import {
 import {
   calculateCouponDiscount,
   calculateReferralBenefit,
+  doesSpecialApplyToSize,
   formatSpecialDiscountTag,
 } from './pricing';
 import { sanitizeText } from './sanitize';
@@ -74,6 +75,12 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
   const deliveryFee = getDeliveryFee(deliveryMethod);
   const lineTotal = payload.unitPrice !== null ? payload.unitPrice * payload.quantity : null;
 
+  const sizeOnSpecial = doesSpecialApplyToSize(
+    payload.product.onSpecial,
+    payload.product.sizes,
+    payload.size
+  );
+
   const syntheticItem: BasketItem = {
     productId: payload.product.id,
     productName: payload.product.name,
@@ -82,10 +89,10 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     size: payload.size,
     unitPrice: payload.unitPrice,
     originalUnitPrice: payload.originalUnitPrice,
-    onSpecial: payload.product.onSpecial,
-    specialDiscountType: payload.product.specialDiscountType,
-    specialDiscountPercent: payload.product.specialDiscountPercent,
-    specialDiscountAmount: payload.product.specialDiscountAmount,
+    onSpecial: sizeOnSpecial,
+    specialDiscountType: sizeOnSpecial ? payload.product.specialDiscountType : 'percentage',
+    specialDiscountPercent: sizeOnSpecial ? payload.product.specialDiscountPercent : 0,
+    specialDiscountAmount: sizeOnSpecial ? payload.product.specialDiscountAmount : 0,
     quantity: payload.quantity,
     isSampleListing: payload.product.isSampleListing,
   };
@@ -116,7 +123,7 @@ export function buildSingleWhatsAppMessage(payload: SingleOrderPayload): string 
     `• Quantity: ${payload.quantity}`,
     `• Unit Price: ${formatPrice(payload.unitPrice)}${(() => {
       const tag = formatSpecialDiscountTag(
-        payload.product.onSpecial,
+        sizeOnSpecial,
         payload.product.specialDiscountPercent,
         payload.product.specialDiscountType,
         payload.product.specialDiscountAmount

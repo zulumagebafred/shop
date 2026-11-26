@@ -50,6 +50,7 @@ interface ShopPageProps {
   onResetFilters: () => void;
   onSelectProduct: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
+  onAddToBasket: (product: FragranceProduct, size: BottleSize, quantity: number) => void;
 }
 
 const PRICE_RANGE_OPTIONS: { id: PriceRangeFilter; label: string }[] = [
@@ -62,7 +63,7 @@ const PRICE_RANGE_OPTIONS: { id: PriceRangeFilter; label: string }[] = [
 
 const SHOP_PAGE_SIZE = 24;
 
-export const ShopPage: React.FC<ShopPageProps> = ({
+export const ShopPage: React.FC<ShopPageProps> = React.memo(({
   selectedCategory,
   selectedBrand,
   selectedSize,
@@ -88,6 +89,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   onResetFilters,
   onSelectProduct,
   onQuickWhatsApp,
+  onAddToBasket,
 }) => {
   const {
     perfumes,
@@ -106,34 +108,27 @@ export const ShopPage: React.FC<ShopPageProps> = ({
   }, [ensureAllPerfumesLoaded]);
   const extraBrands = useMemo(() => getExtraCatalogueBrands(perfumes), [perfumes]);
   const categories: (FragranceCategory | 'All')[] = ['All', 'Men', 'Women', 'Unisex', 'Kiddies'];
-  const availableCatalogCount = useMemo(
-    () => perfumes.filter((p) => p.availability !== 'Out of Stock').length,
-    [perfumes]
-  );
 
-  const specialsCount = useMemo(
-    () =>
-      perfumes.filter(
-        (p) => Boolean(p.onSpecial) && p.availability !== 'Out of Stock'
-      ).length,
-    [perfumes]
-  );
-
-  const unboxedCount = useMemo(
-    () =>
-      perfumes.filter(
-        (p) => Boolean(p.isUnboxed) && p.availability !== 'Out of Stock'
-      ).length,
-    [perfumes]
-  );
-
-  const newArrivalsCount = useMemo(
-    () =>
-      perfumes.filter(
-        (p) => Boolean(p.isNewArrival) && p.availability !== 'Out of Stock'
-      ).length,
-    [perfumes]
-  );
+  const { availableCatalogCount, specialsCount, unboxedCount, newArrivalsCount } = useMemo(() => {
+    let available = 0;
+    let specials = 0;
+    let unboxed = 0;
+    let newArrivals = 0;
+    for (const p of perfumes) {
+      if (p.availability !== 'Out of Stock') {
+        available += 1;
+        if (p.onSpecial) specials += 1;
+        if (p.isUnboxed) unboxed += 1;
+        if (p.isNewArrival) newArrivals += 1;
+      }
+    }
+    return {
+      availableCatalogCount: available,
+      specialsCount: specials,
+      unboxedCount: unboxed,
+      newArrivalsCount: newArrivals,
+    };
+  }, [perfumes]);
 
   const isSearching = deferredSearchQuery.trim().length > 0;
 
@@ -240,9 +235,13 @@ export const ShopPage: React.FC<ShopPageProps> = ({
           );
 
     if (sortBy === 'price-asc' || sortBy === 'price-desc') {
+      const priceMap = new Map<string, number | null>();
+      for (const item of list) {
+        priceMap.set(item.id, getProductPriceSummary(item).highestEffective);
+      }
       return [...list].sort((a, b) => {
-        const priceA = getProductPriceSummary(a).highestEffective;
-        const priceB = getProductPriceSummary(b).highestEffective;
+        const priceA = priceMap.get(a.id) ?? null;
+        const priceB = priceMap.get(b.id) ?? null;
         if (priceA === null && priceB === null) return 0;
         if (priceA === null) return 1;
         if (priceB === null) return -1;
@@ -703,6 +702,7 @@ export const ShopPage: React.FC<ShopPageProps> = ({
                   selectedSize={selectedSize}
                   onViewDetails={onSelectProduct}
                   onQuickWhatsApp={onQuickWhatsApp}
+                  onAddToBasket={onAddToBasket}
                 />
               ))}
             </div>
@@ -736,4 +736,4 @@ export const ShopPage: React.FC<ShopPageProps> = ({
       </AnimatePresence>
     </div>
   );
-};
+});

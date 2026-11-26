@@ -33,6 +33,7 @@ import {
 import {
   calculateCouponDiscount,
   calculateReferralBenefit,
+  doesSpecialApplyToSize,
   getEffectiveUnitPrice,
   getHighestAvailableSize,
   getSizeEffectivePrice,
@@ -141,6 +142,11 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
 
   const couponCalc = useMemo(() => {
     if (!product || !appliedCoupon) return null;
+    const sizeOnSpecial = doesSpecialApplyToSize(
+      product.onSpecial,
+      product.sizes,
+      effectiveSize
+    );
     const syntheticItem: BasketItem = {
       productId: product.id,
       productName: product.name,
@@ -149,10 +155,10 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
       size: effectiveSize,
       unitPrice: sizePricing.effectivePrice,
       originalUnitPrice: sizePricing.originalPrice,
-      onSpecial: product.onSpecial,
-      specialDiscountType: product.specialDiscountType,
-      specialDiscountPercent: product.specialDiscountPercent,
-      specialDiscountAmount: product.specialDiscountAmount,
+      onSpecial: sizeOnSpecial,
+      specialDiscountType: sizeOnSpecial ? product.specialDiscountType : 'percentage',
+      specialDiscountPercent: sizeOnSpecial ? product.specialDiscountPercent : 0,
+      specialDiscountAmount: sizeOnSpecial ? product.specialDiscountAmount : 0,
       quantity,
       isSampleListing: product.isSampleListing,
     };
@@ -215,6 +221,11 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
     try {
       const { coupon } = await lookupCouponByCode(couponInput);
       if (coupon) {
+        const sizeOnSpecial = doesSpecialApplyToSize(
+          product.onSpecial,
+          product.sizes,
+          effectiveSize
+        );
         const syntheticItem: BasketItem = {
           productId: product.id,
           productName: product.name,
@@ -223,10 +234,10 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
           size: effectiveSize,
           unitPrice: sizePricing.effectivePrice,
           originalUnitPrice: sizePricing.originalPrice,
-          onSpecial: product.onSpecial,
-          specialDiscountType: product.specialDiscountType,
-          specialDiscountPercent: product.specialDiscountPercent,
-          specialDiscountAmount: product.specialDiscountAmount,
+          onSpecial: sizeOnSpecial,
+          specialDiscountType: sizeOnSpecial ? product.specialDiscountType : 'percentage',
+          specialDiscountPercent: sizeOnSpecial ? product.specialDiscountPercent : 0,
+          specialDiscountAmount: sizeOnSpecial ? product.specialDiscountAmount : 0,
           quantity,
           isSampleListing: product.isSampleListing,
         };
@@ -367,9 +378,11 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
               <div className="p-6 space-y-5 overflow-y-auto">
                 {/* Size Selection */}
                 <div className="space-y-2">
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
-                    Select Bottle Size
-                  </span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
+                      Select Bottle Size
+                    </span>
+                  </div>
                   <div
                     className={`grid gap-2 ${
                       product.sizes.length === 1
@@ -388,8 +401,16 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                         product.onSpecial,
                         product.specialDiscountPercent,
                         product.specialDiscountType,
-                        product.specialDiscountAmount
+                        product.specialDiscountAmount,
+                        opt.size,
+                        product.sizes
                       );
+                      const optHasSpecial =
+                        opt.available &&
+                        Boolean(product.onSpecial) &&
+                        opt.price !== null &&
+                        effPrice !== null &&
+                        effPrice < opt.price;
                       return (
                         <button
                           key={`${opt.size}-${idx}`}
@@ -404,13 +425,29 @@ export const WhatsAppOrderModal: React.FC<WhatsAppOrderModalProps> = ({
                               : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
                           }`}
                         >
-                          <div className="text-xs font-semibold tabular-nums">{opt.size}</div>
+                          <div className="flex items-center justify-center gap-1 text-xs font-semibold tabular-nums">
+                            <span>{opt.size}</span>
+                            {optHasSpecial && (
+                              <span className="px-1.5 py-0.2 rounded-full bg-[#FACC15] text-[#0A0A0A] text-[9px] font-bold uppercase">
+                                Special
+                              </span>
+                            )}
+                          </div>
                           <div
                             className={`text-[11px] tabular-nums mt-0.5 ${
-                              active ? 'text-white/75' : 'text-[#666666]'
+                              active ? 'text-white/75' : optHasSpecial ? 'text-[#DC2626] font-semibold' : 'text-[#666666]'
                             }`}
                           >
                             {opt.available ? formatPrice(effPrice) : 'Unavailable'}
+                            {optHasSpecial && opt.price !== null && (
+                              <span
+                                className={`ml-1 line-through text-[10px] ${
+                                  active ? 'text-white/45' : 'text-[#888888]'
+                                }`}
+                              >
+                                {formatPrice(opt.price)}
+                              </span>
+                            )}
                           </div>
                         </button>
                       );

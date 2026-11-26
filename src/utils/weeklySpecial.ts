@@ -176,7 +176,9 @@ function buildTierCandidate(
       product.onSpecial,
       product.specialDiscountPercent,
       product.specialDiscountType,
-      product.specialDiscountAmount
+      product.specialDiscountAmount,
+      chosen.size,
+      product.sizes
     );
   } else {
     const summary = getProductPriceSummary(product);
@@ -193,7 +195,9 @@ function buildTierCandidate(
         product.onSpecial,
         product.specialDiscountPercent,
         product.specialDiscountType,
-        product.specialDiscountAmount
+        product.specialDiscountAmount,
+        fiveMlOption.size,
+        product.sizes
       )
     : null;
 
@@ -652,7 +656,9 @@ export function resolveExclusiveFiveMlItems(
           product.onSpecial,
           product.specialDiscountPercent,
           product.specialDiscountType,
-          product.specialDiscountAmount
+          product.specialDiscountAmount,
+          matchingSizeOpt.size,
+          product.sizes
         )
       : null;
 

@@ -78,7 +78,7 @@ import {
   WeeklyFiveMlAudience,
   WeeklyFiveMlPackMode,
 } from './types/fragrance';
-import { getEffectiveUnitPrice } from './utils/pricing';
+import { doesSpecialApplyToSize, getEffectiveUnitPrice } from './utils/pricing';
 
 const BASKET_STORAGE_KEY = 'aurahut_whatsapp_basket_v1';
 const BRANCH_STORAGE_KEY = 'aurahut_preferred_branch_v1';
@@ -611,12 +611,19 @@ function AppContent() {
     (product: FragranceProduct, size: BottleSize, quantity: number) => {
       const sizeOption = product.sizes.find((s) => s.size === size);
       const rawPrice = sizeOption?.price ?? null;
+      const sizeOnSpecial = doesSpecialApplyToSize(
+        product.onSpecial,
+        product.sizes,
+        size
+      );
       const unitPrice = getEffectiveUnitPrice(
         rawPrice,
         product.onSpecial,
         product.specialDiscountPercent,
         product.specialDiscountType,
-        product.specialDiscountAmount
+        product.specialDiscountAmount,
+        size,
+        product.sizes
       );
 
       setBasketItems((prev) => {
@@ -629,10 +636,12 @@ function AppContent() {
             ...next[existingIndex],
             unitPrice,
             originalUnitPrice: rawPrice,
-            onSpecial: product.onSpecial,
-            specialDiscountType: product.specialDiscountType ?? 'percentage',
-            specialDiscountPercent: product.specialDiscountPercent,
-            specialDiscountAmount: product.specialDiscountAmount ?? 0,
+            onSpecial: sizeOnSpecial,
+            specialDiscountType: sizeOnSpecial
+              ? product.specialDiscountType ?? 'percentage'
+              : 'percentage',
+            specialDiscountPercent: sizeOnSpecial ? product.specialDiscountPercent : 0,
+            specialDiscountAmount: sizeOnSpecial ? product.specialDiscountAmount ?? 0 : 0,
             isUnboxed: Boolean(product.isUnboxed),
             quantity: next[existingIndex].quantity + quantity,
           };
@@ -648,10 +657,12 @@ function AppContent() {
             size,
             unitPrice,
             originalUnitPrice: rawPrice,
-            onSpecial: product.onSpecial,
-            specialDiscountType: product.specialDiscountType ?? 'percentage',
-            specialDiscountPercent: product.specialDiscountPercent,
-            specialDiscountAmount: product.specialDiscountAmount ?? 0,
+            onSpecial: sizeOnSpecial,
+            specialDiscountType: sizeOnSpecial
+              ? product.specialDiscountType ?? 'percentage'
+              : 'percentage',
+            specialDiscountPercent: sizeOnSpecial ? product.specialDiscountPercent : 0,
+            specialDiscountAmount: sizeOnSpecial ? product.specialDiscountAmount ?? 0 : 0,
             isUnboxed: Boolean(product.isUnboxed),
             quantity,
             isSampleListing: product.isSampleListing,
@@ -1020,6 +1031,7 @@ function AppContent() {
                   onNavigate={handleNavigate}
                   onSelectProduct={handleSelectProduct}
                   onQuickWhatsApp={handleQuickWhatsApp}
+                  onAddToBasket={handleAddToBasketWrapped}
                   onSelectBranchAndBasket={handleSelectBranchAndOpenBasket}
                   onAddWeeklyPackToBasket={handleAddWeeklyPackToBasket}
                   onAddExclusiveFiveMlToBasket={handleAddExclusiveFiveMlToBasket}
@@ -1053,6 +1065,7 @@ function AppContent() {
                   onResetFilters={handleResetFilters}
                   onSelectProduct={handleSelectProduct}
                   onQuickWhatsApp={handleQuickWhatsApp}
+                  onAddToBasket={handleAddToBasketWrapped}
                 />
               )}
 

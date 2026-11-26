@@ -21,6 +21,7 @@ interface ProductCardProps {
   product: FragranceProduct;
   onViewDetails: (product: FragranceProduct) => void;
   onQuickWhatsApp: (product: FragranceProduct) => void;
+  onAddToBasket?: (product: FragranceProduct, size: BottleSize, quantity: number) => void;
   index?: number;
   disableEntranceAnimation?: boolean;
   imageLoading?: 'eager' | 'lazy';
@@ -46,6 +47,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   product,
   onViewDetails,
   onQuickWhatsApp,
+  onAddToBasket,
   index = 0,
   disableEntranceAnimation = false,
   imageLoading = 'lazy',
@@ -78,7 +80,9 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
         product.onSpecial,
         product.specialDiscountPercent,
         product.specialDiscountType,
-        product.specialDiscountAmount
+        product.specialDiscountAmount,
+        selectedSizeOption.size,
+        product.sizes
       )
     : null;
   const selectedHasDiscount =
@@ -88,25 +92,38 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
     selectedEffective !== null &&
     selectedEffective < selectedOriginal;
 
+  const fallbackSpecial =
+    !selectedSizeOption && !rangedMatch && !summary.hasDiscount
+      ? summary.specialTargetOption
+      : null;
+
   const displayOriginal = selectedSizeOption
     ? selectedOriginal
     : rangedMatch
     ? rangedMatch.originalPrice
+    : fallbackSpecial
+    ? fallbackSpecial.originalPrice
     : summary.highestOriginal;
   const displayEffective = selectedSizeOption
     ? selectedEffective
     : rangedMatch
     ? rangedMatch.effectivePrice
+    : fallbackSpecial
+    ? fallbackSpecial.effectivePrice
     : summary.highestEffective;
   const displaySize = selectedSizeOption
     ? selectedSizeOption.size
     : rangedMatch
     ? rangedMatch.size
+    : fallbackSpecial
+    ? fallbackSpecial.size
     : summary.highestSize;
   const hasDiscount = selectedSizeOption
     ? selectedHasDiscount
     : rangedMatch
     ? rangedMatch.hasDiscount
+    : fallbackSpecial
+    ? true
     : summary.hasDiscount;
 
   const priceDisplay =
@@ -245,8 +262,15 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                   product.onSpecial,
                   product.specialDiscountPercent,
                   product.specialDiscountType,
-                  product.specialDiscountAmount
+                  product.specialDiscountAmount,
+                  opt.size,
+                  product.sizes
                 );
+                const sizeDiscounted =
+                  Boolean(product.onSpecial) &&
+                  opt.price !== null &&
+                  eff !== null &&
+                  eff < opt.price;
                 const isHighest = opt.size === displaySize;
                 return (
                   <React.Fragment key={`${product.id}-${opt.size}-${sizeIdx}`}>
@@ -258,9 +282,18 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                       }
                     >
                       <span className="text-[#737373] font-normal">{opt.size}</span>{' '}
-                      <span className="font-semibold text-[#0A0A0A]">
+                      <span
+                        className={`font-semibold ${
+                          sizeDiscounted ? 'text-[#DC2626]' : 'text-[#0A0A0A]'
+                        }`}
+                      >
                         {eff !== null ? formatPrice(eff) : 'Ask'}
                       </span>
+                      {sizeDiscounted && opt.price !== null && (
+                        <span className="ml-1 text-[10px] text-[#888888] line-through font-normal">
+                          {formatPrice(opt.price)}
+                        </span>
+                      )}
                     </span>
                     {sizeIdx < availableSizes.length - 1 && (
                       <span aria-hidden="true" className="text-[#D4D4D4]">
@@ -301,23 +334,39 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             <motion.button
               type="button"
               whileTap={{ scale: 0.97 }}
               onClick={() => onViewDetails(product)}
-              className="py-2 px-3 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F5F5F6] transition-colors text-xs font-medium tracking-wide whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              className="py-2 px-1.5 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F5F5F6] transition-colors text-[11px] font-medium tracking-wide whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              title="View Notes & Details"
             >
-              Wear &amp; Notes
+              Details
+            </motion.button>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                if (onAddToBasket) {
+                  const targetSize = (displaySize as BottleSize) || availableSizes[0]?.size || '100ml';
+                  onAddToBasket(product, targetSize, 1);
+                }
+              }}
+              className="py-2 px-1.5 rounded-full border border-[#0A0A0A] bg-white text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-[11px] font-medium tracking-wide flex items-center justify-center gap-1 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              title="Add to Cart / Basket"
+            >
+              <ShoppingBag className="w-3 h-3" aria-hidden="true" />
+              <span>Add</span>
             </motion.button>
             <motion.button
               type="button"
               whileTap={{ scale: 0.97 }}
               onClick={() => onQuickWhatsApp(product)}
-              className="py-2 px-3 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-medium tracking-wide flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              className="py-2 px-1.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-[11px] font-medium tracking-wide flex items-center justify-center gap-1 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              title="Buy Now"
             >
-              <ShoppingBag className="w-3.5 h-3.5 text-white" aria-hidden="true" />
-              <span>Buy Now</span>
+              <span>Buy</span>
             </motion.button>
           </div>
         </div>
