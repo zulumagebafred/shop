@@ -15,6 +15,8 @@ import { sha256Hex } from '../utils/hash';
 const AUTHORIZED_ADMIN_EMAIL_HASHES: readonly string[] = [
   '9f9b2c72f5e513087cb580c0a6a015654358d1d59af2a94ba519457cf3319ecc',
   '9f0173b593e519fce62ecce9daaf062f40b57770b75aa3198e655622c9395810',
+  '7647b4704d123886f649026ab33e921d456b9069eee4be6b3981dd4902931b07', // ncedilekhoza@aurahutco.com
+  'd973702debd045e0b57eeae997d040d90845a11c98cbdc33264812a9196833c8', // nothando@aurahutco.com
 ];
 
 export function isAuthorizedAdminEmail(email: string | null | undefined): boolean {

@@ -34,7 +34,12 @@ service cloud.firestore {
 
     function isOwnerEmail() {
       return isVerifiedUser() &&
-        request.auth.token.email.lower() in ['zulumagebafred@gmail.com', 'tese.khumalo@gmail.com'];
+        request.auth.token.email.lower() in [
+          'zulumagebafred@gmail.com',
+          'tese.khumalo@gmail.com',
+          'ncedilekhoza@aurahutco.com',
+          'nothando@aurahutco.com'
+        ];
     }
 
     function isAdmin() {
