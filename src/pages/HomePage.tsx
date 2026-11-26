@@ -1377,7 +1377,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-5">
-            {specialPerfumes.map((product, idx) => (
+            {specialPerfumes.slice(0, 8).map((product, idx) => (
               <ProductCard
                 key={product.id}
                 product={product}

@@ -334,16 +334,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5">
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onViewDetails(product)}
-              className="py-2 px-1.5 rounded-full border border-[#D4D4D4] text-[#0A0A0A] hover:border-[#0A0A0A] hover:bg-[#F5F5F6] transition-colors text-[11px] font-medium tracking-wide whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
-              title="View Notes & Details"
-            >
-              Details
-            </motion.button>
+          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
             <motion.button
               type="button"
               whileTap={{ scale: 0.97 }}
@@ -353,20 +344,20 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                   onAddToBasket(product, targetSize, 1);
                 }
               }}
-              className="py-2 px-1.5 rounded-full border border-[#0A0A0A] bg-white text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-[11px] font-medium tracking-wide flex items-center justify-center gap-1 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              className="py-2 px-1 sm:px-2 rounded-full border border-[#0A0A0A] bg-white text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors text-xs font-semibold tracking-wide flex items-center justify-center gap-1.5 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
               title="Add to Cart / Basket"
             >
-              <ShoppingBag className="w-3 h-3" aria-hidden="true" />
-              <span>Add</span>
+              <ShoppingBag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">Add to Cart</span>
             </motion.button>
             <motion.button
               type="button"
               whileTap={{ scale: 0.97 }}
               onClick={() => onQuickWhatsApp(product)}
-              className="py-2 px-1.5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-[11px] font-medium tracking-wide flex items-center justify-center gap-1 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
+              className="py-2 px-1 sm:px-2 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] transition-colors text-xs font-semibold tracking-wide flex items-center justify-center truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A0A0A]"
               title="Buy Now"
             >
-              <span>Buy</span>
+              <span className="truncate">Buy Now</span>
             </motion.button>
           </div>
         </div>
