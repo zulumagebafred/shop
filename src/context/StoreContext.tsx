@@ -4228,16 +4228,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       try {
-        const payload = { ...cleanNextWeekly, updatedAt: serverTimestamp() };
+        // Always include ownerUid and do a full document replace (no merge) so that
+        // any legacy fields (e.g. a stale "counts" key written by an older build)
+        // are removed and cannot cause Firestore hasOnly() validation failures.
+        const payload = { ...cleanNextWeekly, ownerUid, updatedAt: serverTimestamp() };
         try {
-          await setDoc(ref, payload, { merge: true });
+          await setDoc(ref, payload);
         } catch (innerErr) {
-          const existingSnap = await getDoc(ref);
-          if (!existingSnap.exists()) {
-            await setDoc(ref, { ...payload, ownerUid });
-          } else if (auth.currentUser) {
+          // Retry once with a fresh token in case the JWT was stale.
+          if (auth.currentUser) {
             await auth.currentUser.getIdToken(true);
-            await setDoc(ref, payload, { merge: true });
+            await setDoc(ref, payload);
           } else {
             throw innerErr;
           }
