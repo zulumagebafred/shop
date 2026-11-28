@@ -49,6 +49,7 @@ import {
   HIM_HAMPER_IMAGE,
 } from '../data/hampers';
 import { isAuthorizedAdminEmail } from '../lib/firebase';
+import { lockPWAInstall, unlockPWAInstallForAdmin } from '../hooks/usePWAInstall';
 import {
   AuditAction,
   AuditLogEntry,
@@ -371,6 +372,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setAdminConsoleActive(false);
     };
   }, [setAdminConsoleActive, ensureAllPerfumesLoaded, ensureSecondaryLoaded]);
+
+  // Unlock PWA install only when the signed-in user is a verified admin
+  useEffect(() => {
+    if (isOwner) {
+      unlockPWAInstallForAdmin();
+    } else {
+      lockPWAInstall();
+    }
+  }, [isOwner]);
 
   const handlePublishSnapshotClick = async () => {
     setPublishingSnapshot(true);
@@ -2361,15 +2371,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            <AdminPWAInstallButton
-              variant="header"
-              onInstalled={() =>
-                onNotify(
-                  'Admin App Installed',
-                  'AuraHut Co. Owner Admin is now ready on your device.'
-                )
-              }
-            />
+            {isOwner && (
+              <AdminPWAInstallButton
+                variant="header"
+                onInstalled={() =>
+                  onNotify(
+                    'Admin App Installed',
+                    'AuraHut Co. Owner Admin is now ready on your device.'
+                  )
+                }
+              />
+            )}
             {user && (
               <>
                 <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 max-w-[260px]">
@@ -2621,16 +2633,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {signingInPassword ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
-
-            <AdminPWAInstallButton
-              variant="card"
-              onInstalled={() =>
-                onNotify(
-                  'Admin App Installed',
-                  'AuraHut Co. Owner Admin is now ready on your device.'
-                )
-              }
-            />
 
             <button
               type="button"
