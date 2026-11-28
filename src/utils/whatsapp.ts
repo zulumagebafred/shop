@@ -8,6 +8,7 @@ import {
   DRIVER_DELIVERY_FEE,
   FragranceProduct,
   InfluencerReferral,
+  PaymentMethod,
   PublicReferral,
 } from '../types/fragrance';
 import {
@@ -195,7 +196,8 @@ export function buildBasketWhatsAppMessage(
   deliveryMethod: DeliveryMethod = 'store-pickup',
   postOfficeTown?: string,
   deliveryAddress?: string,
-  appliedReferral?: PublicReferral | InfluencerReferral | null
+  appliedReferral?: PublicReferral | InfluencerReferral | null,
+  paymentMethod: PaymentMethod = 'whatsapp-cash-momo'
 ): string {
   const branchName = getBranchName(branchId);
   const deliveryFee = getDeliveryFee(deliveryMethod);
@@ -268,6 +270,11 @@ export function buildBasketWhatsAppMessage(
   }
 
   lines.push(
+    `• Payment Method: ${
+      paymentMethod === 'card'
+        ? 'Card Payment (Visa / Mastercard — Request Card Link or Card Machine)'
+        : 'Cash / MoMo / EFT'
+    }`,
     `Estimated Order Quote: ${
       hasUnpricedItem
         ? `${formatPrice(finalTotal)} + items priced on request`

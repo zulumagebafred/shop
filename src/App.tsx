@@ -858,7 +858,7 @@ function AppContent() {
           ];
         });
         showToast(
-          `Added Exclusive ${chosenSize} (E${payload.price.toFixed(0)})`,
+          `Added Exclusive ${chosenSize} (R${payload.price.toFixed(0)})`,
           `${p.name} · ${chosenSize}`
         );
         return;
@@ -903,7 +903,7 @@ function AppContent() {
         ];
       });
       showToast(
-        `Added Exclusive ${payload.products.length}-Item Pack (E${payload.price.toFixed(0)})`,
+        `Added Exclusive ${payload.products.length}-Item Pack (R${payload.price.toFixed(0)})`,
         itemSummaries.join(' + ')
       );
     },

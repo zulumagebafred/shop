@@ -139,7 +139,7 @@ export function formatSpecialDiscountTag(
     const amount = Number(specialDiscountAmount ?? 0);
     if (Number.isFinite(amount) && amount > 0) {
       const formatted = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-      return `-E${formatted}`;
+      return `-R${formatted}`;
     }
     return '';
   }
@@ -435,7 +435,7 @@ export function calculateCouponDiscount(
       discountAmount: 0,
       finalTotal: subtotal,
       valid: false,
-      errorReason: `Minimum order of E${coupon.minOrderAmount.toFixed(2)} required for "${coupon.code}".`,
+      errorReason: `Minimum order of R${coupon.minOrderAmount.toFixed(2)} required for "${coupon.code}".`,
     };
   }
 

@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
+  Banknote,
   Check,
   Copy,
+  CreditCard,
   ExternalLink,
   Minus,
   Plus,
@@ -23,6 +25,7 @@ import {
   DeliveryMethod,
   DRIVER_DELIVERY_FEE,
   InfluencerReferral,
+  PaymentMethod,
   PublicReferral,
 } from '../types/fragrance';
 import {
@@ -102,6 +105,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
     ensureSecondaryLoaded,
   } = useStore();
   const [customerNote, setCustomerNote] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('whatsapp-cash-momo');
   const [couponInput, setCouponInput] = useState('');
   const [couponFeedback, setCouponFeedback] = useState<string | null>(null);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
@@ -170,7 +174,8 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
         deliveryMethod,
         postOfficeTown,
         deliveryAddress,
-        activeReferral
+        activeReferral,
+        paymentMethod
       ),
     [
       authoritativeItems,
@@ -181,6 +186,7 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
       postOfficeTown,
       deliveryAddress,
       activeReferral,
+      paymentMethod,
     ]
   );
 
@@ -710,6 +716,85 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                     })()}
                   </div>
 
+                  {/* Payment Method Selector */}
+                  <div className="space-y-2.5 pt-2 border-t border-[#E5E5E5]">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#0A0A0A]">
+                      <CreditCard className="w-3.5 h-3.5 text-[#0A0A0A]" />
+                      <span>Payment Method</span>
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('whatsapp-cash-momo')}
+                        aria-pressed={paymentMethod === 'whatsapp-cash-momo'}
+                        className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
+                          paymentMethod === 'whatsapp-cash-momo'
+                            ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                            : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold">
+                          <Banknote className="w-3.5 h-3.5 shrink-0" />
+                          <span>Cash / MoMo / EFT</span>
+                        </div>
+                        <span
+                          className={`text-[10px] leading-snug ${
+                            paymentMethod === 'whatsapp-cash-momo'
+                              ? 'text-white/75'
+                              : 'text-[#666666]'
+                          }`}
+                        >
+                          Pay on pickup, delivery, or EFT
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('card')}
+                        aria-pressed={paymentMethod === 'card'}
+                        className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
+                          paymentMethod === 'card'
+                            ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
+                            : 'bg-white text-[#0A0A0A] border-[#D4D4D4] hover:border-[#0A0A0A]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold">
+                          <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                          <span>Card Payment</span>
+                        </div>
+                        <span
+                          className={`text-[10px] leading-snug ${
+                            paymentMethod === 'card' ? 'text-[#FACC15]' : 'text-[#666666]'
+                          }`}
+                        >
+                          Visa / Mastercard link or POS
+                        </span>
+                      </button>
+                    </div>
+
+                    {paymentMethod === 'card' && (
+                      <div className="bg-white border border-[#0A0A0A]/20 rounded-xl p-3 text-[11px] text-[#303030] space-y-2 leading-relaxed">
+                        <p>
+                          <strong className="text-[#0A0A0A]">Card Payment Selected:</strong>{' '}
+                          {siteConfig.cardPaymentUrl
+                            ? 'Tap "Pay by Card" below or send your order on WhatsApp to confirm stock first.'
+                            : 'Send your order below and our staff will reply with a secure card payment link (or have our card machine ready at pickup/delivery).'}
+                        </p>
+                        {siteConfig.cardPaymentUrl && (
+                          <button
+                            type="button"
+                            onClick={() => openExternalUrl(siteConfig.cardPaymentUrl)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0A0A0A] text-white text-[11px] font-semibold uppercase tracking-wider hover:bg-[#262626] transition-colors"
+                          >
+                            <CreditCard className="w-3 h-3" />
+                            <span>Open Card Payment Link</span>
+                            <ExternalLink className="w-3 h-3 opacity-75" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Optional Note */}
                   <div className="space-y-1.5">
                     <label
@@ -820,11 +905,13 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                     ? 'Tap Refresh Basket Prices above to confirm current pricing before placing your order.'
                     : revalidation.hasUnverifiedItems || catalogueLoading
                     ? 'Syncing live store catalogue prices...'
+                    : paymentMethod === 'card'
+                    ? `Card payment selected — staff will confirm stock and send a secure card payment link (or prepare the card machine at our ${activeBranch?.city} store).`
                     : deliveryMethod === 'driver-delivery'
                     ? `Estimated quote includes ${formatPrice(DRIVER_DELIVERY_FEE)} driver delivery dispatched from our ${activeBranch?.city} store—final total confirmed by staff on WhatsApp.`
                     : deliveryMethod === 'post-office'
                     ? `Dispatched via Post Office to ${postOfficeTown.trim() || 'your town'} from our ${activeBranch?.city} store—final quote confirmed by staff on WhatsApp.`
-                    : `Estimated quote for collection at our ${activeBranch?.city} store—no card entry needed.`}
+                    : `Estimated quote for collection at our ${activeBranch?.city} store—pay via Cash, MoMo, or EFT.`}
                 </p>
 
                 <button
@@ -833,12 +920,18 @@ export const BasketDrawer: React.FC<BasketDrawerProps> = ({
                   disabled={basketBlockedFromCheckout}
                   className="w-full py-3.5 px-5 rounded-full bg-[#0A0A0A] text-white hover:bg-[#262626] disabled:opacity-45 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-xs font-semibold tracking-wider uppercase"
                 >
-                  <ShoppingBag className="w-4 h-4 text-white" />
+                  {paymentMethod === 'card' ? (
+                    <CreditCard className="w-4 h-4 text-[#FACC15]" />
+                  ) : (
+                    <ShoppingBag className="w-4 h-4 text-white" />
+                  )}
                   <span>
                     {basketNeedsRefresh
                       ? 'Refresh Prices to Order'
                       : revalidation.hasUnverifiedItems || catalogueLoading
                       ? 'Verifying Prices...'
+                      : paymentMethod === 'card'
+                      ? `Order & Pay by Card · ${formatPrice(finalCartTotal)}`
                       : `Buy Now · ${formatPrice(finalCartTotal)}`}
                   </span>
                   {!basketBlockedFromCheckout && whatsappUrl && (

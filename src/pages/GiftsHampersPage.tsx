@@ -91,7 +91,7 @@ export const GiftsHampersPage: React.FC<GiftsHampersPageProps> = ({
       '',
       'I would like to request a Custom Gift Hamper.',
       'Occasion / Recipient:',
-      'Preferred Budget (SZL):',
+      'Preferred Budget (ZAR / R):',
       'Preferred Scent Style / Bottles:',
     ].join('\n')
   );

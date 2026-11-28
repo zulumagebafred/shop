@@ -12,9 +12,9 @@ export const siteConfig = {
   tagline: 'Scents just for you',
   country: 'Eswatini',
   currency: {
-    code: 'SZL',
-    symbol: 'E',
-    label: 'SZL (E)',
+    code: 'ZAR',
+    symbol: 'R',
+    label: 'ZAR (R)',
   },
 
   /**
@@ -27,6 +27,13 @@ export const siteConfig = {
     displayLabel: 'Configure WhatsApp Number in src/config/siteConfig.ts',
     defaultGreeting: 'Hello AuraHut Co., I would like to place a fragrance order:',
   },
+
+  /**
+   * Optional direct card payment link (e.g. Yoco, PayFast, iKhokha, or Paystack URL).
+   * When left empty, customers selecting Card Payment in the cart request a secure
+   * card payment link (or card machine on pickup/delivery) via WhatsApp.
+   */
+  cardPaymentUrl: '',
 
   social: {
     tiktokHandle: '@aurahut_co',

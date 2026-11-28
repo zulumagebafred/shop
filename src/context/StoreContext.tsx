@@ -2958,7 +2958,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
         : null;
       const offerSummary =
         resolvedType === 'fixed'
-          ? `-E${safeDiscountAmount} Off`
+          ? `-R${safeDiscountAmount} Off`
           : `${safeDiscount}% Off`;
       const sizesSummary = highestBottleSize ?? 'Full bottle';
 
@@ -3399,7 +3399,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           summary: `Deleted coupon code ${clean}`,
           changes: existing
             ? [
-              `Removed ${existing.discountValue}${existing.discountType === 'percentage' ? '%' : ' SZL'
+              `Removed ${existing.discountValue}${existing.discountType === 'percentage' ? '%' : ' ZAR'
               } coupon (${existing.appliesTo})`,
             ]
             : [`Deleted coupon ${clean}`],
@@ -3680,10 +3680,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           section: 'referral-attribution',
           targetId: attribution.id,
           targetLabel: `${code} · ${attribution.orderSummary.slice(0, 60)}`,
-          summary: `Verified attribution and created E${commissionAmount.toFixed(2)} commission for ${code}`,
+          summary: `Verified attribution and created R${commissionAmount.toFixed(2)} commission for ${code}`,
           changes: [
-            `Verified Order Net: E${netOrderAmount.toFixed(2)}`,
-            `Commission: E${commissionAmount.toFixed(2)} (confirmed)`,
+            `Verified Order Net: R${netOrderAmount.toFixed(2)}`,
+            `Commission: R${commissionAmount.toFixed(2)} (confirmed)`,
             `Sale Ledger ID: ${saleId}`,
           ],
         });
@@ -3801,10 +3801,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           section: 'referral-sale',
           targetId: saleId,
           targetLabel: `${code} · ${orderSummary.slice(0, 60)}`,
-          summary: `Logged referral sale for ${code} (E${commissionAmount.toFixed(0)} commission)`,
+          summary: `Logged referral sale for ${code} (R${commissionAmount.toFixed(0)} commission)`,
           changes: [
             `Order: ${orderSummary}`,
-            `Net Order: E${netOrderAmount.toFixed(2)} · Commission: E${commissionAmount.toFixed(2)} (${status})`,
+            `Net Order: R${netOrderAmount.toFixed(2)} · Commission: R${commissionAmount.toFixed(2)} (${status})`,
           ],
         });
         return saleId;
@@ -3838,7 +3838,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             : `Updated referral sale status to "${status}"`,
           changes: [
             `Commission Status: ${prevSale?.commissionStatus ?? 'unknown'} → ${status}`,
-            prevSale ? `Commission Amount: E${prevSale.commissionAmount.toFixed(2)}` : '',
+            prevSale ? `Commission Amount: R${prevSale.commissionAmount.toFixed(2)}` : '',
           ],
         });
       } catch (error) {
@@ -3868,7 +3868,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
           changes: prevSale
             ? [
               `Order: ${prevSale.orderSummary}`,
-              `Previous commission: E${prevSale.commissionAmount.toFixed(2)} (${prevSale.commissionStatus})`,
+              `Previous commission: R${prevSale.commissionAmount.toFixed(2)} (${prevSale.commissionStatus})`,
             ]
             : [`Deleted sale record ${saleId}`],
         });
@@ -3997,7 +3997,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             `Assigned Code: ${code} (${config.active ? 'Active' : 'Paused'})`,
             `Commission: ${config.commissionType === 'percentage'
               ? `${commissionValue}%`
-              : `E${commissionValue}`
+              : `R${commissionValue}`
             } · Backfilled ${matchingSales.length} existing sales`,
           ],
         });
@@ -4357,7 +4357,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             ? `Deleted combo bundle "${existing.title}"`
             : `Deleted combo bundle (${comboId})`,
           changes: existing
-            ? [`Removed combo: ${existing.perfumeNames.join(' + ')} (E${existing.comboPrice})`]
+            ? [`Removed combo: ${existing.perfumeNames.join(' + ')} (R${existing.comboPrice})`]
             : [`Deleted combo ${comboId}`],
         });
       } catch (error) {
@@ -4597,7 +4597,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({
             ? `Deleted gift hamper "${existing.title}"`
             : `Deleted gift hamper (${hamperId})`,
           changes: existing
-            ? [`Removed gift hamper (${existing.occasion}, E${existing.hamperPrice})`]
+            ? [`Removed gift hamper (${existing.occasion}, R${existing.hamperPrice})`]
             : [`Deleted gift hamper ${hamperId}`],
         });
       } catch (error) {

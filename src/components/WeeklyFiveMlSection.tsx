@@ -397,7 +397,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       activeMode === '4-for-100' ? 'text-[#0A0A0A]/70' : 'text-white/55'
                     }`}
                   >
-                    E{(resolved.fourPackPrice / 4).toFixed(0)} / 5ml
+                    R{(resolved.fourPackPrice / 4).toFixed(0)} / 5ml
                   </span>
                 </div>
               </button>
@@ -441,7 +441,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                       activeMode === '2-for-50' ? 'text-[#0A0A0A]/70' : 'text-white/55'
                     }`}
                   >
-                    E{(resolved.twoPackPrice / 2).toFixed(0)} / 5ml
+                    R{(resolved.twoPackPrice / 2).toFixed(0)} / 5ml
                   </span>
                 </div>
               </button>
@@ -594,7 +594,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                   <span className="text-[11px] text-white/65">
                     {activeMode === '4-for-100'
                       ? `Tap cards to choose your ${requiredUnder800Count} picks`
-                      : `4 × 5ml (E${resolved.fourPackPrice.toFixed(0)}) Pack Only`}
+                      : `4 × 5ml (R${resolved.fourPackPrice.toFixed(0)}) Pack Only`}
                   </span>
                 </div>
 
@@ -749,7 +749,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                                 <span className="inline-flex items-center gap-1 truncate">
                                   <Lock className="w-3 h-3 shrink-0 text-[#FACC15]" />
                                   <span className="truncate">
-                                    E{resolved.fourPackPrice.toFixed(0)} Pack Only
+                                    R{resolved.fourPackPrice.toFixed(0)} Pack Only
                                   </span>
                                 </span>
                                 <button
@@ -757,7 +757,7 @@ export const WeeklyFiveMlSection: React.FC<WeeklyFiveMlSectionProps> = React.mem
                                   onClick={() => setPackMode('4-for-100')}
                                   className="text-[10px] font-bold uppercase tracking-wider text-[#FACC15] hover:underline shrink-0"
                                 >
-                                  Use 4 for E{resolved.fourPackPrice.toFixed(0)}
+                                  Use 4 for R{resolved.fourPackPrice.toFixed(0)}
                                 </button>
                               </>
                             ) : isChosen ? (

@@ -52,7 +52,7 @@ export function deriveAdminUsername(
 
 function fmtPrice(val: number | null | undefined): string {
   if (val === null || val === undefined || !Number.isFinite(val)) return 'Unpriced';
-  return `E${val.toFixed(0)}`;
+  return `R${val.toFixed(0)}`;
 }
 
 function fmtBool(val: boolean | undefined): string {
@@ -103,7 +103,7 @@ export function buildPerfumeDiff(
     specialDiscountAmount?: number;
   }): string => {
     if (entry.specialDiscountType === 'fixed') {
-      return `-E${entry.specialDiscountAmount ?? 0}`;
+      return `-R${entry.specialDiscountAmount ?? 0}`;
     }
     return `${entry.specialDiscountPercent ?? 0}% Off`;
   };
@@ -306,16 +306,16 @@ export function buildWeeklySpecialDiff(
     ids.length > 0 ? ids.map(resolvePerfumeName).join(' & ') : 'Auto';
 
   if (prev.womenUnder500Ids.join(',') !== next.womenUnder500Ids.join(',')) {
-    changes.push(`Women Under E500: ${fmtIds(next.womenUnder500Ids)}`);
+    changes.push(`Women Under R500: ${fmtIds(next.womenUnder500Ids)}`);
   }
   if (prev.womenUnder800Ids.join(',') !== next.womenUnder800Ids.join(',')) {
-    changes.push(`Women Under E800: ${fmtIds(next.womenUnder800Ids)}`);
+    changes.push(`Women Under R800: ${fmtIds(next.womenUnder800Ids)}`);
   }
   if (prev.menUnder500Ids.join(',') !== next.menUnder500Ids.join(',')) {
-    changes.push(`Men Under E500: ${fmtIds(next.menUnder500Ids)}`);
+    changes.push(`Men Under R500: ${fmtIds(next.menUnder500Ids)}`);
   }
   if (prev.menUnder800Ids.join(',') !== next.menUnder800Ids.join(',')) {
-    changes.push(`Men Under E800: ${fmtIds(next.menUnder800Ids)}`);
+    changes.push(`Men Under R800: ${fmtIds(next.menUnder800Ids)}`);
   }
   if (prev.exclusiveEnabled !== next.exclusiveEnabled) {
     changes.push(

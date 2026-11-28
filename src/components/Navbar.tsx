@@ -178,7 +178,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   }[] = [
     {
       label: 'Discover Decants & 5ml Weekly',
-      subtitle: '5ml, 10ml & 22ml travel vials + Weekly E50/E100 Special',
+      subtitle: '5ml, 10ml & 22ml travel vials + Weekly R50/R100 Special',
       page: 'decants',
       icon: Sparkles,
     },

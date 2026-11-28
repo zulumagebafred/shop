@@ -55,10 +55,10 @@ interface ShopPageProps {
 
 const PRICE_RANGE_OPTIONS: { id: PriceRangeFilter; label: string }[] = [
   { id: 'all', label: 'All Prices' },
-  { id: 'under-300', label: 'Under E300' },
-  { id: 'under-500', label: 'Under E500' },
-  { id: 'under-800', label: 'Under E800' },
-  { id: '800-plus', label: 'E800+' },
+  { id: 'under-300', label: 'Under R300' },
+  { id: 'under-500', label: 'Under R500' },
+  { id: 'under-800', label: 'Under R800' },
+  { id: '800-plus', label: 'R800+' },
 ];
 
 const SHOP_PAGE_SIZE = 24;

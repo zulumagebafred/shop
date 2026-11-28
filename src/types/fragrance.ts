@@ -21,6 +21,7 @@ export type BranchId = 'manzini' | 'mbabane';
 export type BranchStockFilter = 'all' | BranchId;
 
 export type DeliveryMethod = 'store-pickup' | 'post-office' | 'driver-delivery';
+export type PaymentMethod = 'whatsapp-cash-momo' | 'card';
 
 export type PriceRangeFilter =
   | 'all'
@@ -35,7 +36,7 @@ export const DRIVER_DELIVERY_FEE = 30;
 
 export interface SizeOption {
   size: BottleSize;
-  /** Catalogue price in configured store currency (e.g. SZL) */
+  /** Catalogue price in configured store currency (e.g. ZAR / R) */
   price: number | null;
   available: boolean;
 }

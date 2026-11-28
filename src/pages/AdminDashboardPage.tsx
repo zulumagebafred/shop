@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+﻿import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -718,7 +718,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [comboSizeLabel, setComboSizeLabel] = useState('2 × 30ml / Duo Pack');
   const [comboRegularPrice, setComboRegularPrice] = useState('600');
   const [comboPrice, setComboPrice] = useState('550');
-  const [comboTag, setComboTag] = useState('Save E50');
+  const [comboTag, setComboTag] = useState('Save R50');
   const [comboFeatured, setComboFeatured] = useState(true);
   const [comboActive, setComboActive] = useState(true);
   const [savingCombo, setSavingCombo] = useState(false);
@@ -1422,7 +1422,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const handleSaveWeeklySpecial = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+    if (R) e.preventDefault();
     const currentWeekKey = resolvedWeeklyDraft.weekKey;
     const women500Ids = resolvedWeeklyDraft.women.under500Picks.map((c) => c.product.id);
     const women800Ids = resolvedWeeklyDraft.women.under800Picks.map((c) => c.product.id);
@@ -1452,7 +1452,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const handleSaveExclusiveSpecial = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+    if (R) e.preventDefault();
     if (weeklyDraft.exclusiveEnabled && (weeklyDraft.exclusiveItems?.length ?? 0) === 0) {
       onNotify(
         'Add Exclusive Perfumes First',
@@ -1588,7 +1588,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     onNotify(
       'Special Price Saved',
       draftType === 'fixed'
-        ? `${product.name} updated to -E${safeAmt} off.`
+        ? `${product.name} updated to -R${safeAmt} off.`
         : `${product.name} updated to -${safePct}% off.`
     );
     void persistPromise.catch((err) => {
@@ -1746,7 +1746,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setComboSizeLabel('2 × 30ml / Duo Pack');
     setComboRegularPrice('600');
     setComboPrice('550');
-    setComboTag('Save E50');
+    setComboTag('Save R50');
     setComboFeatured(true);
     setComboActive(true);
     setComboError(null);
@@ -1786,7 +1786,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     const regNum = Number(comboRegularPrice);
     const bundleNum = Number(comboPrice);
     if (!Number.isFinite(regNum) || !Number.isFinite(bundleNum) || bundleNum <= 0) {
-      setComboError('Enter valid Regular and Combo prices in Emalangeni.');
+      setComboError('Enter valid Regular and Combo prices in Rands.');
       return;
     }
     if (bundleNum > regNum) {
@@ -1956,7 +1956,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     const regNum = Number(hRegularPrice);
     const hamperNum = Number(hHamperPrice);
     if (!Number.isFinite(regNum) || !Number.isFinite(hamperNum) || hamperNum <= 0) {
-      setHamperError('Enter valid Regular and Gift Hamper prices in Emalangeni.');
+      setHamperError('Enter valid Regular and Gift Hamper prices in Rands.');
       return;
     }
     if (hamperNum > regNum) {
@@ -2578,7 +2578,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   type="email"
                   autoComplete="email"
                   value={loginId}
-                  onChange={(e) => setLoginId(e.target.value)}
+                  onChange={(R) => setLoginId(e.target.value)}
                   placeholder="Enter authorized admin email"
                   required
                   className="w-full px-3.5 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
@@ -2608,7 +2608,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     type={showLoginPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onChange={(R) => setLoginPassword(e.target.value)}
                     placeholder="Enter admin password"
                     required
                     className="w-full pl-3.5 pr-11 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] placeholder:text-[#737373] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
@@ -2979,7 +2979,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={inventorySearch}
-                        onChange={(e) => setInventorySearch(e.target.value)}
+                        onChange={(R) => setInventorySearch(e.target.value)}
                         placeholder="Search perfumes, house, category, stock..."
                         className="w-full pl-10 pr-9 py-2.5 bg-[#F6F6F7] border border-[#E5E5E5] focus:bg-white rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -2998,7 +2998,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-2.5 shrink-0">
                       <select
                         value={inventorySort}
-                        onChange={(e) => setInventorySort(e.target.value as InventorySort)}
+                        onChange={(R) => setInventorySort(e.target.value as InventorySort)}
                         aria-label="Sort inventory"
                         className="w-full sm:w-auto px-3.5 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-xs font-medium text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
                       >
@@ -3088,7 +3088,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </h2>
                     <p className="text-sm text-[#525252] max-w-xl mx-auto leading-relaxed">
                       Your public storefront is currently displaying built-in starter entries. Click{' '}
-                      <strong>Add New Perfume</strong> to create your first real SKU, or import the 8 starter house listings to customize their names, notes, and SZL pricing.
+                      <strong>Add New Perfume</strong> to create your first real SKU, or import the 8 starter house listings to customize their names, notes, and ZAR pricing.
                     </p>
                     <div className="flex flex-wrap justify-center gap-3 pt-2">
                       <button
@@ -3244,7 +3244,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <select
                             value={product.availability}
                             disabled={updatingStatusId === product.id}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               handleQuickAvailabilityChange(
                                 product,
                                 e.target.value as AvailabilityStatus
@@ -3411,7 +3411,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             {/* TAB 2: SPECIALS & COUNTDOWN */}
             {activeTab === 'specials' && (
               <div className="space-y-5 sm:space-y-8">
-                {/* Weekly 5ml Special Manager (4 for E100 / 2 for E50) */}
+                {/* Weekly 5ml Special Manager (4 for R100 / 2 for R50) */}
                 <form
                   onSubmit={handleSaveWeeklySpecial}
                   className="bg-white border border-[#E5E5E5] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6"
@@ -3422,10 +3422,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         Discovery Scent Bar · {resolvedWeeklyDraft.weekLabel}
                       </p>
                       <h2 className="text-2xl font-bold text-[#0A0A0A]">
-                        Weekly 5ml Special (4 for E100 / 2 for E50)
+                        Weekly 5ml Special (4 for R100 / 2 for R50)
                       </h2>
                       <p className="text-xs text-[#525252]">
-                        Draws separate <strong>For Women</strong> and <strong>For Men</strong> lineups (3 Under E500 options + 3 Under E800 options = 6 options each). Customers choose any 2 from the 3 Under E500 options for E50 (2 × 5ml), or 2 from each tier for E100 (4 × 5ml).
+                        Draws separate <strong>For Women</strong> and <strong>For Men</strong> lineups (3 Under R500 options + 3 Under R800 options = 6 options each). Customers choose any 2 from the 3 Under R500 options for R50 (2 × 5ml), or 2 from each tier for R100 (4 × 5ml).
                       </p>
                     </div>
 
@@ -3434,7 +3434,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={weeklyDraft.autoRotateWeekly}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setWeeklyDraft((prev) => ({
                               ...prev,
                               autoRotateWeekly: e.target.checked,
@@ -3449,7 +3449,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={weeklyDraft.enabled}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setWeeklyDraft((prev) => ({
                               ...prev,
                               enabled: e.target.checked,
@@ -3505,7 +3505,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </div>
 
                     <p className="text-[11px] text-[#525252]">
-                      Editing <strong>For {weeklyAudienceTab}</strong> weekly lineup (3 Under E500 + 3 Under E800 = 6 options)
+                      Editing <strong>For {weeklyAudienceTab}</strong> weekly lineup (3 Under R500 + 3 Under R800 = 6 options)
                     </p>
                   </div>
 
@@ -3526,20 +3526,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <div className="px-4 py-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-xs text-[#92400E]">
                             {activeAudienceLineup.usingUnisexSupplement
                               ? `Note: Fewer than 6 strict ${weeklyAudienceTab} fragrances matched both price tiers, so Unisex in-stock options were included to fill all 6 slots.`
-                              : `Note: Fewer than 3 in-stock ${weeklyAudienceTab} full bottles were found under E500 or 3 under E501–E800, so lower-priced decant/mid-bottle fallbacks were included to keep all slots filled.`}
+                              : `Note: Fewer than 3 in-stock ${weeklyAudienceTab} full bottles were found under R500 or 3 under R501–R800, so lower-priced decant/mid-bottle fallbacks were included to keep all slots filled.`}
                           </div>
                         )}
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                          {/* Under E500 Picks (3 Options -> Customer Picks 2) */}
+                          {/* Under R500 Picks (3 Options -> Customer Picks 2) */}
                           <div className="p-4 sm:p-5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] space-y-4">
                             <div className="flex items-center justify-between gap-2">
                               <div>
                                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0A0A0A]">
-                                  For {weeklyAudienceTab} · 3 Options Under E500 (Customers Choose 2)
+                                  For {weeklyAudienceTab} · 3 Options Under R500 (Customers Choose 2)
                                 </span>
                                 <p className="text-[11px] text-[#525252]">
-                                  Customers pick any 2 of these 3 for 2 × 5ml (E{weeklyDraft.twoPackPrice}) or 4 × 5ml (E{weeklyDraft.fourPackPrice})
+                                  Customers pick any 2 of these 3 for 2 × 5ml (R{weeklyDraft.twoPackPrice}) or 4 × 5ml (R{weeklyDraft.fourPackPrice})
                                 </p>
                               </div>
                             </div>
@@ -3559,17 +3559,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   className="space-y-1.5"
                                 >
                                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
-                                    For {weeklyAudienceTab} Under E500 Option {slotIdx + 1}
+                                    For {weeklyAudienceTab} Under R500 Option {slotIdx + 1}
                                   </label>
                                   <SearchablePerfumeSelect
                                     value={chosenId}
-                                    ariaLabel={`Select For ${weeklyAudienceTab} Under E500 Option ${slotIdx + 1}`}
+                                    ariaLabel={`Select For ${weeklyAudienceTab} Under R500 Option ${slotIdx + 1}`}
                                     searchPlaceholder="Search perfume name or house..."
                                     options={activeAudienceLineup.under500Pool.map((opt) => ({
                                       product: opt.product,
                                       detailLabel:
                                         opt.tierPrice !== null
-                                          ? `${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                          ? `${opt.tierSizeLabel} R${opt.tierPrice.toFixed(0)}`
                                           : undefined,
                                       badgeText: pickedElsewhereIds.has(opt.product.id)
                                         ? 'Another slot'
@@ -3611,15 +3611,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             })}
                           </div>
 
-                          {/* Under E800 Picks (3 Options -> Customer Picks 2 for 4 x 5ml) */}
+                          {/* Under R800 Picks (3 Options -> Customer Picks 2 for 4 x 5ml) */}
                           <div className="p-4 sm:p-5 rounded-2xl bg-[#F6F6F7] border border-[#E5E5E5] space-y-4">
                             <div className="flex items-center justify-between gap-2">
                               <div>
                                 <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0A0A0A]">
-                                  For {weeklyAudienceTab} · 3 Options Under E800 (Customers Choose 2)
+                                  For {weeklyAudienceTab} · 3 Options Under R800 (Customers Choose 2)
                                 </span>
                                 <p className="text-[11px] text-[#525252]">
-                                  Customers pick any 2 of these 3 ONLY in 4 × 5ml (E{weeklyDraft.fourPackPrice}) — locked out of E{weeklyDraft.twoPackPrice} option
+                                  Customers pick any 2 of these 3 ONLY in 4 × 5ml (R{weeklyDraft.fourPackPrice}) — locked out of R{weeklyDraft.twoPackPrice} option
                                 </p>
                               </div>
                             </div>
@@ -3639,17 +3639,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   className="space-y-1.5"
                                 >
                                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
-                                    For {weeklyAudienceTab} Under E800 Option {slotIdx + 1}
+                                    For {weeklyAudienceTab} Under R800 Option {slotIdx + 1}
                                   </label>
                                   <SearchablePerfumeSelect
                                     value={chosenId}
-                                    ariaLabel={`Select For ${weeklyAudienceTab} Under E800 Option ${slotIdx + 1}`}
+                                    ariaLabel={`Select For ${weeklyAudienceTab} Under R800 Option ${slotIdx + 1}`}
                                     searchPlaceholder="Search perfume name or house..."
                                     options={activeAudienceLineup.under800Pool.map((opt) => ({
                                       product: opt.product,
                                       detailLabel:
                                         opt.tierPrice !== null
-                                          ? `${opt.tierSizeLabel} E${opt.tierPrice.toFixed(0)}`
+                                          ? `${opt.tierSizeLabel} R${opt.tierPrice.toFixed(0)}`
                                           : undefined,
                                       badgeText: pickedElsewhereIds.has(opt.product.id)
                                         ? 'Another slot'
@@ -3701,14 +3701,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 sm:gap-4">
                       <div className="space-y-1">
                         <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
-                          4 × 5ml Pack (E)
+                          4 × 5ml Pack (R)
                         </label>
                         <input
                           type="number"
                           min={1}
                           max={10000}
                           value={weeklyDraft.fourPackPrice}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setWeeklyDraft((prev) => ({
                               ...prev,
                               fourPackPrice: Number(e.target.value || 100),
@@ -3720,14 +3720,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                       <div className="space-y-1">
                         <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
-                          2 × 5ml Pack (E)
+                          2 × 5ml Pack (R)
                         </label>
                         <input
                           type="number"
                           min={1}
                           max={10000}
                           value={weeklyDraft.twoPackPrice}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setWeeklyDraft((prev) => ({
                               ...prev,
                               twoPackPrice: Number(e.target.value || 50),
@@ -3794,7 +3794,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="checkbox"
                         checked={Boolean(weeklyDraft.exclusiveEnabled)}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setWeeklyDraft((prev) => ({
                             ...prev,
                             exclusiveEnabled: e.target.checked,
@@ -3824,7 +3824,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={40}
                         value={weeklyDraft.exclusiveBadge ?? ''}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setWeeklyDraft((prev) => ({
                             ...prev,
                             exclusiveBadge: e.target.value,
@@ -3842,7 +3842,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={100}
                         value={weeklyDraft.exclusiveTitle ?? ''}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setWeeklyDraft((prev) => ({
                             ...prev,
                             exclusiveTitle: e.target.value,
@@ -3860,7 +3860,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={240}
                         value={weeklyDraft.exclusiveSubtitle ?? ''}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setWeeklyDraft((prev) => ({
                             ...prev,
                             exclusiveSubtitle: e.target.value,
@@ -3969,7 +3969,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     type="text"
                                     maxLength={40}
                                     value={exclusivePickerSize}
-                                    onChange={(e) => setExclusivePickerSize(e.target.value)}
+                                    onChange={(R) => setExclusivePickerSize(e.target.value)}
                                     placeholder="e.g. 10ml or 100ml"
                                     className="w-full px-2.5 py-2 bg-white border border-[#0A0A0A] rounded-xl text-xs font-bold focus:outline-none"
                                   />
@@ -3995,7 +3995,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                         normalizeSizeKey(exclusivePickerSize)
                                     ) ?? '5ml'
                                   }
-                                  onChange={(e) => {
+                                  onChange={(R) => {
                                     if (e.target.value === '__custom__') {
                                       setExclusivePickerCustomMode(true);
                                     } else {
@@ -4017,7 +4017,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                             <div className="w-full sm:w-32 space-y-1">
                               <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
-                                Special Price (E)
+                                Special Price (R)
                               </label>
                               <input
                                 type="number"
@@ -4025,7 +4025,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 max={50000}
                                 step="any"
                                 value={exclusivePickerPrice}
-                                onChange={(e) => setExclusivePickerPrice(e.target.value)}
+                                onChange={(R) => setExclusivePickerPrice(e.target.value)}
                                 className="w-full px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs font-bold tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                               />
                             </div>
@@ -4117,7 +4117,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                           type="text"
                                           maxLength={40}
                                           value={entry.sizeLabel ?? '5ml'}
-                                          onChange={(e) => {
+                                          onChange={(R) => {
                                             const val = e.target.value.slice(0, 40);
                                             setWeeklyDraft((prev) => ({
                                               ...prev,
@@ -4162,7 +4162,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                               normalizeSizeKey(currentSizeLabel)
                                           ) ?? '5ml'
                                         }
-                                        onChange={(e) => {
+                                        onChange={(R) => {
                                           if (e.target.value === '__custom__') {
                                             setExclusiveCustomRowIds((prev) => ({
                                               ...prev,
@@ -4196,7 +4196,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     )}
 
                                     <label className="text-[10px] font-semibold uppercase tracking-wider text-[#525252] ml-1">
-                                      Price (E)
+                                      Price (R)
                                     </label>
                                     <input
                                       type="number"
@@ -4204,7 +4204,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       max={50000}
                                       step="any"
                                       value={entry.customPrice}
-                                      onChange={(e) => {
+                                      onChange={(R) => {
                                         const val = Math.max(
                                           1,
                                           Math.min(50000, Number(e.target.value || 1))
@@ -4251,7 +4251,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={Boolean(weeklyDraft.exclusiveBundleEnabled)}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setWeeklyDraft((prev) => ({
                               ...prev,
                               exclusiveBundleEnabled: e.target.checked,
@@ -4265,14 +4265,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       {weeklyDraft.exclusiveBundleEnabled && (
                         <div className="flex items-center gap-2">
                           <label className="text-[11px] font-semibold uppercase tracking-wider text-[#525252]">
-                            Bundle Price (E)
+                            Bundle Price (R)
                           </label>
                           <input
                             type="number"
                             min={1}
                             max={50000}
                             value={weeklyDraft.exclusiveBundlePrice || ''}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setWeeklyDraft((prev) => ({
                                 ...prev,
                                 exclusiveBundlePrice: Math.max(0, Number(e.target.value || 0)),
@@ -4375,7 +4375,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={campaignDraft.enabled}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setCampaignDraft((d) => ({ ...d, enabled: e.target.checked }))
                           }
                           className="accent-[#0A0A0A] w-4 h-4"
@@ -4472,7 +4472,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             type="text"
                             maxLength={100}
                             value={campaignDraft.newArrivalsTitle ?? 'New Arrivals'}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setCampaignDraft((d) => ({
                                 ...d,
                                 newArrivalsTitle: e.target.value,
@@ -4490,7 +4490,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             type="text"
                             maxLength={40}
                             value={campaignDraft.newArrivalsBadge ?? 'JUST LANDED'}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setCampaignDraft((d) => ({
                                 ...d,
                                 newArrivalsBadge: e.target.value,
@@ -4513,7 +4513,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             campaignDraft.newArrivalsSubtitle ??
                             'Freshly landed Arabian extraits & travel decants stocked in Manzini and Mbabane.'
                           }
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setCampaignDraft((d) => ({
                               ...d,
                               newArrivalsSubtitle: e.target.value,
@@ -4581,7 +4581,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={campaignDraft.title}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setCampaignDraft((d) => ({ ...d, title: e.target.value }))
                         }
                         required
@@ -4598,7 +4598,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="text"
                           value={campaignDraft.badgeText}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setCampaignDraft((d) => ({ ...d, badgeText: e.target.value }))
                           }
                           required
@@ -4614,7 +4614,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="text"
                           value={campaignDraft.promoCodeHint}
-                          onChange={(e) =>
+                          onChange={(R) =>
                             setCampaignDraft((d) => ({
                               ...d,
                               promoCodeHint: e.target.value.toUpperCase(),
@@ -4683,7 +4683,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               min={1}
                               max={365}
                               value={customDurationDays}
-                              onChange={(e) => setCustomDurationDays(e.target.value)}
+                              onChange={(R) => setCustomDurationDays(e.target.value)}
                               className="w-20 px-2.5 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                             />
                             <button
@@ -4716,7 +4716,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             id="campaign-ends-at"
                             type="datetime-local"
                             value={toLocalDateTimeInput(campaignDraft.endsAt)}
-                            onChange={(e) => {
+                            onChange={(R) => {
                               const val = e.target.value;
                               if (!val) {
                                 setCampaignDraft((d) => ({ ...d, endsAt: '' }));
@@ -4745,7 +4745,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={campaignDraft.announcementText}
-                        onChange={(e) =>
+                        onChange={(R) =>
                           setCampaignDraft((d) => ({
                             ...d,
                             announcementText: e.target.value,
@@ -4851,11 +4851,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   max={bulkSpecialType === 'percentage' ? 90 : 50000}
                                   step={bulkSpecialType === 'fixed' ? '1' : '1'}
                                   value={bulkSpecialDiscount}
-                                  onChange={(e) => setBulkSpecialDiscount(e.target.value)}
+                                  onChange={(R) => setBulkSpecialDiscount(e.target.value)}
                                   className="w-20 px-2 py-1.5 border border-[#D4D4D4] rounded-xl text-xs text-center tabular-nums"
                                   aria-label={
                                     bulkSpecialType === 'fixed'
-                                      ? 'Bulk special price reduction in Emalangeni'
+                                      ? 'Bulk special price reduction in Rands'
                                       : 'Bulk special discount percentage'
                                   }
                                 />
@@ -5066,7 +5066,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                         max={draftType === 'percentage' ? 90 : 50000}
                                         step="1"
                                         value={draftValue}
-                                        onChange={(e) =>
+                                        onChange={(R) =>
                                           setDiscountEdits((prev) => ({
                                             ...prev,
                                             [p.id]: {
@@ -5075,7 +5075,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                             },
                                           }))
                                         }
-                                        onBlur={(e) => {
+                                        onBlur={(R) => {
                                           const nextTarget =
                                             e.relatedTarget as HTMLElement | null;
                                           if (
@@ -5091,7 +5091,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                             draftValue
                                           );
                                         }}
-                                        onKeyDown={(e) => {
+                                        onKeyDown={(R) => {
                                           if (e.key === 'Enter') {
                                             e.preventDefault();
                                             void handleCommitSingleSpecialDiscount(
@@ -5103,7 +5103,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                         }}
                                         aria-label={
                                           draftType === 'fixed'
-                                            ? `Price reduction amount in Emalangeni for ${p.name}`
+                                            ? `Price reduction amount in Rands for ${p.name}`
                                             : `Discount percent for ${p.name}`
                                         }
                                         className="w-20 px-2 py-1.5 bg-white border border-[#D4D4D4] rounded-lg text-xs font-bold text-center tabular-nums focus:outline-none focus:border-[#0A0A0A]"
@@ -5178,7 +5178,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <input
                               type="text"
                               value={specialPickerSearch}
-                              onChange={(e) => setSpecialPickerSearch(e.target.value)}
+                              onChange={(R) => setSpecialPickerSearch(e.target.value)}
                               placeholder="Search fragrances..."
                               className="w-full pl-8 pr-3 py-1.5 bg-[#F6F6F7] border border-[#E5E5E5] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                             />
@@ -5370,7 +5370,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               <input
                                 type="text"
                                 value={newArrivalPickerSearch}
-                                onChange={(e) => setNewArrivalPickerSearch(e.target.value)}
+                                onChange={(R) => setNewArrivalPickerSearch(e.target.value)}
                                 placeholder="Search fragrances..."
                                 className="w-full pl-8 pr-3 py-1.5 bg-[#F6F6F7] border border-[#E5E5E5] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                               />
@@ -5477,8 +5477,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           { label: '10% Off', type: 'percentage' as const, val: '10' },
                           { label: '15% Off', type: 'percentage' as const, val: '15' },
                           { label: '20% Off', type: 'percentage' as const, val: '20' },
-                          { label: 'E50 Off', type: 'fixed' as const, val: '50' },
-                          { label: 'E100 Off', type: 'fixed' as const, val: '100' },
+                          { label: 'R50 Off', type: 'fixed' as const, val: '50' },
+                          { label: 'R100 Off', type: 'fixed' as const, val: '100' },
                         ].map((preset) => (
                           <button
                             key={preset.label}
@@ -5510,7 +5510,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       type="text"
                       disabled={Boolean(editingCouponCode)}
                       value={cCode}
-                      onChange={(e) => setCCode(e.target.value.toUpperCase())}
+                      onChange={(R) => setCCode(e.target.value.toUpperCase())}
                       placeholder="e.g. AURALIVE20"
                       maxLength={32}
                       required
@@ -5525,16 +5525,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={cType}
-                        onChange={(e) => setCType(e.target.value as CouponDiscountType)}
+                        onChange={(R) => setCType(e.target.value as CouponDiscountType)}
                         className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
                       >
                         <option value="percentage">Percentage (% Off)</option>
-                        <option value="fixed">Fixed Amount (E SZL)</option>
+                        <option value="fixed">Fixed Amount (R ZAR)</option>
                       </select>
                     </div>
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wider">
-                        {cType === 'percentage' ? 'Discount (%)' : 'Amount Off (E)'}
+                        {cType === 'percentage' ? 'Discount (%)' : 'Amount Off (R)'}
                       </label>
                       <input
                         type="number"
@@ -5542,7 +5542,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         max={cType === 'percentage' ? 95 : 50000}
                         step="any"
                         value={cValue}
-                        onChange={(e) => setCValue(e.target.value)}
+                        onChange={(R) => setCValue(e.target.value)}
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -5552,14 +5552,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wider">
-                        Minimum Spend (E)
+                        Minimum Spend (R)
                       </label>
                       <input
                         type="number"
                         min={0}
                         max={100000}
                         value={cMinSpend}
-                        onChange={(e) => setCMinSpend(e.target.value)}
+                        onChange={(R) => setCMinSpend(e.target.value)}
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                       />
                     </div>
@@ -5569,7 +5569,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={cScope}
-                        onChange={(e) => setCScope(e.target.value as CouponScope)}
+                        onChange={(R) => setCScope(e.target.value as CouponScope)}
                         className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
                       >
                         <option value="all">All Fragrances</option>
@@ -5586,7 +5586,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <input
                       type="text"
                       value={cDescription}
-                      onChange={(e) => setCDescription(e.target.value)}
+                      onChange={(R) => setCDescription(e.target.value)}
                       placeholder="e.g. Friday TikTok Live Drop — 20% Off"
                       maxLength={200}
                       className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -5597,7 +5597,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <input
                       type="checkbox"
                       checked={cActive}
-                      onChange={(e) => setCActive(e.target.checked)}
+                      onChange={(R) => setCActive(e.target.checked)}
                       className="accent-[#0A0A0A] w-4 h-4"
                     />
                     <span>Coupon is active for checkout entry</span>
@@ -5802,7 +5802,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       Combo Deals &amp; Layering Ideas
                     </h2>
                     <p className="text-xs sm:text-sm text-[#525252] mt-1">
-                      Set store-priced Combo Deals (e.g. buy 2 perfumes for E550 instead of E600) and manually curate layering suggestions from your live catalogue.
+                      Set store-priced Combo Deals (e.g. buy 2 perfumes for R550 instead of R600) and manually curate layering suggestions from your live catalogue.
                     </p>
                   </div>
                   {(liveCombos.length === 0 || liveLayeringIdeas.length === 0) && (
@@ -5876,7 +5876,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="text"
                           value={comboPickerSearch}
-                          onChange={(e) => setComboPickerSearch(e.target.value)}
+                          onChange={(R) => setComboPickerSearch(e.target.value)}
                           placeholder="Search Yara, Asad, Khamrah, Lattafa..."
                           className="w-full pl-8 pr-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -5970,7 +5970,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={140}
                         value={comboTitle}
-                        onChange={(e) => setComboTitle(e.target.value)}
+                        onChange={(R) => setComboTitle(e.target.value)}
                         placeholder="e.g. Signature Two-Bottle Duo"
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -5984,7 +5984,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={comboPerfumesText}
-                        onChange={(e) => setComboPerfumesText(e.target.value)}
+                        onChange={(R) => setComboPerfumesText(e.target.value)}
                         placeholder="e.g. Yara, Bade'e Al Oud"
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -6000,7 +6000,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={60}
                           value={comboSizeLabel}
-                          onChange={(e) => setComboSizeLabel(e.target.value)}
+                          onChange={(R) => setComboSizeLabel(e.target.value)}
                           placeholder="2 × 30ml / Duo Pack"
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -6013,8 +6013,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={40}
                           value={comboTag}
-                          onChange={(e) => setComboTag(e.target.value)}
-                          placeholder="Save E50"
+                          onChange={(R) => setComboTag(e.target.value)}
+                          placeholder="Save R50"
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                         />
                       </div>
@@ -6023,7 +6023,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-xs font-semibold uppercase tracking-wider">
-                          Regular Price (E) *
+                          Regular Price (R) *
                         </label>
                         <input
                           type="number"
@@ -6031,14 +6031,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           max={100000}
                           step="any"
                           value={comboRegularPrice}
-                          onChange={(e) => setComboRegularPrice(e.target.value)}
+                          onChange={(R) => setComboRegularPrice(e.target.value)}
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                         />
                       </div>
                       <div className="space-y-1.5">
                         <label className="block text-xs font-semibold uppercase tracking-wider">
-                          Combo Price (E) *
+                          Combo Price (R) *
                         </label>
                         <input
                           type="number"
@@ -6046,7 +6046,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           max={100000}
                           step="any"
                           value={comboPrice}
-                          onChange={(e) => setComboPrice(e.target.value)}
+                          onChange={(R) => setComboPrice(e.target.value)}
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -6061,8 +6061,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={300}
                         value={comboSubtitle}
-                        onChange={(e) => setComboSubtitle(e.target.value)}
-                        placeholder="Buy these 2 perfumes together for E550 instead of E600."
+                        onChange={(R) => setComboSubtitle(e.target.value)}
+                        placeholder="Buy these 2 perfumes together for R550 instead of R600."
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
                     </div>
@@ -6072,7 +6072,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={comboFeatured}
-                          onChange={(e) => setComboFeatured(e.target.checked)}
+                          onChange={(R) => setComboFeatured(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Highlight Card (Dark Featured)</span>
@@ -6081,7 +6081,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={comboActive}
-                          onChange={(e) => setComboActive(e.target.checked)}
+                          onChange={(R) => setComboActive(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Active on Storefront</span>
@@ -6282,7 +6282,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={140}
                         value={layerTitle}
-                        onChange={(e) => setLayerTitle(e.target.value)}
+                        onChange={(R) => setLayerTitle(e.target.value)}
                         placeholder="e.g. Velvet Oud & Whipped Vanilla"
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -6299,7 +6299,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           list="layering-catalog-names"
                           maxLength={140}
                           value={layerBasePerfume}
-                          onChange={(e) => setLayerBasePerfume(e.target.value)}
+                          onChange={(R) => setLayerBasePerfume(e.target.value)}
                           placeholder="e.g. Bade'e Al Oud"
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -6314,7 +6314,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           list="layering-catalog-names"
                           maxLength={140}
                           value={layerTopPerfume}
-                          onChange={(e) => setLayerTopPerfume(e.target.value)}
+                          onChange={(R) => setLayerTopPerfume(e.target.value)}
                           placeholder="e.g. Yara"
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -6331,7 +6331,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={60}
                           value={layerVibe}
-                          onChange={(e) => setLayerVibe(e.target.value)}
+                          onChange={(R) => setLayerVibe(e.target.value)}
                           placeholder="Sweet Smoked Oud"
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -6344,7 +6344,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={80}
                           value={layerSprayRatio}
-                          onChange={(e) => setLayerSprayRatio(e.target.value)}
+                          onChange={(R) => setLayerSprayRatio(e.target.value)}
                           placeholder="2 sprays base · 2 sprays top"
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -6359,7 +6359,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={120}
                         value={layerOccasion}
-                        onChange={(e) => setLayerOccasion(e.target.value)}
+                        onChange={(R) => setLayerOccasion(e.target.value)}
                         placeholder="Evening & Date Night"
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -6373,7 +6373,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         rows={3}
                         maxLength={500}
                         value={layerWhyItWorks}
-                        onChange={(e) => setLayerWhyItWorks(e.target.value)}
+                        onChange={(R) => setLayerWhyItWorks(e.target.value)}
                         placeholder="Explain how the base and top notes complement each other..."
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -6383,7 +6383,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="checkbox"
                         checked={layerActive}
-                        onChange={(e) => setLayerActive(e.target.checked)}
+                        onChange={(R) => setLayerActive(e.target.checked)}
                         className="accent-[#0A0A0A] w-4 h-4"
                       />
                       <span>Active on Storefront</span>
@@ -6601,7 +6601,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={140}
                         value={hTitle}
-                        onChange={(e) => setHTitle(e.target.value)}
+                        onChange={(R) => setHTitle(e.target.value)}
                         placeholder="e.g. Her Signature Rose & Body Mist Box"
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -6615,7 +6615,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </label>
                         <select
                           value={hOccasion}
-                          onChange={(e) => setHOccasion(e.target.value)}
+                          onChange={(R) => setHOccasion(e.target.value)}
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm bg-white focus:outline-none focus:border-[#0A0A0A]"
                         >
                           {GIFT_HAMPER_OCCASIONS.map((occ) => (
@@ -6632,7 +6632,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </label>
                         <select
                           value={hAvailability}
-                          onChange={(e) => setHAvailability(e.target.value as AvailabilityStatus)}
+                          onChange={(R) => setHAvailability(e.target.value as AvailabilityStatus)}
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm bg-white focus:outline-none focus:border-[#0A0A0A]"
                         >
                           <option value="In Stock">In Stock</option>
@@ -6650,7 +6650,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <textarea
                         rows={4}
                         value={hItemsText}
-                        onChange={(e) => setHItemsText(e.target.value)}
+                        onChange={(R) => setHItemsText(e.target.value)}
                         placeholder={'100ml Full Arabian Bottle\nFine Fragrance Body Mist\n10ml Handbag Decant\nRibbon Gift Box & Card'}
                         required
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs leading-relaxed focus:outline-none focus:border-[#0A0A0A]"
@@ -6660,7 +6660,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-xs font-semibold uppercase tracking-wider">
-                          Regular Value (E) *
+                          Regular Value (R) *
                         </label>
                         <input
                           type="number"
@@ -6668,14 +6668,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           max={100000}
                           step="any"
                           value={hRegularPrice}
-                          onChange={(e) => setHRegularPrice(e.target.value)}
+                          onChange={(R) => setHRegularPrice(e.target.value)}
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                         />
                       </div>
                       <div className="space-y-1.5">
                         <label className="block text-xs font-semibold uppercase tracking-wider">
-                          Hamper Price (E) *
+                          Hamper Price (R) *
                         </label>
                         <input
                           type="number"
@@ -6683,7 +6683,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           max={100000}
                           step="any"
                           value={hHamperPrice}
-                          onChange={(e) => setHHamperPrice(e.target.value)}
+                          onChange={(R) => setHHamperPrice(e.target.value)}
                           required
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -6698,7 +6698,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={300}
                         value={hSubtitle}
-                        onChange={(e) => setHSubtitle(e.target.value)}
+                        onChange={(R) => setHSubtitle(e.target.value)}
                         placeholder="A ready-to-present gift box pairing rose EDP, body mist, and discovery decant."
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -6712,7 +6712,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={200}
                         value={hGiftWrapNote}
-                        onChange={(e) => setHGiftWrapNote(e.target.value)}
+                        onChange={(R) => setHGiftWrapNote(e.target.value)}
                         placeholder="Includes complimentary ribbon wrap & handwritten card"
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -6726,7 +6726,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={500}
                         value={hImage}
-                        onChange={(e) => setHImage(e.target.value)}
+                        onChange={(R) => setHImage(e.target.value)}
                         placeholder={DEFAULT_HAMPER_IMAGE}
                         className="w-full px-3.5 py-2 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -6760,7 +6760,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={hFeatured}
-                          onChange={(e) => setHFeatured(e.target.checked)}
+                          onChange={(R) => setHFeatured(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Featured Hamper</span>
@@ -6769,7 +6769,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={hActive}
-                          onChange={(e) => setHActive(e.target.checked)}
+                          onChange={(R) => setHActive(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Active on Storefront</span>
@@ -7027,8 +7027,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               { label: '10% Sale', type: 'percentage' as const, val: '10' },
                               { label: '15% Sale', type: 'percentage' as const, val: '15' },
                               { label: '20% Sale', type: 'percentage' as const, val: '20' },
-                              { label: 'E30 / Order', type: 'fixed' as const, val: '30' },
-                              { label: 'E50 / Order', type: 'fixed' as const, val: '50' },
+                              { label: 'R30 / Order', type: 'fixed' as const, val: '30' },
+                              { label: 'R50 / Order', type: 'fixed' as const, val: '50' },
                             ].map((preset) => (
                               <button
                                 key={preset.label}
@@ -7060,7 +7060,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <input
                             type="text"
                             value={rInfluencerName}
-                            onChange={(e) => setRInfluencerName(e.target.value)}
+                            onChange={(R) => setRInfluencerName(e.target.value)}
                             placeholder="e.g. Nomsa Dlamini"
                             maxLength={120}
                             required
@@ -7074,7 +7074,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <input
                             type="text"
                             value={rSocialHandle}
-                            onChange={(e) => setRSocialHandle(e.target.value)}
+                            onChange={(R) => setRSocialHandle(e.target.value)}
                             placeholder="@nomsaglow · TikTok"
                             maxLength={100}
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -7090,7 +7090,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           disabled={Boolean(editingReferralCode)}
                           value={rCode}
-                          onChange={(e) => setRCode(e.target.value.toUpperCase())}
+                          onChange={(R) => setRCode(e.target.value.toUpperCase())}
                           placeholder="e.g. NOMSA10"
                           maxLength={32}
                           required
@@ -7109,7 +7109,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           </label>
                           <select
                             value={rCommissionType}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setRCommissionType(e.target.value as ReferralCommissionType)
                             }
                             className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -7122,7 +7122,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <label className="block text-xs font-semibold uppercase tracking-wider">
                             {rCommissionType === 'percentage'
                               ? 'Commission (%)'
-                              : 'Commission (E)'}
+                              : 'Commission (R)'}
                           </label>
                           <input
                             type="number"
@@ -7130,7 +7130,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             max={rCommissionType === 'percentage' ? 90 : 50000}
                             step="any"
                             value={rCommissionValue}
-                            onChange={(e) => setRCommissionValue(e.target.value)}
+                            onChange={(R) => setRCommissionValue(e.target.value)}
                             required
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                           />
@@ -7144,7 +7144,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           </label>
                           <select
                             value={rFollowerDiscountType}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setRFollowerDiscountType(
                                 e.target.value as ReferralFollowerDiscountType
                               )
@@ -7175,7 +7175,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 ? '0'
                                 : rFollowerDiscountValue
                             }
-                            onChange={(e) => setRFollowerDiscountValue(e.target.value)}
+                            onChange={(R) => setRFollowerDiscountValue(e.target.value)}
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums disabled:bg-[#F5F5F5] focus:outline-none focus:border-[#0A0A0A]"
                           />
                         </div>
@@ -7188,7 +7188,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="text"
                           value={rPayoutNote}
-                          onChange={(e) => setRPayoutNote(e.target.value)}
+                          onChange={(R) => setRPayoutNote(e.target.value)}
                           placeholder="e.g. MoMo 76xx xxxx · Settle every Friday"
                           maxLength={200}
                           className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -7199,7 +7199,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={rActive}
-                          onChange={(e) => setRActive(e.target.checked)}
+                          onChange={(R) => setRActive(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Referral link &amp; code active for storefront orders</span>
@@ -7244,7 +7244,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </label>
                         <select
                           value={saleReferralCode || referrals[0]?.code || ''}
-                          onChange={(e) => setSaleReferralCode(e.target.value)}
+                          onChange={(R) => setSaleReferralCode(e.target.value)}
                           disabled={referrals.length === 0}
                           className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A] disabled:bg-[#F5F5F5]"
                         >
@@ -7271,7 +7271,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="text"
                           value={saleOrderSummary}
-                          onChange={(e) => setSaleOrderSummary(e.target.value)}
+                          onChange={(R) => setSaleOrderSummary(e.target.value)}
                           placeholder="e.g. Lattafa Khamrah 100ml + Yara 10ml"
                           maxLength={240}
                           required
@@ -7282,7 +7282,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                         <div className="space-y-1.5">
                           <label className="block text-xs font-semibold uppercase tracking-wider">
-                            Order Total (E) *
+                            Order Total (R) *
                           </label>
                           <input
                             type="number"
@@ -7290,7 +7290,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             max={250000}
                             step="any"
                             value={saleSubtotal}
-                            onChange={(e) => setSaleSubtotal(e.target.value)}
+                            onChange={(R) => setSaleSubtotal(e.target.value)}
                             placeholder="550"
                             required
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
@@ -7298,7 +7298,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </div>
                         <div className="space-y-1.5">
                           <label className="block text-xs font-semibold uppercase tracking-wider">
-                            Discount Given (E)
+                            Discount Given (R)
                           </label>
                           <input
                             type="number"
@@ -7306,7 +7306,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             max={250000}
                             step="any"
                             value={saleDiscount}
-                            onChange={(e) => setSaleDiscount(e.target.value)}
+                            onChange={(R) => setSaleDiscount(e.target.value)}
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                           />
                         </div>
@@ -7319,7 +7319,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           </label>
                           <select
                             value={saleStatus}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setSaleStatus(e.target.value as ReferralSaleStatus)
                             }
                             className="w-full px-3 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -7336,7 +7336,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <input
                             type="text"
                             value={saleCustomerRef}
-                            onChange={(e) => setSaleCustomerRef(e.target.value)}
+                            onChange={(R) => setSaleCustomerRef(e.target.value)}
                             placeholder="Manzini Pickup"
                             maxLength={120}
                             className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
@@ -7564,7 +7564,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <input
                                       type="text"
                                       value={draft.code}
-                                      onChange={(e) =>
+                                      onChange={(R) =>
                                         updatePartnerDraft(app.uid, app, {
                                           code: sanitizePromoCode(e.target.value),
                                         })
@@ -7581,7 +7581,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <div className="flex gap-1">
                                       <select
                                         value={draft.commissionType}
-                                        onChange={(e) =>
+                                        onChange={(R) =>
                                           updatePartnerDraft(app.uid, app, {
                                             commissionType: e.target
                                               .value as ReferralCommissionType,
@@ -7597,7 +7597,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                         min="0"
                                         step="any"
                                         value={draft.commissionValue}
-                                        onChange={(e) =>
+                                        onChange={(R) =>
                                           updatePartnerDraft(app.uid, app, {
                                             commissionValue: e.target.value,
                                           })
@@ -7614,7 +7614,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <div className="flex gap-1">
                                       <select
                                         value={draft.followerDiscountType}
-                                        onChange={(e) =>
+                                        onChange={(R) =>
                                           updatePartnerDraft(app.uid, app, {
                                             followerDiscountType: e.target
                                               .value as ReferralFollowerDiscountType,
@@ -7632,7 +7632,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                           min="0"
                                           step="any"
                                           value={draft.followerDiscountValue}
-                                          onChange={(e) =>
+                                          onChange={(R) =>
                                             updatePartnerDraft(app.uid, app, {
                                               followerDiscountValue: e.target.value,
                                             })
@@ -8166,7 +8166,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end pt-1">
                                   <div className="space-y-1">
                                     <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
-                                      Verified Subtotal (E)
+                                      Verified Subtotal (R)
                                     </label>
                                     <input
                                       type="number"
@@ -8174,7 +8174,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       max={250000}
                                       step="any"
                                       value={draft.subtotal}
-                                      onChange={(e) =>
+                                      onChange={(R) =>
                                         setAttributionEdits((prev) => ({
                                           ...prev,
                                           [attr.id]: {
@@ -8189,7 +8189,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                                   <div className="space-y-1">
                                     <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#525252]">
-                                      Verified Discount (E)
+                                      Verified Discount (R)
                                     </label>
                                     <input
                                       type="number"
@@ -8197,7 +8197,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                       max={250000}
                                       step="any"
                                       value={draft.discount}
-                                      onChange={(e) =>
+                                      onChange={(R) =>
                                         setAttributionEdits((prev) => ({
                                           ...prev,
                                           [attr.id]: {
@@ -8291,7 +8291,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
                           <select
                             value={ledgerCodeFilter}
-                            onChange={(e) => setLedgerCodeFilter(e.target.value)}
+                            onChange={(R) => setLedgerCodeFilter(e.target.value)}
                             aria-label="Filter sales by influencer"
                             className="w-full sm:w-auto min-w-0 px-3 py-2 sm:py-1.5 border border-[#D4D4D4] rounded-full bg-white text-xs font-medium focus:outline-none focus:border-[#0A0A0A]"
                           >
@@ -8304,7 +8304,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           </select>
                           <select
                             value={ledgerStatusFilter}
-                            onChange={(e) =>
+                            onChange={(R) =>
                               setLedgerStatusFilter(
                                 e.target.value as 'all' | ReferralSaleStatus
                               )
@@ -8614,7 +8614,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={auditSearch}
-                        onChange={(e) => setAuditSearch(e.target.value)}
+                        onChange={(R) => setAuditSearch(e.target.value)}
                         placeholder="Search user, perfume, price, or change..."
                         aria-label="Search audit trail"
                         className="w-full pl-10 pr-4 py-2.5 bg-[#F6F6F7] border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:bg-white focus:border-[#0A0A0A]"
@@ -8623,7 +8623,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                     <select
                       value={auditActorFilter}
-                      onChange={(e) => setAuditActorFilter(e.target.value)}
+                      onChange={(R) => setAuditActorFilter(e.target.value)}
                       aria-label="Filter by admin username"
                       className="px-3.5 py-2.5 bg-white border border-[#D4D4D4] rounded-xl text-sm text-[#0A0A0A] focus:outline-none focus:border-[#0A0A0A]"
                     >
@@ -8637,7 +8637,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                     <select
                       value={auditSectionFilter}
-                      onChange={(e) =>
+                      onChange={(R) =>
                         setAuditSectionFilter(e.target.value as 'all' | AuditSection)
                       }
                       aria-label="Filter by dashboard section"
@@ -8659,7 +8659,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                     <select
                       value={auditActionFilter}
-                      onChange={(e) =>
+                      onChange={(R) =>
                         setAuditActionFilter(e.target.value as 'all' | AuditAction)
                       }
                       aria-label="Filter by action type"
@@ -8848,7 +8848,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={140}
                         value={pName}
-                        onChange={(e) => setPName(e.target.value)}
+                        onChange={(R) => setPName(e.target.value)}
                         placeholder="e.g. Khamrah Qahwa"
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -8860,7 +8860,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={pBrandSelect}
-                        onChange={(e) => {
+                        onChange={(R) => {
                           const val = e.target.value;
                           setPBrandSelect(val);
                           if (val !== 'Custom' && houseImages[val] && !editingPerfumeId) {
@@ -8882,7 +8882,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           required
                           maxLength={100}
                           value={pCustomBrand}
-                          onChange={(e) => setPCustomBrand(e.target.value)}
+                          onChange={(R) => setPCustomBrand(e.target.value)}
                           placeholder="Enter fragrance house name"
                           className="mt-2 w-full px-3.5 py-2 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -8897,7 +8897,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={pCategory}
-                        onChange={(e) => setPCategory(e.target.value as FragranceCategory)}
+                        onChange={(R) => setPCategory(e.target.value as FragranceCategory)}
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl bg-white text-sm focus:outline-none focus:border-[#0A0A0A]"
                       >
                         <option value="Men">Men</option>
@@ -8914,7 +8914,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         type="text"
                         maxLength={100}
                         value={pConcentration}
-                        onChange={(e) => setPConcentration(e.target.value)}
+                        onChange={(R) => setPConcentration(e.target.value)}
                         placeholder="Extrait de Parfum"
                         className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -8925,7 +8925,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </label>
                       <select
                         value={pAvailability}
-                        onChange={(e) => {
+                        onChange={(R) => {
                           const next = e.target.value as AvailabilityStatus;
                           setPAvailability(next);
                           if (next === 'Out of Stock') {
@@ -8970,7 +8970,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={(e) => {
+                              onChange={(R) => {
                                 const isChecked = e.target.checked;
                                 const next = isChecked
                                   ? normalizeBranches([...pBranches, branchId])
@@ -9004,7 +9004,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   <div className="bg-[#F6F6F7] border border-[#E5E5E5] rounded-2xl p-4 sm:p-5 space-y-4">
                     <div>
                       <span className="block text-xs font-semibold uppercase tracking-wider">
-                        Bottle Sizes &amp; SZL Pricing
+                        Bottle Sizes &amp; ZAR Pricing
                       </span>
                       <span className="block text-[11px] text-[#666666]">
                         Edit any size label directly (e.g. 50ml, 70ml, 80ml), toggle availability, or add custom volumes.
@@ -9022,7 +9022,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               type="text"
                               maxLength={24}
                               value={slot.size}
-                              onChange={(e) => {
+                              onChange={(R) => {
                                 const next = [...pSizes];
                                 next[idx] = { ...next[idx], size: e.target.value };
                                 setPSizes(next);
@@ -9034,7 +9034,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <input
                               type="checkbox"
                               checked={slot.available}
-                              onChange={(e) => {
+                              onChange={(R) => {
                                 const next = [...pSizes];
                                 next[idx] = { ...next[idx], available: e.target.checked };
                                 setPSizes(next);
@@ -9066,7 +9066,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               step="any"
                               disabled={!slot.available}
                               value={slot.price === null ? '' : slot.price}
-                              onChange={(e) => {
+                              onChange={(R) => {
                                 const val = e.target.value;
                                 const next = [...pSizes];
                                 next[idx] = {
@@ -9116,8 +9116,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={24}
                           value={customSizeInput}
-                          onChange={(e) => setCustomSizeInput(e.target.value)}
-                          onKeyDown={(e) => {
+                          onChange={(R) => setCustomSizeInput(e.target.value)}
+                          onKeyDown={(R) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
                               handleAddSizeSlot(customSizeInput);
@@ -9182,7 +9182,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           type="text"
                           maxLength={500}
                           value={pImage}
-                          onChange={(e) => setPImage(e.target.value)}
+                          onChange={(R) => setPImage(e.target.value)}
                           placeholder="/assets/images/... or https://..."
                           className="w-full px-3.5 py-2 border border-[#D4D4D4] rounded-xl text-xs font-mono focus:outline-none focus:border-[#0A0A0A]"
                         />
@@ -9199,7 +9199,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       rows={3}
                       maxLength={2000}
                       value={pDescription}
-                      onChange={(e) => setPDescription(e.target.value)}
+                      onChange={(R) => setPDescription(e.target.value)}
                       placeholder="Describe the scent profile, longevity, and occasion..."
                       className="w-full px-3.5 py-2.5 border border-[#D4D4D4] rounded-xl text-sm focus:outline-none focus:border-[#0A0A0A]"
                     />
@@ -9213,7 +9213,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={pTopNotes}
-                        onChange={(e) => setPTopNotes(e.target.value)}
+                        onChange={(R) => setPTopNotes(e.target.value)}
                         placeholder="Saffron, Bergamot"
                         className="w-full px-3 py-2 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -9225,7 +9225,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={pHeartNotes}
-                        onChange={(e) => setPHeartNotes(e.target.value)}
+                        onChange={(R) => setPHeartNotes(e.target.value)}
                         placeholder="Rose, Praline"
                         className="w-full px-3 py-2 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -9237,7 +9237,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <input
                         type="text"
                         value={pBaseNotes}
-                        onChange={(e) => setPBaseNotes(e.target.value)}
+                        onChange={(R) => setPBaseNotes(e.target.value)}
                         placeholder="Oud, Vanilla, Musk"
                         className="w-full px-3 py-2 border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                       />
@@ -9251,7 +9251,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={pBestseller}
-                          onChange={(e) => setPBestseller(e.target.checked)}
+                          onChange={(R) => setPBestseller(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Show in Best Sellers</span>
@@ -9260,7 +9260,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={pFeatured}
-                          onChange={(e) => setPFeatured(e.target.checked)}
+                          onChange={(R) => setPFeatured(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <span>Featured Listing</span>
@@ -9269,7 +9269,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={pUnboxed}
-                          onChange={(e) => setPUnboxed(e.target.checked)}
+                          onChange={(R) => setPUnboxed(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <Package className="w-3.5 h-3.5" />
@@ -9279,7 +9279,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={pIsNewArrival}
-                          onChange={(e) => setPIsNewArrival(e.target.checked)}
+                          onChange={(R) => setPIsNewArrival(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <Sparkles className="w-3.5 h-3.5" />
@@ -9289,7 +9289,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <input
                           type="checkbox"
                           checked={pOnSpecial}
-                          onChange={(e) => setPOnSpecial(e.target.checked)}
+                          onChange={(R) => setPOnSpecial(e.target.checked)}
                           className="accent-[#0A0A0A] w-4 h-4"
                         />
                         <Sparkles className="w-3.5 h-3.5" />
@@ -9308,7 +9308,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               type="text"
                               maxLength={60}
                               value={pSpecialLabel}
-                              onChange={(e) => setPSpecialLabel(e.target.value)}
+                              onChange={(R) => setPSpecialLabel(e.target.value)}
                               placeholder="Black Friday Special"
                               className="w-full px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs focus:outline-none focus:border-[#0A0A0A]"
                             />
@@ -9317,7 +9317,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <label className="block text-xs font-semibold uppercase tracking-wider">
                                 {pSpecialDiscountType === 'fixed'
-                                  ? 'Reduce Price By (E)'
+                                  ? 'Reduce Price By (R)'
                                   : 'Special Discount (%)'}
                               </label>
                               <div
@@ -9360,7 +9360,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   max={50000}
                                   step="1"
                                   value={pSpecialDiscountAmount}
-                                  onChange={(e) =>
+                                  onChange={(R) =>
                                     setPSpecialDiscountAmount(e.target.value)
                                   }
                                   placeholder="100"
@@ -9373,13 +9373,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 min={0}
                                 max={90}
                                 value={pSpecialDiscount}
-                                onChange={(e) => setPSpecialDiscount(e.target.value)}
+                                onChange={(R) => setPSpecialDiscount(e.target.value)}
                                 className="w-full px-3 py-2 bg-white border border-[#D4D4D4] rounded-xl text-xs tabular-nums focus:outline-none focus:border-[#0A0A0A]"
                               />
                             )}
                             {pSpecialDiscountType === 'fixed' && (
                               <p className="text-[11px] text-[#666666]">
-                                Example: entering 100 reduces E550 to E450 on the highest full-bottle size.
+                                Example: entering 100 reduces R550 to R450 on the highest full-bottle size.
                               </p>
                             )}
                           </div>
@@ -9498,7 +9498,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         id="new-owner-password"
                         type={showNewOwnerPassword ? 'text' : 'password'}
                         value={newOwnerPassword}
-                        onChange={(e) => setNewOwnerPassword(e.target.value)}
+                        onChange={(R) => setNewOwnerPassword(e.target.value)}
                         placeholder="Enter password"
                         minLength={6}
                         required
@@ -9530,7 +9530,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       id="confirm-owner-password"
                       type={showNewOwnerPassword ? 'text' : 'password'}
                       value={confirmOwnerPassword}
-                      onChange={(e) => setConfirmOwnerPassword(e.target.value)}
+                      onChange={(R) => setConfirmOwnerPassword(e.target.value)}
                       placeholder="Re-enter password"
                       minLength={6}
                       required
