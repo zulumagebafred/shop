@@ -373,13 +373,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     };
   }, [setAdminConsoleActive, ensureAllPerfumesLoaded, ensureSecondaryLoaded]);
 
-  // Unlock PWA install only when the signed-in user is a verified admin
+  // Unlock PWA install only when the signed-in user is a verified admin inside the admin portal
   useEffect(() => {
     if (isOwner) {
       unlockPWAInstallForAdmin();
     } else {
       lockPWAInstall();
     }
+    return () => {
+      lockPWAInstall();
+    };
   }, [isOwner]);
 
   const handlePublishSnapshotClick = async () => {
