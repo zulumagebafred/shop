@@ -76,14 +76,18 @@ function hideManifest(): void {
   if (typeof document === 'undefined') return;
   const link = document.querySelector('link[rel="manifest"]');
   if (link) link.remove();
+  const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitle) appleTitle.setAttribute('content', 'AuraHut Co.');
 }
 
 /**
  * Re-inject `<link rel="manifest">` so the browser sees the PWA as
- * installable again. Called when admin authenticates.
+ * installable again. Called when admin authenticates or on the admin link.
  */
 function restoreManifest(): void {
   if (typeof document === 'undefined') return;
+  const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitle) appleTitle.setAttribute('content', 'AuraHutAdmin');
   if (document.querySelector('link[rel="manifest"]')) return;
   const link = document.createElement('link');
   link.rel = 'manifest';

@@ -93,6 +93,15 @@ export default defineConfig(() => {
           type: 'module',
         },
       }),
+      {
+        name: 'strip-static-manifest-link',
+        transformIndexHtml: {
+          order: 'post',
+          handler(html: string) {
+            return html.replace(/<link\b[^>]*\brel=["']manifest["'][^>]*>\s*/gi, '');
+          },
+        },
+      },
     ],
     resolve: {
       alias: {
